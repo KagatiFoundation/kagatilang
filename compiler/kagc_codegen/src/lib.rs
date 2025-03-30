@@ -41,7 +41,7 @@ pub trait CodeGen {
     fn gen_ir(&mut self, nodes: &[AST]) -> Vec<IR> {
         let mut output: Vec<IR> = vec![];
         for node in nodes {
-            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(node, &mut FnCtx { stack_offset: 0, temp_counter: 0 });
+            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(node, &mut FnCtx::default());
             if node_ir.is_ok() {
                 output.extend(node_ir.ok().unwrap());
             }
@@ -78,17 +78,6 @@ pub trait CodeGen {
             let mut result: Vec<IR> = vec![];
             
             self.gen_ir_fn_call_expr(func_call, fn_ctx).iter().for_each(|instrs| {
-                instrs.iter().for_each(|instr| {
-                    result.push(IR::Instr(instr.clone()));
-                });
-            });
-
-            return Ok(result);
-        }
-        else if let ASTKind::StmtAST(Stmt::FuncCall(func_call)) = &node.kind {
-            let mut result: Vec<IR> = vec![];
-            
-            self.gen_ir_fn_call_stmt(func_call, fn_ctx).iter().for_each(|instrs| {
                 instrs.iter().for_each(|instr| {
                     result.push(IR::Instr(instr.clone()));
                 });
@@ -414,20 +403,38 @@ pub trait CodeGen {
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let lit_val_tmp: usize = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 1;
-    
         let ir_lit: IRLitVal = match lit_expr.result_type {
             LitTypeVariant::I32 => IRLitVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")),
             LitTypeVariant::U8 => IRLitVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")),
             _ => todo!(),
         };
-    
-        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit))])
+
+        let lit_val_tmp: usize = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 1;
+
+        if fn_ctx.force_reg_use {
+            let reg_idx: usize = fn_ctx.reg_counter.unwrap();
+            let dest_instr: IRLitType = IRLitType::AllocReg { reg: reg_idx, temp: lit_val_tmp };
+
+            Ok(vec![
+                IRInstr::Mov(
+                    dest_instr,
+                    IRLitType::Const(ir_lit)
+                )
+            ])
+        }
+        else {
+            Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit))])
+        }
     }
 
     fn gen_bin_ir_expr(&mut self, bin_expr: &BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
+
+        let use_reg: bool = fn_ctx.force_reg_use;
+
+        // make sure the intermediate instructions aren't using registers
+        fn_ctx.force_reg_use = false;
 
         let left_expr: Vec<IRInstr> = self.__gen_expr(&bin_expr.left, fn_ctx)?;
         let right_expr: Vec<IRInstr> = self.__gen_expr(&bin_expr.right, fn_ctx)?;
@@ -437,10 +444,22 @@ pub trait CodeGen {
 
         let bin_expr_type: IRInstr = match bin_expr.operation {
             ASTOperation::AST_ADD => {
-                let dest: usize = fn_ctx.temp_counter;
+                let dest_temp: usize = fn_ctx.temp_counter;
                 fn_ctx.temp_counter += 1;
+                
+                if use_reg {
+                    let reg_idx: usize = fn_ctx.reg_counter.unwrap();
+                    let dest_instr: IRLitType = IRLitType::AllocReg { reg: reg_idx, temp: dest_temp };
 
-                self.gen_ir_add(IRLitType::Temp(dest), left_dest.dest().unwrap(), right_dest.dest().unwrap())
+                    self.gen_ir_add(
+                        dest_instr,
+                        left_dest.dest().unwrap(),
+                        right_dest.dest().unwrap()
+                    )
+                }
+                else {
+                    self.gen_ir_add(IRLitType::Temp(dest_temp), left_dest.dest().unwrap(), right_dest.dest().unwrap())
+                }
             }
             _ => todo!()
         };
@@ -449,6 +468,10 @@ pub trait CodeGen {
         irs.extend(right_expr);
         irs.push(bin_expr_type);
 
+        if use_reg {
+            fn_ctx.force_reg_use = true;
+        }
+
         Ok(
             irs
         )
@@ -456,7 +479,7 @@ pub trait CodeGen {
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
     
-    fn gen_ir_fn_call_stmt(&mut self, func_call_stmt: &FuncCallStmt, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
+    // fn gen_ir_fn_call_stmt(&mut self, func_call_stmt: &FuncCallStmt, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
     fn gen_ir_add(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
        IRInstr::Add(dest, op1, op2)

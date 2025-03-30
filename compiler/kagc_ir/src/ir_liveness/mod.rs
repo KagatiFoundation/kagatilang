@@ -100,7 +100,9 @@ impl LivenessAnalyzer {
 
                     IRInstr::Load { dest, .. } => dest.as_temp() == Some(temp_lookup),
 
-                    IRInstr::Call { params, .. } => params.iter().any(|param| param.as_temp() == Some(temp_lookup))
+                    IRInstr::Call { params, .. } => params.iter().any(|param| param.as_temp() == Some(temp_lookup)),
+
+                    _ => false
                 }
             },
             IR::VarDecl(vardecl) => matches!(vardecl.value, IRLitType::Temp(t) if t == temp_lookup),

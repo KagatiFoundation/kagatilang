@@ -28,18 +28,27 @@ pub enum IRInstr {
         /// Stack offset to load value from
         stack_off: usize
     },
+
+    /// Notifies the code generator that the registers must be
+    /// allocated in the range x0-x7.
+    FuncCallStart,
+
+    FuncCallEnd
 }
 
 impl IRInstr {
     pub fn dest(&self) -> Option<IRLitType> {
         match self {
-            IRInstr::Mov(dst, _) => Some(dst.clone()),
+            Self::Mov(dst, _) => Some(dst.clone()),
 
-            IRInstr::Add(dst, _, _) => Some(dst.clone()),
+            Self::Add(dst, _, _) => Some(dst.clone()),
 
-            IRInstr::Call { .. } => Some(IRLitType::Reg(AllocedReg { idx: 0, size: 64 })),
+            Self::Call { .. } => Some(IRLitType::Reg(0)),
 
-            IRInstr::Load { dest, .. } => Some(dest.clone())
+            Self::Load { dest, .. } => Some(dest.clone()),
+
+            Self::FuncCallStart |
+            Self::FuncCallEnd => None
         }
     }
 

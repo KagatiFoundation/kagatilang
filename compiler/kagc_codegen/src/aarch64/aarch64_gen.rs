@@ -647,7 +647,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         let mut virtual_reg: usize = 0;
 
         let params: Vec<IRLitType> = func_info.params.iter().map(|_| {
-            let reg: IRLitType = IRLitType::Reg(AllocedReg { size: 64, idx: virtual_reg });
+            let reg: IRLitType = IRLitType::Reg(virtual_reg);
             virtual_reg += 1;
             stack_off += 1;
             reg
@@ -659,7 +659,11 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             stack_offset: stack_off,
 
             // local temporary counter starts at 0
-            temp_counter: 0
+            temp_counter: 0,
+
+            reg_counter: None,
+
+            force_reg_use: false
         };
 
         for body_ast in ast.left.as_ref().unwrap().linearize() {
@@ -738,17 +742,34 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut param_instrs: Vec<IRInstr> = vec![];
+
         let mut actual_params: Vec<IRLitType> = vec![];
 
+        let mut param_reg_counter: RegIdx = 0;
+
+        #[allow(clippy::explicit_counter_loop)]
         for param_expr in &func_call_expr.args {
+            fn_ctx.force_reg_use(param_reg_counter);
+
+            // advance the register counter after use
+            param_reg_counter += 1;
+
             let p_instr: Vec<IRInstr> = self.__gen_expr(param_expr, fn_ctx)?;
 
             if let Some(dest) = p_instr.last().unwrap().clone().dest() {
-                actual_params.push(dest);
+                actual_params.push(dest.clone());
             }
+            else {
+                panic!("No destination??? {:#?}", p_instr.last().unwrap().clone());
+            };
 
             param_instrs.extend(p_instr);
         }
+
+        fn_ctx.clear_reg_hint();
+
+        // actual function call begins here...
+        param_instrs.push(IRInstr::FuncCallStart);
 
         param_instrs.push(
             IRInstr::Call {
@@ -758,32 +779,10 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             }
         );
 
+        // function call ends here
+        param_instrs.push(IRInstr::FuncCallEnd);
+
         Ok(param_instrs)
-    }
-
-    fn gen_ir_fn_call_stmt(&mut self, func_call_stmt: &FuncCallStmt, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let mut param_instrs: Vec<IR> = vec![];
-        let mut actual_params: Vec<IRLitType> = vec![];
-
-        for param_expr in &func_call_stmt.args {
-            let p_instr: Vec<IRInstr> = self.__gen_expr(param_expr, fn_ctx)?;
-
-            if let Some(dest) = p_instr.last().unwrap().clone().dest() {
-                actual_params.push(dest);
-            }
-
-            p_instr.iter().for_each(|instr| {
-                param_instrs.push(IR::Instr(instr.clone()));
-            });
-        }
-
-        Ok(vec![
-            IRInstr::Call {
-                fn_name: func_call_stmt.symbol_name.clone(),
-                params: actual_params,
-                return_type: IRLitType::Temp(0)
-            }
-        ])
     }
 }
 

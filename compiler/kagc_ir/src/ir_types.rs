@@ -1,5 +1,5 @@
 use kagc_symbol::Symbol;
-use kagc_target::reg::AllocedReg;
+use kagc_target::reg::RegIdx;
 
 #[derive(Debug, Clone)]
 pub enum IRLitVal {
@@ -23,9 +23,22 @@ impl IRLitVal {
 #[derive(Debug, Clone)]
 pub enum IRLitType {
     Var(Symbol),
+
     Const(IRLitVal),
-    Reg(AllocedReg),
-    Temp(usize)
+    
+    Reg(RegIdx),
+    
+    Temp(usize),
+
+    /// Experimental
+    /// Allocate a register and associate it with a temporary
+    AllocReg {
+        /// Index of the register to be allocated.
+        reg: RegIdx,
+
+        /// Temporary to associate the allocate register with.
+        temp: usize
+    }
 }
 
 pub struct IRSymbol {
@@ -56,9 +69,14 @@ impl IRLitType {
     pub fn into_str(&self) -> String {
         match self {
             Self::Var(var) => var.name.clone(),
+            
             Self::Const(irlit_val) => irlit_val.into_str(),
-            Self::Reg(reg) => reg.idx.to_string(),
-            Self::Temp(tmp) => tmp.to_string()
+            
+            Self::Reg(reg) => reg.to_string(),
+            
+            Self::Temp(tmp) => tmp.to_string(),
+
+            Self::AllocReg { .. } => "".to_string()
         }
     }
 
@@ -68,7 +86,7 @@ impl IRLitType {
     check_instr_type!(is_reg, Reg);
 
     impl_as_irlit_type!(as_temp, Temp, usize);
-    impl_as_irlit_type!(as_reg, Reg, AllocedReg);
+    impl_as_irlit_type!(as_reg, Reg, RegIdx);
     impl_as_irlit_type!(as_var, Var, Symbol);
     impl_as_irlit_type!(as_const, Const, IRLitVal);
 }

@@ -57,7 +57,7 @@ struct ComptFnProps {
 pub struct Aarch64IRToASM<'asmgen> {
     pub ctx: Rc<RefCell<CompilerCtx<'asmgen>>>,
 
-    pub reg_manager: Rc<RefCell<Aarch64RegManager2>>,
+    reg_manager: Rc<RefCell<Aarch64RegManager2>>,
 
     compt_fn_props: Option<ComptFnProps>,
 
@@ -66,7 +66,10 @@ pub struct Aarch64IRToASM<'asmgen> {
     /// Instruction Pointer:
     /// IP is used to track the execution of instructions inside 
     /// a function.
-    pub ip: usize
+    ip: usize,
+
+    /// Code generators state
+    state: IRToASMState
 }
 
 impl<'asmgen> Aarch64IRToASM<'asmgen> {
@@ -77,26 +80,40 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
             reg_manager: rm,
             compt_fn_props: None,
             temp_reg_map: TempRegMap { reg_map: HashMap::new() },
-            ip: 0
+            ip: 0,
+            state: IRToASMState::Global
         }
     }
 
     pub fn gen_asm(&mut self, irs: &mut [IR]) -> Vec<String> {
+        // println!("{:#?}", irs);
+        // return vec![];
+
         let mut output: Vec<String> = vec![];
         for ir in irs {
-            output.push(self.gen_asm_from_ir_node(ir));
+            let output_str: String = self.gen_asm_from_ir_node(ir);
+            output.push(output_str);
         }
         output
+    }
+
+    /// Switches to the given state returning the old state.
+    fn switch_cg_state(&mut self, new_state: IRToASMState) -> IRToASMState {
+        let old: IRToASMState = self.state;
+        self.state = new_state;
+        old
     }
 
     /// Sets function-specific properties when entering a function scope.
     fn switch_to_func_scope(&mut self, func_props: ComptFnProps) {
         self.compt_fn_props = Some(func_props);
+        self.state = IRToASMState::Local;
     }
     
     /// Clears function-specific properties when returning to the global scope.
     fn switch_to_global_scope(&mut self) {
         self.compt_fn_props = None;
+        self.state = IRToASMState::Global;
     }
     
     /// Computes the aligned stack size required for a function.
@@ -125,12 +142,12 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
     fn gen_fn_param_asm(&self, param: &IRLitType, stack_size: usize, is_leaf_fn: bool) -> String {
         match param {
             IRLitType::Reg(alloced_reg) => {
-                let stack_off: usize = (alloced_reg.idx * 8) + 8;
+                let stack_off: usize = (*alloced_reg * 8) + 8;
                 if is_leaf_fn {
-                    format!("str x{}, [sp, #{}]", alloced_reg.idx, stack_size - stack_off)
+                    format!("str x{}, [sp, #{}]", alloced_reg, stack_size - stack_off)
                 }
                 else {
-                    format!("str x{}, [x29, #-{}]", alloced_reg.idx, stack_off)
+                    format!("str x{}, [x29, #-{}]", alloced_reg, stack_off)
                 }
             },
             _ => unimplemented!()
@@ -244,7 +261,11 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
 
                 temp_reg
             },
-            IRLitType::Reg(reg) => reg.clone(),
+
+            IRLitType::Reg(reg) => {
+                panic!()
+            },
+            
             _ => todo!()
         };
 
@@ -338,6 +359,19 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
             self.extract_operand(op2)
         )
     }
+    
+    fn start_func_call_proc(&mut self) -> String {
+        self.switch_cg_state(IRToASMState::FuncCall);
+        NO_INSTR.to_string()
+    }
+    
+    fn stop_func_call_proc(&mut self) -> String {
+        // function calls happen only inside the local scope; thus, 
+        // switch to local scope after a function call finishes
+        self.switch_cg_state(IRToASMState::Local);
+
+        NO_INSTR.to_string()
+    }
 }
 
 impl<'asmgen> Aarch64IRToASM<'asmgen> {
@@ -352,7 +386,8 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
                 }
             },
             
-            IRLitType::Reg(src_reg) => src_reg.name(),
+            // soon to be removed
+            IRLitType::Reg(_) => unimplemented!(),
             
             IRLitType::Temp(temp_value) => {
                 let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
@@ -360,8 +395,13 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
                 src_reg.name()
             },
 
+            IRLitType::AllocReg { temp, .. } => {
+                let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp).unwrap().clone();
+                self.try_dropping_temp(*temp);
+                src_reg.name()
+            },
+
             IRLitType::Var(var) => {
-                
                 var.name.clone()
             }
         }
@@ -376,7 +416,12 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
                 }
                 else {
                     let mut reg_mgr = self.reg_manager.borrow_mut();
-                    let alloced_reg: AllocedReg = reg_mgr.allocate_register(64);
+                    let alloced_reg: AllocedReg = if self.state == IRToASMState::FuncCall {
+                        reg_mgr.allocate_param_register(64)
+                    }
+                    else {
+                        reg_mgr.allocate_register(64)
+                    };
 
                     self.temp_reg_map.reg_map.insert(*temp_value, alloced_reg.clone());
                     
@@ -384,11 +429,30 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
                 };
 
                 self.try_dropping_temp(*temp_value);
-                
                 reg
             },
 
-            IRLitType::Reg(reg) => reg.clone(),
+            IRLitType::AllocReg { reg, temp } => {
+                let reg: AllocedReg = if self.temp_reg_map.reg_map.contains_key(temp) {
+                    self.temp_reg_map.reg_map.get(temp).unwrap().clone()
+                }
+                else {
+                    let mut reg_mgr = self.reg_manager.borrow_mut();
+                    let alloced_reg: AllocedReg = if self.state == IRToASMState::FuncCall {
+                        reg_mgr.allocate_param_register_with_idx(64, *reg, AllocStrategy::Spill)
+                    }
+                    else {
+                        reg_mgr.allocate_register_with_idx(64, *reg, AllocStrategy::Spill)
+                    };
+
+                    self.temp_reg_map.reg_map.insert(*temp, alloced_reg.clone());
+                    
+                    alloced_reg
+                };
+
+                self.try_dropping_temp(*temp);
+                reg
+            },
             
             _ => todo!()
         }

@@ -4,3 +4,4 @@ Bugs to Fix:
 
 Features to implement:
 [] Allocate registers from x0-x7 only for function parameters.
+[] Constant Folding Optimization Pass

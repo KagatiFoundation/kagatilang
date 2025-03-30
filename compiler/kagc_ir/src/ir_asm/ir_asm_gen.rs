@@ -26,6 +26,19 @@ use kagc_symbol::StorageClass;
 
 use crate::{ir_instr::*, ir_types::*};
 
+pub(crate) const NO_INSTR: &str = "";
+
+pub(crate) const NO_OP: &str = "NOP";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IRToASMState {
+    Local,
+
+    Global,
+
+    FuncCall
+}
+
 pub trait IRToASM { 
     fn gen_asm_from_ir_node(&mut self, ir: &IR) -> String {
         match ir {
@@ -51,10 +64,20 @@ pub trait IRToASM {
                     IRInstr::Add(dest, op1, op2) => self.gen_ir_add_asm(dest, op1, op2),
                     
                     IRInstr::Call { fn_name, params, return_type } => self.gen_ir_fn_call_asm(fn_name.clone(), params, return_type),
+
+                    IRInstr::FuncCallStart => self.start_func_call_proc(),
+
+                    IRInstr::FuncCallEnd => self.stop_func_call_proc()
                 }
             },
         }
     }
+
+    /// Starts a function call process. Has to return NOP.
+    fn start_func_call_proc(&mut self) -> String;
+
+    /// Stops a function call process. Has tp return NOP.
+    fn stop_func_call_proc(&mut self) -> String;
 
     /// Generates assembly for a function call expression.
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[IRLitType], return_type: &IRLitType) -> String;

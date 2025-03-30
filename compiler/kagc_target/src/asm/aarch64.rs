@@ -19,7 +19,8 @@ impl AllocedReg {
     pub fn early_return() -> Self {
         AllocedReg {
             idx: EARLY_RETURN,
-            size: 0
+            size: 0,
+            status: RegStatus::Invalid
         }
     }
 }
@@ -47,7 +48,8 @@ impl Aarch64RegManager2 {
 
         AllocedReg { 
             size: alloc_size, 
-            idx: reg_to_spill 
+            idx: reg_to_spill,
+            status: RegStatus::Spilled
         }
     }
 }
@@ -55,6 +57,11 @@ impl Aarch64RegManager2 {
 impl RegManager2 for Aarch64RegManager2 {
     fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg {
         for i in 8..32 {
+            // x29 and x30 are reserved registers
+            if i == 29 || i == 30 {
+                continue;
+            }
+
             if self.available_registers[i] {
                 self.available_registers[i] = false;
 
@@ -66,13 +73,46 @@ impl RegManager2 for Aarch64RegManager2 {
                         status: RegStatus::Alloced
                     }
                 );
+
                 return AllocedReg {
                     idx: i,
-                    size: alloc_size
+                    size: alloc_size,
+                    status: RegStatus::Alloced
                 };
             }
         }
-        self.spill_register(alloc_size)
+        self.spill_register(alloc_size, None)
+    }
+
+    fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg {
+        assert!((0..=32).contains(&idx));
+        assert!(idx != 29 || idx != 30, "x29 and x30 registers are reserved; cannot use them");
+        
+        if self.available_registers[idx] {
+            self.available_registers[idx] = false;
+
+            self.register_map.insert(
+                idx, 
+                RegState { 
+                    idx, 
+                    curr_alloced_size: alloc_size, 
+                    status: RegStatus::Alloced
+                }
+            );
+
+            return AllocedReg {
+                idx,
+                size: alloc_size,
+                status: RegStatus::Alloced
+            };
+        }
+
+        if strat == AllocStrategy::Spill {
+            self.spill_register(alloc_size, Some(idx))
+        }
+        else {
+            panic!("No registers available. Maybe try with spill strategy");
+        }
     }
 
     fn allocate_param_register(&mut self, alloc_size: usize) -> AllocedReg {
@@ -90,11 +130,42 @@ impl RegManager2 for Aarch64RegManager2 {
                 );
                 return AllocedReg {
                     idx: i,
-                    size: alloc_size
+                    size: alloc_size,
+                    status: RegStatus::Alloced
                 };
             }
         }
-        self.spill_param_register(alloc_size) 
+        self.spill_param_register(alloc_size, None) 
+    }
+
+    fn allocate_param_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg {
+        assert!((0..=7).contains(&idx));
+        
+        if self.available_registers[idx] {
+            self.available_registers[idx] = false;
+
+            self.register_map.insert(
+                idx, 
+                RegState { 
+                    idx, 
+                    curr_alloced_size: alloc_size, 
+                    status: RegStatus::Alloced
+                }
+            );
+
+            return AllocedReg {
+                idx,
+                size: alloc_size,
+                status: RegStatus::Alloced
+            };
+        }
+
+        if strat == AllocStrategy::Spill {
+            self.spill_param_register(alloc_size, Some(idx))
+        }
+        else {
+            panic!("No parameter registers available. Maybe try with spill strategy");
+        }
     }
 
     fn free_register(&mut self, reg: usize) {
@@ -104,22 +175,42 @@ impl RegManager2 for Aarch64RegManager2 {
         }
     }
 
-    fn spill_register(&mut self, alloc_size: usize) -> AllocedReg {
-        for i in 8..16 {
+    fn spill_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg {
+        assert!(!matches!(idx, Some(29) | Some(30)));
+
+        if let Some(i) = idx {
             if self.register_map.contains_key(&i) {
                 return self.spill_and_mark_available(i, alloc_size);
             }
+
+            panic!("No general-purpose registers available and stack is full!");
         }
-        panic!("No general-purpose registers available and stack is full!");
+        else {
+            for i in 8..32 {
+                if self.register_map.contains_key(&i) {
+                    return self.spill_and_mark_available(i, alloc_size);
+                }
+            }
+            panic!("No general-purpose registers available and stack is full!");
+        }
     }
 
-    fn spill_param_register(&mut self, alloc_size: usize) -> AllocedReg {
-        for i in 0..8 {
+    fn spill_param_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg {
+        if let Some(i) = idx {
             if self.register_map.contains_key(&i) {
                 return self.spill_and_mark_available(i, alloc_size);
             }
+
+            panic!("No general-purpose registers available and stack is full!");
         }
-        panic!("No parameter registers available and stack is full!");
+        else {
+            for i in 0..8 {
+                if self.register_map.contains_key(&i) {
+                    return self.spill_and_mark_available(i, alloc_size);
+                }
+            }
+            panic!("No general-purpose registers available and stack is full!");
+        }
     }
 
     fn restore_register(&mut self) -> usize {
