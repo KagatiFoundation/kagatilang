@@ -28,7 +28,7 @@ use crate::{ir_instr::*, ir_types::*};
 
 pub(crate) const NO_INSTR: &str = "";
 
-pub(crate) const NO_OP: &str = "NOP";
+// pub(crate) const NO_OP: &str = "NOP";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IRToASMState {

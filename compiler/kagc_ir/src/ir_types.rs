@@ -85,8 +85,19 @@ impl IRLitType {
     check_instr_type!(is_const, Const);
     check_instr_type!(is_reg, Reg);
 
+    pub fn is_alloc_reg(&self) -> bool {
+        matches!(self, Self::AllocReg { .. })
+    }
+
     impl_as_irlit_type!(as_temp, Temp, usize);
     impl_as_irlit_type!(as_reg, Reg, RegIdx);
     impl_as_irlit_type!(as_var, Var, Symbol);
     impl_as_irlit_type!(as_const, Const, IRLitVal);
+
+    pub fn as_alloc_reg(&self) -> Option<(RegIdx, usize)> {
+        match self {
+            Self::AllocReg { reg, temp } => Some((*reg, *temp)),
+            _ => None
+        }
+    }
 }

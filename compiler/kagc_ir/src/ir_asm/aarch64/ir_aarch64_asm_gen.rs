@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
+use std::{cell::RefCell, collections::{HashMap, VecDeque}, hash::Hash, rc::Rc};
 
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::StorageClass;
@@ -94,6 +94,9 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
             let output_str: String = self.gen_asm_from_ir_node(ir);
             output.push(output_str);
         }
+
+        // println!("{:#?}", self.reg_manager.borrow().spilled_stack);
+
         output
     }
 
@@ -170,6 +173,7 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
 
     fn drop_temp(&mut self, temp: usize) {
         let freed_reg: Option<AllocedReg> = self.temp_reg_map.drop(&temp);
+        // println!("Attempting to free: {} --> {:#?}", temp, freed_reg);
 
         if let Some(reg) = freed_reg {
             self.reg_manager.borrow_mut().free_register(reg.idx);
@@ -190,6 +194,11 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
         else {
             panic!("Compile time information not avaailable for function!");
         }
+    }
+
+    fn free_spilled_registers(&mut self) {
+        let mut reg_mgr = self.reg_manager.borrow_mut();
+        reg_mgr.spilled_stack.clear();
     }
 }
 
@@ -256,9 +265,7 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
         let value_reg: AllocedReg = match &vdecl_ir.value {
             IRLitType::Temp(temp_value) => {
                 let temp_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
-                
                 self.try_dropping_temp(*temp_value);
-
                 temp_reg
             },
 
@@ -342,6 +349,14 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
     }
 
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[IRLitType], return_type: &IRLitType) -> String {
+        for param in params {
+            match param {
+                IRLitType::Temp(temp_value) => self.try_dropping_temp(*temp_value),
+                IRLitType::AllocReg { temp, .. } => self.try_dropping_temp(*temp),
+                _ => unimplemented!()
+            }
+        }
+
         format!("BL _{fn_name}")
     }
     
@@ -410,51 +425,55 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
     /// Get the compile time register mapping of a IR literal type
     fn resolve_register(&mut self, irlit: &IRLitType) -> AllocedReg {
         match irlit {
-            IRLitType::Temp(temp_value) => {
-                let reg: AllocedReg = if self.temp_reg_map.reg_map.contains_key(temp_value) {
-                    self.temp_reg_map.reg_map.get(temp_value).unwrap().clone()
-                }
-                else {
-                    let mut reg_mgr = self.reg_manager.borrow_mut();
-                    let alloced_reg: AllocedReg = if self.state == IRToASMState::FuncCall {
-                        reg_mgr.allocate_param_register(64)
-                    }
-                    else {
-                        reg_mgr.allocate_register(64)
-                    };
-
-                    self.temp_reg_map.reg_map.insert(*temp_value, alloced_reg.clone());
-                    
-                    alloced_reg
-                };
-
-                self.try_dropping_temp(*temp_value);
-                reg
-            },
-
-            IRLitType::AllocReg { reg, temp } => {
-                let reg: AllocedReg = if self.temp_reg_map.reg_map.contains_key(temp) {
-                    self.temp_reg_map.reg_map.get(temp).unwrap().clone()
-                }
-                else {
-                    let mut reg_mgr = self.reg_manager.borrow_mut();
-                    let alloced_reg: AllocedReg = if self.state == IRToASMState::FuncCall {
-                        reg_mgr.allocate_param_register_with_idx(64, *reg, AllocStrategy::Spill)
-                    }
-                    else {
-                        reg_mgr.allocate_register_with_idx(64, *reg, AllocStrategy::Spill)
-                    };
-
-                    self.temp_reg_map.reg_map.insert(*temp, alloced_reg.clone());
-                    
-                    alloced_reg
-                };
-
-                self.try_dropping_temp(*temp);
-                reg
-            },
-            
-            _ => todo!()
+            IRLitType::Temp(temp_value) => self.get_or_allocate_temp_register(*temp_value),
+            IRLitType::AllocReg { reg, temp } => self.get_or_allocate_specific_register(*reg, *temp),
+            _ => todo!(),
+        }
+    }
+    
+    fn get_or_allocate_temp_register(&mut self, temp_value: usize) -> AllocedReg {
+        self.temp_reg_map
+            .reg_map
+            .get(&temp_value)
+            .cloned()
+            .unwrap_or_else(|| {
+                let alloced_reg: AllocedReg = self.allocate_register();
+                self.temp_reg_map.reg_map.insert(temp_value, alloced_reg.clone());
+                self.try_dropping_temp(temp_value);
+                alloced_reg
+            })
+    }
+    
+    fn get_or_allocate_specific_register(&mut self, reg: RegIdx, temp: usize) -> AllocedReg {
+        self.temp_reg_map
+            .reg_map
+            .get(&temp)
+            .cloned()
+            .unwrap_or_else(|| {
+                let alloced_reg: AllocedReg = self.allocate_specific_register(reg);
+                self.temp_reg_map.reg_map.insert(temp, alloced_reg.clone());
+                self.try_dropping_temp(temp);
+                alloced_reg
+            })
+    }
+    
+    fn allocate_register(&mut self) -> AllocedReg {
+        let mut reg_mgr = self.reg_manager.borrow_mut();
+        if self.state == IRToASMState::FuncCall {
+            reg_mgr.allocate_param_register(64)
+        } 
+        else {
+            reg_mgr.allocate_register(64)
+        }
+    }
+    
+    fn allocate_specific_register(&mut self, reg: RegIdx) -> AllocedReg {
+        let mut reg_mgr = self.reg_manager.borrow_mut();
+        if self.state == IRToASMState::FuncCall {
+            reg_mgr.allocate_param_register_with_idx(64, reg, AllocStrategy::Spill)
+        } 
+        else {
+            reg_mgr.allocate_register_with_idx(64, reg, AllocStrategy::Spill)
         }
     }
 }

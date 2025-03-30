@@ -1,5 +1,4 @@
 use kagc_symbol::StorageClass;
-use kagc_target::reg::*;
 
 use crate::ir_types::*;
 
