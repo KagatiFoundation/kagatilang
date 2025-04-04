@@ -29,6 +29,9 @@ pub struct FnCtx {
 
     /// Indicates that the next value should use `reg_counter` instead of a temporary.
     pub force_reg_use: bool,
+
+    /// Indicates whether the next return statement is an early return or not.
+    pub early_return: bool,
 }
 
 impl FnCtx {

@@ -38,10 +38,10 @@ use kagc_types::*;
 use typedefs::*;
 
 pub trait CodeGen {
-    fn gen_ir(&mut self, nodes: &[AST]) -> Vec<IR> {
+    fn gen_ir(&mut self, nodes: &mut [AST]) -> Vec<IR> {
         let mut output: Vec<IR> = vec![];
         for node in nodes {
-            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(node, &mut FnCtx::default());
+            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(node, &mut FnCtx::default(), ASTOperation::AST_NONE);
             if node_ir.is_ok() {
                 output.extend(node_ir.ok().unwrap());
             }
@@ -49,13 +49,13 @@ pub trait CodeGen {
         output
     }
 
-    fn gen_ir_from_node(&mut self, node: &AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_from_node(&mut self, node: &mut AST, fn_ctx: &mut FnCtx, parent_ast_kind: ASTOperation) -> CGRes {
         if node.operation == ASTOperation::AST_GLUE {
-            if let Some(left) = node.left.as_ref() {
-                self.gen_ir_from_node(left, fn_ctx)?;
+            if let Some(left) = node.left.as_mut() {
+                self.gen_ir_from_node(left, fn_ctx, parent_ast_kind)?;
             }
-            if let Some(right) = node.right.as_ref() {
-                self.gen_ir_from_node(right, fn_ctx)?;
+            if let Some(right) = node.right.as_mut() {
+                self.gen_ir_from_node(right, fn_ctx, parent_ast_kind)?;
             }
             Ok(vec![])
         }
@@ -68,13 +68,19 @@ pub trait CodeGen {
         else if node.operation == ASTOperation::AST_FUNC_CALL {
             return self.__gen_ir_fn_call(node, fn_ctx)
         }
+        else if node.operation == ASTOperation::AST_RETURN {
+            if parent_ast_kind != ASTOperation::AST_FUNCTION {
+                fn_ctx.early_return = true;
+            }
+            return self.gen_ir_return(node, fn_ctx);
+        }
         else {
             panic!("{:#?} not supported right now!", node);
         }
     }
 
-    fn __gen_ir_fn_call(&mut self, node: &AST, fn_ctx: &mut FnCtx) -> CGRes {
-        if let ASTKind::ExprAST(Expr::FuncCall(func_call)) = &node.kind {
+    fn __gen_ir_fn_call(&mut self, node: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+        if let ASTKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
             let mut result: Vec<IR> = vec![];
             
             self.gen_ir_fn_call_expr(func_call, fn_ctx).iter().for_each(|instrs| {
@@ -371,24 +377,26 @@ pub trait CodeGen {
     fn gen_function_stmt(&mut self, ast: &AST) -> CodeGenResult;
 
     // *** IR CODE GENERATION *** //
-    fn gen_ir_fn(&mut self, ast: &AST) -> CGRes;
+    fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes;
 
-    fn gen_ir_var_decl(&mut self, ast: &AST, fn_ctx: &mut FnCtx) -> CGRes;
+    fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_return(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
 
     /// Generate IR nodes from an AST expression node.
-    fn gen_ir_expr(&mut self, ast: &AST, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {:#?}", ast);
         }
         
-        if let ASTKind::ExprAST(expr) = &ast.kind {
+        if let ASTKind::ExprAST(expr) = &mut ast.kind {
             return self.__gen_expr(expr, fn_ctx);
         }
 
         Err(CodeGenErr::NoContext)
     }
 
-    fn __gen_expr(&mut self, expr: &Expr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         match expr {
             Expr::LitVal(litexpr) => self.gen_lit_ir_expr(litexpr, fn_ctx),
             
@@ -428,16 +436,19 @@ pub trait CodeGen {
         }
     }
 
-    fn gen_bin_ir_expr(&mut self, bin_expr: &BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
 
         let use_reg: bool = fn_ctx.force_reg_use;
+        let forced_reg = fn_ctx.reg_counter;
 
         // make sure the intermediate instructions aren't using registers
-        fn_ctx.force_reg_use = false;
+        if use_reg {
+            fn_ctx.clear_reg_hint();
+        }
 
-        let left_expr: Vec<IRInstr> = self.__gen_expr(&bin_expr.left, fn_ctx)?;
-        let right_expr: Vec<IRInstr> = self.__gen_expr(&bin_expr.right, fn_ctx)?;
+        let left_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.left, fn_ctx)?;
+        let right_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.right, fn_ctx)?;
 
         let left_dest: &IRInstr = left_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
         let right_dest: &IRInstr = right_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
@@ -448,7 +459,7 @@ pub trait CodeGen {
                 fn_ctx.temp_counter += 1;
                 
                 if use_reg {
-                    let reg_idx: usize = fn_ctx.reg_counter.unwrap();
+                    let reg_idx: usize = forced_reg.unwrap();
                     let dest_instr: IRLitType = IRLitType::AllocReg { reg: reg_idx, temp: dest_temp };
 
                     self.gen_ir_add(
@@ -468,18 +479,12 @@ pub trait CodeGen {
         irs.extend(right_expr);
         irs.push(bin_expr_type);
 
-        if use_reg {
-            fn_ctx.force_reg_use = true;
-        }
-
         Ok(
             irs
         )
     }
 
-    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
-    
-    // fn gen_ir_fn_call_stmt(&mut self, func_call_stmt: &FuncCallStmt, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
+    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
     fn gen_ir_add(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
        IRInstr::Add(dest, op1, op2)

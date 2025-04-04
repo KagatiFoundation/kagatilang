@@ -1181,12 +1181,14 @@ impl<'parser> Parser<'parser> {
         _ = self.token_match(TokenKind::T_LPAREN)?;
 
         let curr_token_kind: TokenKind = self.current_token.kind;
-        let mut func_args: Vec<Expr> = vec![];
+        let mut func_args: Vec<FuncArg> = vec![];
 
         if curr_token_kind != TokenKind::T_RPAREN {
+            let mut arg_pos: usize = 0;
+
             loop {
                 let argu: AST = self.parse_equality()?;
-                func_args.push(argu.kind.expr().unwrap());
+                func_args.push((arg_pos, argu.kind.expr().unwrap()));
 
                 let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
                 let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
@@ -1210,6 +1212,8 @@ impl<'parser> Parser<'parser> {
                 else {
                     self.token_match(TokenKind::T_COMMA)?;
                 }
+
+                arg_pos += 1;
             }
         }
 

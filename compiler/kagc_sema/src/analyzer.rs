@@ -26,7 +26,6 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::*;
 use kagc_token::Token;
 use kagc_types::LitTypeVariant;
 
@@ -232,57 +231,61 @@ impl<'sa> SemanticAnalyzer<'sa> {
         Ok(expr.result_type)
     }
 
-    fn analyze_return_stmt(&self, node: &mut AST) -> SAResult {
-        if !matches!(node.kind, ASTKind::StmtAST(Stmt::Return(_))) {
-            panic!("Not a return statement");
-        };
-        
-        if let Some(ref mut left_node) = node.left {
-            if let Err(annot_err) = self.annotate_expr_with_respective_type(left_node.kind.as_expr_mut().unwrap()) {
-                return Err(self.construct_sa_err(left_node, annot_err));
+    fn analyze_return_stmt(&mut self, node: &mut AST) -> SAResult {
+        if !node.kind.is_stmt() {
+            panic!("Needed an ReturnStmt--but found {:#?}", node);
+        }
+
+        if let Some(Stmt::Return(_)) = &mut node.kind.as_stmt() {
+            let ctx_borrow = self.ctx.borrow();
+            
+            // 'return' statements can appear only inside the functions
+            // thus, the current function cannot be None; it's an error otherwise
+            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.get_curr_func().unwrap().return_type;
+
+            drop(ctx_borrow);
+            
+            // if return statement returns some value
+            let found_fn_ret_type: LitTypeVariant = if let Some(return_expr) = &mut node.left {
+                self.analyze_expr(return_expr)?
             }
-        }
+            else {
+                LitTypeVariant::None
+            };
 
-        let found_ret_type: LitTypeVariant = if node.left.is_none() {
-            LitTypeVariant::None
-        } else {
-            node.left.as_ref().unwrap().result_type
-        };
-
-        let ctx_borrow = self.ctx.borrow();
-
-        // The parser makes sure that the return statement isn't written outside 
-        // of a function body. Thus, no need to worry about function's non-existence.
-        let func_info: &FunctionInfo = ctx_borrow.get_curr_func().unwrap();
-        if func_info.return_type == LitTypeVariant::Void && node.left.is_some() {
-            Err(
-                SAError::TypeError(
-                    SATypeError::ReturnType(
-                        SAReturnTypeError::ExpectedNoReturnValue { found: found_ret_type }
+            if expected_fn_ret_type.is_void() && found_fn_ret_type != LitTypeVariant::None {
+                return Err(
+                    SAError::TypeError(
+                        SATypeError::ReturnType(
+                            SAReturnTypeError::ExpectedNoReturnValue { 
+                                found: found_fn_ret_type
+                            }
+                        )
                     )
-                )
-            )
-        }
-        else if 
-            (func_info.return_type != LitTypeVariant::Void && node.left.is_none()) || 
-            ((func_info.return_type != found_ret_type) &&
-                !TypeChecker::is_type_coalesciable(found_ret_type, func_info.return_type)
-            )
-        {
-            Err(
-                SAError::TypeError(
-                    SATypeError::ReturnType(
-                        SAReturnTypeError::TypeMismatch { 
-                            expected: func_info.return_type, 
-                            found: found_ret_type
-                        }
+                );
+            }
+
+            let return_type_mismatch: bool = 
+                !expected_fn_ret_type.is_void() && found_fn_ret_type.is_none() ||
+                ((expected_fn_ret_type != found_fn_ret_type) && !TypeChecker::is_type_coalesciable(found_fn_ret_type, expected_fn_ret_type));
+
+            if return_type_mismatch {
+                return Err(
+                    SAError::TypeError(
+                        SATypeError::ReturnType(
+                            SAReturnTypeError::TypeMismatch { 
+                                expected: expected_fn_ret_type, 
+                                found: found_fn_ret_type 
+                            }
+                        )
                     )
-                )
-            )
+                );
+            }  
+
+            return Ok(found_fn_ret_type);
         }
-        else {
-            Ok(LitTypeVariant::None)
-        }
+
+        panic!();
     }
 
     fn analyze_func_decl_stmt(&mut self, node: &mut AST) -> SAResult {
@@ -342,84 +345,6 @@ impl<'sa> SemanticAnalyzer<'sa> {
         }
 
         panic!("Not a var declaration statement");
-    }
-
-    /// Annotates the given expression with its respective type, if identifiable.
-    /// 
-    /// # Errors
-    /// Returns an error if the expression type is not supported or the symbol's type 
-    /// is undefined.
-    fn annotate_expr_with_respective_type(&self, expr: &mut Expr) -> Result<(), _InternalSAErrType> {
-        match expr {
-            Expr::Ident(ident_expr) => {
-                if let Some(ident_type) = self.get_ident_type(&ident_expr.sym_name) {
-                    ident_expr.result_type = ident_type;
-                    Ok(())
-                }
-                else {
-                    Err(_InternalSAErrType::__ISET_UndefinedSymbol__ { 
-                        name: ident_expr.sym_name.clone() 
-                    })
-                }
-            },
-            Expr::LitVal(_) => Ok(()),
-            Expr::FuncCall(func_call_expr) => {
-                for arg in &mut func_call_expr.args {
-                    self.annotate_expr_with_respective_type(arg)?;
-                }
-                self.annotate_func_call_expr(func_call_expr)?;
-                Ok(())
-            },
-            Expr::Binary(bin_expr) => {
-                self.annotate_expr_with_respective_type(&mut bin_expr.left)?;
-                self.annotate_expr_with_respective_type(&mut bin_expr.right)?;
-                if TypeChecker::is_bin_expr_type_compatibile(bin_expr) {
-                    bin_expr.result_type = bin_expr.right.result_type();
-                    Ok(())
-                } else {
-                    println!("non-compatible: {:?}", bin_expr);
-                    Err(_InternalSAErrType::__ISET_UndefinedSymbol__ { name: "".to_string() })
-                }
-            }
-            _ => panic!("Type annotation not supported for {:?} yet!", expr)
-        }
-    }
-
-    fn annotate_func_call_expr(&self, func_call: &mut FuncCallExpr) -> Result<(), _InternalSAErrType> {
-        let ctx_borrow = self.ctx.borrow();
-        if let Some(func_sym_pos) = ctx_borrow.sym_table.find_symbol(&func_call.symbol_name) {
-            if let Some(func_sym) = ctx_borrow.sym_table.get_symbol(func_sym_pos) {
-                if !TypeChecker::is_callable(func_sym) {
-                    return Err(
-                        _InternalSAErrType::__ISET__NonCallable { name: func_call.symbol_name.clone() }
-                    );
-                } else {
-                    func_call.result_type = func_sym.lit_type;
-                    return Ok(());
-                }
-            }
-        } 
-        Ok(())
-    }
-
-    /// Retrieves the literal type of a symbol by its name, if available.
-    /// This function does not return errors, but may return `None` if the 
-    /// symbol cannot be found.
-    fn get_ident_type(&self, sym_name: &str) -> Option<LitTypeVariant> {
-        let ctx_borrow = self.ctx.borrow();
-        ctx_borrow.find_sym(sym_name).ok().map(|symbol| symbol.lit_type)
-    }
-
-    fn construct_sa_err(&self, ast: &AST, err: _InternalSAErrType) -> SAError {
-        match err {
-            _InternalSAErrType::__ISET_UndefinedSymbol__ { name } => {
-                SAError::TypeError(SATypeError::NonCallable { sym_name: name })
-                // SAError::UndefinedSymbol { sym_name: name, token: ast.start_token.clone().unwrap() }
-            },
-            _InternalSAErrType::__ISET__NonCallable { name } => {
-                SAError::TypeError(SATypeError::NonCallable { sym_name: name })
-            }
-        }
     }
 }
 

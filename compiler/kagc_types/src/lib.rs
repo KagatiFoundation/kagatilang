@@ -129,6 +129,15 @@ impl Display for LitTypeVariant {
     }
 }
 
+macro_rules! check_lit_type_var_fn_impl {
+    ($fn_name:ident, $variant:ident) => {
+        pub fn $fn_name(&self) -> bool {
+            matches!(self, Self::$variant)
+        }
+    };
+}
+
+
 impl LitTypeVariant {
     pub fn size(&self) -> usize {
         match self {
@@ -148,6 +157,9 @@ impl LitTypeVariant {
     pub fn is_int_variant(&self) -> bool {
         matches!(self, LitTypeVariant::I32 | LitTypeVariant::I16 | LitTypeVariant::I64 | LitTypeVariant::U8)
     }
+
+    check_lit_type_var_fn_impl!(is_void, Void);
+    check_lit_type_var_fn_impl!(is_none, None);
 }
 
 impl PartialEq for LitType {

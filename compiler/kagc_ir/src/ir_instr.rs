@@ -15,24 +15,37 @@ pub enum IRInstr {
     Call {
         fn_name: String,
 
-        params: Vec<IRLitType>,
+        params: Vec<(usize, IRLitType)>,
 
-        return_type: IRLitType
+        return_type: Option<IRLitType>
+    },
+
+    Store {
+        /// Value to be stored. `src` is always a register type.
+        src: IRLitType,
+
+        /// Location to store to. `IRLitType` must be of type `IRLitType::StackOff(usize)`.
+        stack_off: IRLitType
     },
     
     Load {
-        /// Destination to load to 
+        /// Destination to load to. `dest` is always a register type
         dest: IRLitType,
 
         /// Stack offset to load value from
+        /// TODO: change the type of `IRLitType`
         stack_off: usize
     },
 
-    /// Notifies the code generator that the registers must be
-    /// allocated in the range x0-x7.
-    FuncCallStart,
+    Jump {
+        label_id: usize
+    },
 
-    FuncCallEnd
+    /// Function call start
+    CallStart,
+
+    /// Function call end
+    CallEnd
 }
 
 impl IRInstr {
@@ -42,12 +55,13 @@ impl IRInstr {
 
             Self::Add(dst, _, _) => Some(dst.clone()),
 
-            Self::Call { .. } => Some(IRLitType::Reg(0)),
+            Self::Call { return_type, .. } => return_type.clone(),
 
             Self::Load { dest, .. } => Some(dest.clone()),
 
-            Self::FuncCallStart |
-            Self::FuncCallEnd => None
+            Self::Store { stack_off, .. } => Some(stack_off.clone()),
+
+            _ => None
         }
     }
 
@@ -59,7 +73,7 @@ impl IRInstr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IRFunc {
     pub name: String,
     pub params: Vec<IRLitType>,
@@ -68,7 +82,7 @@ pub struct IRFunc {
     pub is_leaf: bool
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IRVarDecl {
     pub sym_name: String,
     pub class: StorageClass,
@@ -76,9 +90,17 @@ pub struct IRVarDecl {
     pub offset: Option<usize>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct IRReturn {
+    pub early: bool,
+
+    pub early_label_id: usize
+}
+
+#[derive(Debug, Clone)]
 pub enum IR {
     Func(IRFunc),
     VarDecl(IRVarDecl),
+    Return(IRReturn),
     Instr(IRInstr)
 }

@@ -44,6 +44,26 @@ pub struct SubscriptExpr {
     pub result_type: LitTypeVariant
 }
 
+/// Represents the original index of a function argument in the source code.
+/// This helps preserve argument order during transformations like sorting.
+///
+/// Example:
+/// ```
+/// let arg_index: ArgIdx = 2; // Third argument (zero-based index)
+/// ```
+pub type ArgIdx = usize;
+
+/// Represents a function argument, storing both:
+/// - The original argument index (`ArgIdx`) to preserve order.
+/// - The actual expression (`Expr`) representing the argument.
+///
+/// Example:
+/// ```
+/// let arg: FuncArg = (0, Expr::Ident("x".to_string())); // First argument is an identifier "x"
+/// ```
+pub type FuncArg = (ArgIdx, Expr);
+
+
 #[derive(Clone, Debug)]
 pub struct FuncCallExpr {
     /// Name of the called function
@@ -51,7 +71,7 @@ pub struct FuncCallExpr {
 
     pub result_type: LitTypeVariant, // function return type
     // args
-    pub args: Vec<Expr>
+    pub args: Vec<FuncArg>
 }
 
 #[derive(Clone, Debug)]

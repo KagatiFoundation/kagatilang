@@ -1,22 +1,34 @@
+pub mod spill_pass;
+
 use std::collections::HashMap;
 
 use kagc_target::reg::RegIdx;
 
-use crate::{ir_instr::*, ir_types::IRLitType};
+use crate::{ir_instr::*, ir_types::{IRLitType, TempId}};
 
-/// Liveness range of a temporary
+/// Live range of a temporary
 pub type LiveRange = (usize, usize);
 
+#[derive(Debug, Default)]
 pub struct LivenessAnalyzer;
 
 impl LivenessAnalyzer {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn analyze_fn_temps(ir_func: &IRFunc) -> HashMap<usize, LiveRange> {
-        let mut temp_liveness: HashMap<usize, LiveRange> = HashMap::new();
+    /// Computes the live range of temporary values in an IR function.
+    ///
+    /// # Parameters:
+    /// - `ir_func`: The function in intermediate representation (IR).
+    ///
+    /// # Returns:
+    /// A `HashMap<usize, LiveRange>`, where:
+    /// - The key is a temporary value's unique ID.
+    /// - The value (`LiveRange`) is a tuple of:
+    ///   - First occurrence (usize)
+    ///   - Number of instructions until it becomes dead.
+    ///
+    /// This function finds each temporary’s first and last usage, then calculates how long 
+    /// it remains live before being unused.
+    pub fn analyze_fn_temps(ir_func: &IRFunc) -> HashMap<TempId, LiveRange> {
+        let mut temp_liveness: HashMap<TempId, LiveRange> = HashMap::new();
         let live_set: HashMap<usize, usize> = Self::find_temp_appearances(&ir_func.body);
 
         for (temp_idx, first_occurrence) in &live_set {
@@ -106,15 +118,17 @@ impl LivenessAnalyzer {
 
                     IRInstr::Call { params, .. } => {
                         params.iter().any(|param| {
-                            param.as_temp() == Some(temp_lookup) ||
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, param.as_alloc_reg())
+                            param.1.as_temp() == Some(temp_lookup) ||
+                            Self::is_temp_used_in_alloc_reg(temp_lookup, param.1.as_alloc_reg())
                         })
                     },
 
                     _ => false
                 }
             },
+
             IR::VarDecl(vardecl) => matches!(vardecl.value, IRLitType::Temp(t) if t == temp_lookup),
+
             _ => false,
         }
     }

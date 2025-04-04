@@ -121,6 +121,7 @@ impl TypeChecker {
         }
     }
 
+    #[deprecated]
     pub fn is_bin_expr_type_compatibile(bin_expr: &BinExpr) -> bool {
         let left_type: LitTypeVariant = bin_expr.left.result_type();
         let right_type: LitTypeVariant = bin_expr.right.result_type();
@@ -151,6 +152,7 @@ impl TypeChecker {
         sym.sym_type == SymbolType::Function
     }
 
+    #[deprecated]
     pub fn infer_type(expr: &Expr) -> Result<LitTypeVariant, SAError> {
         return match expr {
             Expr::LitVal(lit_val_expr) => Ok(lit_val_expr.result_type),

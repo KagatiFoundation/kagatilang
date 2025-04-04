@@ -1,6 +1,9 @@
 use kagc_symbol::Symbol;
 use kagc_target::reg::RegIdx;
 
+/// Temporary identifier.
+pub type TempId = usize;
+
 #[derive(Debug, Clone)]
 pub enum IRLitVal {
     Str(String),
@@ -28,7 +31,7 @@ pub enum IRLitType {
     
     Reg(RegIdx),
     
-    Temp(usize),
+    Temp(TempId),
 
     /// Experimental
     /// Allocate a register and associate it with a temporary
@@ -37,8 +40,11 @@ pub enum IRLitType {
         reg: RegIdx,
 
         /// Temporary to associate the allocate register with.
-        temp: usize
-    }
+        temp: TempId
+    },
+
+    /// Stack offset
+    StackOff(usize)
 }
 
 pub struct IRSymbol {
@@ -76,7 +82,9 @@ impl IRLitType {
             
             Self::Temp(tmp) => tmp.to_string(),
 
-            Self::AllocReg { .. } => "".to_string()
+            Self::AllocReg { .. } => "".to_string(),
+
+            Self::StackOff(off) => off.to_string()
         }
     }
 
@@ -84,6 +92,7 @@ impl IRLitType {
     check_instr_type!(is_var, Var);
     check_instr_type!(is_const, Const);
     check_instr_type!(is_reg, Reg);
+    check_instr_type!(is_stack_off, StackOff);
 
     pub fn is_alloc_reg(&self) -> bool {
         matches!(self, Self::AllocReg { .. })
@@ -93,6 +102,7 @@ impl IRLitType {
     impl_as_irlit_type!(as_reg, Reg, RegIdx);
     impl_as_irlit_type!(as_var, Var, Symbol);
     impl_as_irlit_type!(as_const, Const, IRLitVal);
+    impl_as_irlit_type!(as_stack_off, StackOff, usize);
 
     pub fn as_alloc_reg(&self) -> Option<(RegIdx, usize)> {
         match self {

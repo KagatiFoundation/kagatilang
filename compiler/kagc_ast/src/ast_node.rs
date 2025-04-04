@@ -222,6 +222,24 @@ impl AST {
         output
     }
 
+    pub fn linearize_mut(&mut self) -> Vec<&mut AST> {
+        let mut output: Vec<&mut AST> = vec![];
+
+        if self.operation == ASTOperation::AST_GLUE {
+            if let Some(left) = &mut self.left {
+                output.extend(left.linearize_mut());
+            }
+
+            if let Some(right) = &mut self.right {
+                output.extend(right.linearize_mut());
+            }
+        }
+        else {
+            output.push(self);
+        }
+        output
+    }
+
     #[allow(unused_parens)]
     pub fn contains_operation(&self, op: ASTOperation) -> bool {
         fn check_node_for_operation(node: &Option<Box<AST>>, op: ASTOperation) -> bool {

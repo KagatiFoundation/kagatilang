@@ -90,7 +90,7 @@ fn main() {
             if !parser_borrow.has_parsing_errors() {
                 s_analyzer.start_analysis(&mut parse_result);
 
-                let mut node_irs: Vec<kagc_ir::ir_instr::IR> = cg.gen_ir(&parse_result);
+                let mut node_irs: Vec<kagc_ir::ir_instr::IR> = cg.gen_ir(&mut parse_result);
                 
                 let mut asm_gen: Aarch64IRToASM<'_> = Aarch64IRToASM::new(Rc::clone(&ctx), Rc::clone(&rm));
                 

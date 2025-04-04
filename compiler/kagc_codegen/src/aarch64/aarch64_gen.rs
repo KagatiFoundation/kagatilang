@@ -441,7 +441,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             self.early_return_label_id = self.get_next_label();
             
             self.emit(&format!("b _L{}", self.early_return_label_id));
-            
+
             return Ok(AllocedReg::early_return());
         }
         Ok(AllocedReg::no_reg())
@@ -607,13 +607,13 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         self.emit(&format!("add sp, sp, #{}\nret\n", stack_size));
     }
 
-    fn gen_ir_fn(&mut self, ast: &AST) -> CGRes {
+    fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes {
         self.reg_manager.borrow_mut().reset();
 
         let func_id: usize = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
             func_decl.func_id
         } else {
-            panic!("Not a valid symbol table indexing method");
+            panic!("Expected FuncStmt but found {:?}", ast);
         };
 
         let func_name: String = self.get_func_name(func_id).expect("Function name error!");
@@ -661,13 +661,18 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             // local temporary counter starts at 0
             temp_counter: 0,
 
+            // register information
             reg_counter: None,
+            force_reg_use: false,
 
-            force_reg_use: false
+            // early return information
+            early_return: false,
         };
 
-        for body_ast in ast.left.as_ref().unwrap().linearize() {
-            let body_ir: Vec<IR> = self.gen_ir_from_node(body_ast, &mut fn_ctx)?;
+        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+
+        for body_ast  in linearized_body {
+            let body_ir = self.gen_ir_from_node(body_ast, &mut fn_ctx, ASTOperation::AST_FUNCTION)?;
             fn_body.extend(body_ir);
         }
 
@@ -689,7 +694,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         )
     }
 
-    fn gen_ir_var_decl(&mut self, ast: &AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let Some(Stmt::VarDecl(var_decl)) = ast.kind.as_stmt() {
             let var_sym: Symbol = self.get_symbol_local_or_global(&var_decl.sym_name).unwrap();
 
@@ -697,7 +702,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
                 panic!("Variable is not assigned a value!");
             }
 
-            let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_ref().unwrap(), fn_ctx)?;
+            let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
 
             let decl_ir: IR = IR::VarDecl(
                 IRVarDecl {
@@ -740,49 +745,138 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         ])
     }
 
-    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let use_reg: bool = fn_ctx.force_reg_use;
+        let forced_reg: Option<usize> = fn_ctx.reg_counter;
+
         let mut param_instrs: Vec<IRInstr> = vec![];
 
-        let mut actual_params: Vec<IRLitType> = vec![];
+        let mut actual_params: Vec<(usize, IRLitType)> = vec![];
 
-        let mut param_reg_counter: RegIdx = 0;
+        let num_args: usize = func_call_expr.args.len();
 
-        #[allow(clippy::explicit_counter_loop)]
-        for param_expr in &func_call_expr.args {
-            fn_ctx.force_reg_use(param_reg_counter);
+        for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
+            let param_reg_idx = num_args - 1 - rev_idx;
+            
+            fn_ctx.force_reg_use(param_reg_idx);
 
-            // advance the register counter after use
-            param_reg_counter += 1;
+            let current_tmp: usize = fn_ctx.temp_counter;
 
             let p_instr: Vec<IRInstr> = self.__gen_expr(param_expr, fn_ctx)?;
 
-            if let Some(dest) = p_instr.last().unwrap().clone().dest() {
-                actual_params.push(dest.clone());
-            }
-            else {
-                panic!("No destination??? {:#?}", p_instr.last().unwrap().clone());
-            };
+            let new_temp: usize = fn_ctx.temp_counter;
+            let tmp_reg_loc: usize = current_tmp + (new_temp - current_tmp) - 1;
 
             param_instrs.extend(p_instr);
+
+            actual_params.push((param_reg_idx, IRLitType::Temp(tmp_reg_loc)));
         }
 
-        fn_ctx.clear_reg_hint();
+        if use_reg {
+            fn_ctx.force_reg_use(forced_reg.unwrap());
+        }
+        else {
+            fn_ctx.clear_reg_hint();
+        }
 
-        // actual function call begins here...
-        param_instrs.push(IRInstr::FuncCallStart);
-
-        param_instrs.push(
-            IRInstr::Call {
-                fn_name: func_call_expr.symbol_name.clone(),
-                params: actual_params,
-                return_type: IRLitType::Temp(0)
+        let (fn_call_ret_type, preserve_ret_val_instr) = 
+        if !func_call_expr.result_type.is_void() {
+            if use_reg {
+                (
+                    Some(IRLitType::Reg(forced_reg.unwrap())),
+                    Some(IRInstr::Mov(
+                        IRLitType::Reg(forced_reg.unwrap()),
+                        IRLitType::Reg(0)
+                    ))
+                )
             }
-        );
+            else {
+                let call_tmp: usize = fn_ctx.temp_counter;
+                fn_ctx.temp_counter += 1;
+                (
+                    Some(IRLitType::Temp(call_tmp)),
+                    Some(IRInstr::Mov(
+                        IRLitType::Temp(call_tmp),
+                        IRLitType::Reg(0)
+                    ))
+                )
+            }
+        }
+        else {
+            (None, None)
+        };
 
-        // function call ends here
-        param_instrs.push(IRInstr::FuncCallEnd);
+        param_instrs.push(IRInstr::Call {
+            fn_name: func_call_expr.symbol_name.clone(),
+            params: actual_params,
+            return_type: fn_call_ret_type
+        });
+
+        if let Some(preserve_instr) = preserve_ret_val_instr {
+            param_instrs.push(preserve_instr);
+        }
 
         Ok(param_instrs)
+    }
+
+    fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+        if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
+            let mut ret_instrs: Vec<IR> = if fn_ctx.early_return {
+                // turn off early return ASAP
+                fn_ctx.early_return = false;
+
+                self.early_return_label_id = self.get_next_label();
+                vec![
+                    IR::Instr(IRInstr::Jump { label_id: self.early_return_label_id })
+                ]
+            }
+            else {
+                vec![]
+            };
+
+            // if the function is non-void type
+            if let Some(curr_fn) = &self.current_function {
+                if !curr_fn.return_type.is_void() {
+                    // use the x0 as the return register
+                    fn_ctx.force_reg_use(0);
+                    let ret_stmt_instrs: Vec<IRInstr> = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
+
+                    ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
+
+                    // free x0
+                    fn_ctx.clear_reg_hint();
+                }
+            }
+
+            return Ok(ret_instrs);
+        }
+        panic!("Expected ReturnStmt but found {:?}", ret_stmt);
+    }
+}
+
+impl<'aarch64> Aarch64CodeGen<'aarch64> {
+    pub fn sort_fn_call_args(args: &mut [FuncArg]) {
+        args.sort_by(|a, b| {
+            let a_priority = match &a.1 {
+                Expr::FuncCall(_) => 0,
+                Expr::Subscript(_) => 1,
+                Expr::Binary(_) => 2,
+                Expr::Widen(_) => 3,
+                Expr::Ident(_) => 4,
+                Expr::LitVal(_) => 5,
+            };
+            
+            let b_priority = match &b.1 {
+                Expr::FuncCall(_) => 0,
+                Expr::Subscript(_) => 1,
+                Expr::Binary(_) => 2,
+                Expr::Widen(_) => 3,
+                Expr::Ident(_) => 4,
+                Expr::LitVal(_) => 5,
+            };
+            
+            a_priority.cmp(&b_priority)
+        });
     }
 }
 
