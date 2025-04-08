@@ -425,6 +425,10 @@ pub trait CodeGen {
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        if let LitType::Str { label_id, .. } = &lit_expr.value  {
+            return self.gen_ir_load_str(*label_id, fn_ctx);
+        }
+
         let ir_lit: IRLitVal = match lit_expr.result_type {
             LitTypeVariant::I32 => IRLitVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")),
             LitTypeVariant::U8 => IRLitVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")),
@@ -433,21 +437,26 @@ pub trait CodeGen {
 
         let lit_val_tmp: usize = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 1;
+  
+        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit))])
+    }
 
-        if fn_ctx.force_reg_use {
-            let reg_idx: usize = fn_ctx.reg_counter.unwrap();
-            let dest_instr: IRLitType = IRLitType::AllocReg { reg: reg_idx, temp: lit_val_tmp };
+    fn gen_ir_load_str(&mut self, label_id: LabelId, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        self.gen_ir_load_global_var(&format!("_STR_{label_id}"), fn_ctx)
+    }
 
-            Ok(vec![
-                IRInstr::Mov(
-                    dest_instr,
-                    IRLitType::Const(ir_lit)
-                )
-            ])
-        }
-        else {
-            Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit))])
-        }
+    fn gen_ir_load_global_var(&mut self, id_name: &str, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let lit_val_tmp: usize = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 1;
+
+        Ok(
+            vec![
+                IRInstr::LoadGlobal { 
+                    name: String::from(id_name), 
+                    dest: IRLitType::Temp(lit_val_tmp) 
+                }
+            ]
+        )
     }
 
     fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {

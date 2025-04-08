@@ -44,6 +44,15 @@ pub enum IRInstr {
         stack_off: usize
     },
 
+    /// Load global variable
+    LoadGlobal {
+        /// Variable's name
+        name: String,
+
+        /// Destination to load to
+        dest: IRLitType
+    },
+
     /// Conditional jump
     CondJump {
         /// Operand 1
@@ -80,6 +89,8 @@ impl IRInstr {
             Self::Call { return_type, .. } => return_type.clone(),
 
             Self::Load { dest, .. } => Some(dest.clone()),
+            
+            Self::LoadGlobal { dest, .. } => Some(dest.clone()),
 
             Self::Store { stack_off, .. } => Some(stack_off.clone()),
 

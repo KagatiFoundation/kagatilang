@@ -65,8 +65,14 @@ pub enum LitType {
     F32(f32), // Single-precision floating point number. 32-bit float type.
     Void,     // Void return type
     
-    /// Value and the label id
-    Str(String, usize),
+    /// A string literal value paired with a unique label identifier.
+    Str {
+        /// String literal value
+        value: String, 
+
+        /// String's label ID
+        label_id: usize
+    },
 
     /// First usize: Length of the array, second usize: Size of each 
     /// element in the array
@@ -86,7 +92,7 @@ impl From<LitType> for String {
             LitType::F64(_) => todo!(),
             LitType::F32(_) => todo!(),
             LitType::Void => todo!(),
-            LitType::Str(_, _) => todo!(),
+            LitType::Str { .. } => todo!(),
             LitType::Array(_) => todo!(),
             LitType::Null => todo!(),
             LitType::None => todo!(),
@@ -154,12 +160,15 @@ impl LitTypeVariant {
         }
     }
 
-    pub fn is_int_variant(&self) -> bool {
+    pub fn is_int(&self) -> bool {
         matches!(self, LitTypeVariant::I32 | LitTypeVariant::I16 | LitTypeVariant::I64 | LitTypeVariant::U8)
     }
 
     check_lit_type_var_fn_impl!(is_void, Void);
     check_lit_type_var_fn_impl!(is_none, None);
+    check_lit_type_var_fn_impl!(is_str, Str);
+    check_lit_type_var_fn_impl!(is_int32, I32);
+    check_lit_type_var_fn_impl!(is_int8, U8);
 }
 
 impl PartialEq for LitType {
@@ -179,7 +188,7 @@ impl PartialEq for LitType {
 macro_rules! impl_ltype_unwrap {
     ($fn_name:ident, $variant:ident, $ty:ty) => {
         pub fn $fn_name(&self) -> Option<&$ty> {
-            if let LitType::$variant(val) = self {
+            if let LitType::$variant(val, ..) = self {
                 Some(val)
             } else {
                 None
@@ -191,7 +200,7 @@ macro_rules! impl_ltype_unwrap {
 macro_rules! impl_ltype_tychk {
     ($fn_name:ident, $variant:ident) => {
         pub fn $fn_name(&self) -> bool {
-            matches!(self, Self::$variant(_))
+            matches!(self, Self::$variant(..))
         }
     };
 }
@@ -208,6 +217,15 @@ impl LitType {
     impl_ltype_unwrap!(unwrap_f64, F64, f64);
     impl_ltype_unwrap!(unwrap_f32, F32, f32);
 
+    pub fn unwrap_str(&self) -> Option<&String> {
+        if let LitType::Str { value, .. } = self {
+            Some(value)
+        }
+        else {
+            None
+        }
+    }
+
     pub fn variant(&self) -> LitTypeVariant {
         match self {
             Self::I32(_) => LitTypeVariant::I32,
@@ -216,7 +234,7 @@ impl LitType {
             Self::U8(_) => LitTypeVariant::U8,
             Self::F64(_) => LitTypeVariant::F64,
             Self::F32(_) => LitTypeVariant::F32,
-            Self::Str(_, _) => LitTypeVariant::Str,
+            Self::Str { .. } => LitTypeVariant::Str,
             Self::Void => LitTypeVariant::Void,
             Self::Array(_) => LitTypeVariant::Array,
             _ => panic!("not a valid type to calculate variant of!"),
@@ -271,7 +289,7 @@ impl Display for LitType {
         let result = match self {
             LitType::I32(value) => format!("{}", *value),
             LitType::U8(value) => format!("{}", *value),
-            LitType::Str(value, _) => value.clone(),
+            LitType::Str { value, .. } => value.clone(),
             _ => panic!()
         };
         _ = writeln!(f, "{}", result);

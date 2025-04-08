@@ -1,8 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::StorageClass;
+use kagc_symbol::{StorageClass, Symbol, SymbolType};
 use kagc_target::{asm::aarch64::*, reg::*};
+use kagc_types::{LitType, LitTypeVariant};
 
 use crate::{
     ir_asm::ir_asm_gen::*, 
@@ -90,13 +91,13 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
         // return vec![];
 
         let mut output: Vec<String> = vec![];
+        output.push(self.dump_global_strings());
+        output.push(String::from(".text"));
+
         for ir in irs {
             let output_str: String = self.gen_asm_from_ir_node(ir);
             output.push(output_str);
         }
-
-        // println!("{:#?}", self.reg_manager.borrow().spilled_stack);
-
         output
     }
 
@@ -194,6 +195,89 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
         }
         else {
             panic!("Compile time information not avaailable for function!");
+        }
+    }
+
+    fn dump_global_strings(&self) -> String {
+        let ctx_borrow = self.ctx.borrow();
+
+        // output
+        let mut output_str: String = String::new();
+
+        for symbol in ctx_borrow.sym_table.iter() {
+            // ignore non-global constants
+            if (symbol.lit_type == LitTypeVariant::None) || symbol.sym_type == SymbolType::Function || symbol.class != StorageClass::GLOBAL {
+                continue;
+            }
+
+            if symbol.lit_type == LitTypeVariant::Str && symbol.sym_type == SymbolType::Constant {
+                let str_const_name_and_val: Vec<&str> = symbol.name.split("---").collect::<Vec<&str>>();
+                let str_const_name: String = String::from(str_const_name_and_val[0]);
+                
+                output_str.push_str(&format!(".data\n.global {str_const_name}\n"));
+                output_str.push_str(&format!("{str_const_name}:\n\t.asciz \"{}\"\n", str_const_name_and_val[1]));
+
+                continue;
+            }
+
+            output_str.push_str(&format!(".data\n.global {}", symbol.name));
+            
+            if symbol.sym_type == SymbolType::Variable {
+                output_str.push_str(&Self::dump_global_with_alignment(symbol));
+            } 
+            else if symbol.sym_type == SymbolType::Array {
+                let array_data_size: usize = symbol.lit_type.size();
+                
+                output_str.push_str(&format!("{}:", symbol.name));
+
+                for _ in 0..symbol.size {
+                    output_str.push_str(&Self::alloc_data_space(array_data_size));
+                }
+            }
+        }
+
+        output_str
+    }
+
+    fn dump_global_with_alignment(symbol: &Symbol) -> String {
+        let def_val: String = if let Some(dv) = &symbol.default_value {
+            dv.to_string()
+        } 
+        else { 
+            "0".to_string() 
+        };
+
+        match symbol.lit_type {
+            LitTypeVariant::I32 => format!("{}: .align 4\n\t.word {}", symbol.name, def_val),
+
+            LitTypeVariant::U8 => format!("{}:\t.byte {}", symbol.name, def_val),
+
+            LitTypeVariant::Str => {
+                let label_id: i32 = if let Some(lit_val) = &symbol.default_value {
+                    if let LitType::I32(__id) = lit_val {
+                        *__id
+                    }
+                    else {
+                        panic!("Not a valid label id for string literal '{}'", symbol.default_value.as_ref().unwrap())
+                    }
+                } 
+                else {
+                    panic!("No label id provided for string literal");
+                };
+
+                format!("{}:\t.quad ._L{:?}", symbol.name, label_id)
+            },
+
+            _ => panic!("Symbol's size is not supported right now: '{:?}'", symbol),
+        }
+    }
+    
+    fn alloc_data_space(size: usize) -> String {
+        match size {
+            1 => ".byte 0".to_string(),
+            4 => ".word 0".to_string(),
+            8 => ".quad 0".to_string(),
+            _ => panic!("Not possible to generate space for size: {}", size),
         }
     }
 }
@@ -370,7 +454,7 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
     }
     
     fn gen_ir_mov_asm(&mut self, dest: &IRLitType, src: &IRLitType) -> String {
-        let dest_reg = self.resolve_register(dest);
+        let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
         let reg_name: String = dest_reg.1.name();
 
         let operand: String = self.extract_operand(src);
@@ -424,6 +508,17 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
         format!("_L{}:", ir_label.0)
     }
 
+    fn gen_load_global_asm(&mut self, var_name: &str, dest: &IRLitType) -> String {
+        let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
+        let dest_reg_name: &str = &dest_reg.1.name_64();
+
+        let mut output_str: String = String::new();
+        output_str.push_str(&format!("ADRP {dest_reg_name}, {var_name}@PAGE\n"));
+        output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, {var_name}@PAGEOFF"));
+
+        output_str
+    }
+
     fn gen_cond_jmp_asm(&mut self, op1: &IRLitType, op2: &IRLitType, operation: IRCondOp, label_id: LabelId) -> String {
         let compare_operator: &str = match operation {
             IRCondOp::IRLThan => "BGE",
@@ -449,21 +544,17 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
                 match irlit_val {
                     IRLitVal::Int32(value) => value.to_string(),
                     IRLitVal::U8(value) => value.to_string(),
+                    IRLitVal::Str(value, ..) => value.clone(),
                     _ => todo!()
                 }
             },
             
-            // soon to be removed
             IRLitType::Reg(idx) => format!("w{}", idx),
             
             IRLitType::Temp(temp_value) => {
                 let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
                 self.try_dropping_temp(*temp_value);
                 src_reg.name()
-            },
-
-            IRLitType::Var(var) => {
-                var.name.clone()
             },
 
             _ => unimplemented!()

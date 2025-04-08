@@ -111,6 +111,10 @@ impl<'sa> SemanticAnalyzer<'sa> {
                 );
             }
 
+            if let Some(if_body) = &mut node.mid {
+                self.analyze_node(if_body)?;
+            }
+
             return Ok(cond_res);
         }
 
@@ -146,7 +150,6 @@ impl<'sa> SemanticAnalyzer<'sa> {
                 }
 
                 func_call.result_type = func_sym.lit_type;
-
                 return Ok(func_sym.lit_type);
             }
         }
@@ -234,7 +237,6 @@ impl<'sa> SemanticAnalyzer<'sa> {
                 }
 
                 func_call.result_type = func_sym.lit_type;
-
                 return Ok(func_sym.lit_type);
             }
         }
@@ -321,7 +323,7 @@ impl<'sa> SemanticAnalyzer<'sa> {
             drop(ctx_borrow);
 
             if let Some(func_body) = &mut node.left {
-                return self.analyze_node(func_body);
+                self.analyze_node(func_body)?;
             }
 
             self.ctx.borrow_mut().switch_to_global_scope();
@@ -434,7 +436,10 @@ mod tests {
                         right: Box::new(
                             Expr::LitVal(
                                 LitValExpr {
-                                    value: LitType::Str("bichara".to_string(), 7),
+                                    value: LitType::Str {
+                                        value: "bichara".to_string(), 
+                                        label_id: 7
+                                    },
                                     result_type: LitTypeVariant::Str
                                 }
                             )

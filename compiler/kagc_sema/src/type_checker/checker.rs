@@ -90,7 +90,7 @@ impl TypeChecker {
         match op {
             ASTOperation::AST_ADD => {
                 // addition operation requires both of the expressions to be integer types(for now)
-                if a.is_int_variant() && b.is_int_variant() {
+                if a.is_int() && b.is_int() {
                     let a_size: usize = a.size();
                     let b_size: usize = b.size();
 
@@ -165,7 +165,7 @@ impl TypeChecker {
             ASTOperation::AST_ADD 
             | ASTOperation::AST_SUBTRACT
             | ASTOperation::AST_MULTIPLY => {
-                if left_type.is_int_variant() && right_type.is_int_variant() {
+                if left_type.is_int() && right_type.is_int() {
                     return TypeChecker::is_type_coalesciable(left_type, right_type) 
                             || TypeChecker::is_type_coalesciable(right_type, left_type);
                 }

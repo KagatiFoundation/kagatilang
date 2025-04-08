@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+use std::fmt::format;
+
 pub struct RegAllocError;
 
 /// Register size
@@ -91,10 +93,15 @@ impl AllocedReg {
     }
 
     pub fn name(&self) -> String {
-        match self.size {
-            8 => format!("x{}", self.idx),
-            _ => format!("w{}", self.idx),
-        }
+        format!("x{}", self.idx)
+    }
+
+    pub fn name_32(&self) -> String {
+        format!("w{}", self.idx)
+    }
+
+    pub fn name_64(&self) -> String {
+        format!("x{}", self.idx)
     }
 }
 

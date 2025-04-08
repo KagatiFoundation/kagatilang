@@ -638,9 +638,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         self.ctx.borrow_mut().switch_to_func_scope(func_id);
 
         let store_class: StorageClass = func_info.storage_class;
-
         let mut stack_off: usize = 0;
-
         let mut virtual_reg: usize = 0;
 
         // Collect function parameters and map each of them to a 
@@ -805,7 +803,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         }
 
         let preserve_ret_val_instr: Option<IRInstr> = 
-        if !func_call_expr.result_type.is_void() {
+        if !func_call_expr.result_type.is_void() && !func_call_expr.result_type.is_none() {
             if use_reg {
                 Some(IRInstr::Mov(
                     IRLitType::Reg(forced_reg.unwrap()),
@@ -1021,7 +1019,7 @@ impl<'aarch64> Aarch64CodeGen<'aarch64> {
     fn dump_gid_address_load_code_from_label_id(&self, reg_name: &str, id: &LitType) {
         let symbol_label_id: usize = match id {
             LitType::I32(_idx) => *_idx as usize,
-            LitType::Str(_, label) => *label,
+            LitType::Str { label_id, .. } => *label_id,
             _ => panic!("Can't index symtable with this type: {:?}", id),
         };
         println!("adrp {}, _L{}@PAGE", reg_name, symbol_label_id);

@@ -447,11 +447,14 @@ impl<'parser> Parser<'parser> {
                     curr_tok.clone()
                 )
             ));
+
             if self.__panic_mode {
                 panic!("{:?}", __err);
             }
+
             return __err;
         }
+
         _ = self.token_match(TokenKind::T_ARROW)?;
         let func_ret_type: LitTypeVariant = self.parse_id_type()?;
         Ok(func_ret_type)
@@ -1047,7 +1050,7 @@ impl<'parser> Parser<'parser> {
                     panic!("No context provided for parser!");
                 };
                 let str_const_symbol: Symbol = Symbol::new(
-                    format!("_L{}---{}", str_label, current_token.lexeme.clone()),
+                    format!("_STR_{}---{}", str_label, current_token.lexeme.clone()),
                     LitTypeVariant::Str,
                     SymbolType::Constant,
                     StorageClass::GLOBAL,
@@ -1057,7 +1060,10 @@ impl<'parser> Parser<'parser> {
                     ASTKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
-                                value: LitType::Str(current_token.lexeme.clone(), str_label as usize),
+                                value: LitType::Str { 
+                                    value: current_token.lexeme.clone(), 
+                                    label_id: str_label as usize
+                                },
                                 result_type: LitTypeVariant::Str,
                             }
                         )

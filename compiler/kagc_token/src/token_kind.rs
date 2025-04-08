@@ -218,7 +218,7 @@ impl FromTokenKind<LitType> for LitType {
             TokenKind::T_CHAR => Some(LitType::U8(0)),
             TokenKind::T_DOUBLE_NUM => Some(LitType::F64(0.0)),
             TokenKind::T_LONG_NUM => Some(LitType::I64(0)),
-            TokenKind::T_STRING => Some(LitType::Str("".to_string(), 0)),
+            TokenKind::T_STRING => Some(LitType::Str { value: "".to_string(), label_id: 0}),
             TokenKind::KW_VOID => Some(LitType::Void),
             _ => None,
         }

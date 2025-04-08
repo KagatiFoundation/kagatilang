@@ -2,12 +2,14 @@ use kagc_ast::ASTOperation;
 use kagc_symbol::Symbol;
 use kagc_target::reg::RegIdx;
 
+use crate::LabelId;
+
 /// Temporary identifier.
 pub type TempId = usize;
 
 #[derive(Debug, Clone)]
 pub enum IRLitVal {
-    Str(String),
+    Str(String, LabelId),
     Int64(i64),
     Int32(i32),
     U8(u8)
@@ -16,7 +18,7 @@ pub enum IRLitVal {
 impl IRLitVal {
     pub fn into_str(&self) -> String {
         match self {
-            IRLitVal::Str(value) => value.clone(),
+            IRLitVal::Str(value, ..) => value.clone(),
             IRLitVal::Int64(value) => value.to_string(),
             IRLitVal::Int32(value) => value.to_string(),
             IRLitVal::U8(value) => value.to_string()
