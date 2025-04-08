@@ -908,12 +908,10 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         // change the parent AST kind to AST_IF
         fn_ctx.change_parent_ast_kind(ASTOperation::AST_IF);
+        fn_ctx.change_label_use(label_if_false);
 
         // Evaluate the condition and store the resilt in a register.
         // Every if-else must have the `left` branch set in the main if-else AST tree.
-
-        fn_ctx.change_label_use(label_if_false);
-        
         let cond_result: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
         
         fn_ctx.reset_label_hint();
@@ -924,8 +922,11 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         fn_ctx.reset_parent_ast_kind();
 
-        let if_body: Vec<IR> = self.gen_ir_from_node(ast.mid.as_mut().unwrap(), fn_ctx, ASTOperation::AST_IF)?;
-        output.extend(if_body);
+        let linearized_body: Vec<&mut AST> = ast.mid.as_mut().unwrap().linearize_mut();
+        for body_ast  in linearized_body {
+            let body_ir: Vec<IR> = self.gen_ir_from_node(body_ast, fn_ctx, ASTOperation::AST_IF)?;
+            output.extend(body_ir);
+        }
 
         if ast.right.is_some() {
             output.extend(self.gen_ir_jump(label_end)?);

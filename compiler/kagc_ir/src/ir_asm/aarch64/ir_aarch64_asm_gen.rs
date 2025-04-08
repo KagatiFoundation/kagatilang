@@ -549,7 +549,7 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
                 }
             },
             
-            IRLitType::Reg(idx) => format!("w{}", idx),
+            IRLitType::Reg(idx) => format!("x{}", idx),
             
             IRLitType::Temp(temp_value) => {
                 let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
