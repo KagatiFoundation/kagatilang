@@ -1,31 +1,29 @@
-# Generated Assembly Output
+# How to use
 
-Given the following source code:
+## Declaring a variable
+```
+let a = 1234;
 
-```c
-// Source Code
+// OR
 
-def main(x: integer) -> void {
-   let num = 1299 + 1299;
-   let num2 = 1299;
+let a: integer = 1234;
+```
+
+## Defining a function
+```
+def random() -> void {
+   let num: integer = 1234;
 }
 ```
 
-The compiler generates the following AArch64 assembly:
-
-```assembly
-.global _main
-_main:
-sub sp, sp, #32
-str x0, [sp, #24]
-MOV w8, 1299
-MOV w9, 1299
-ADD w10, w8, w9
-str w10, [sp, #16]
-MOV w11, 1299
-str w11, [sp, #8]
-add sp, sp, #32
-ret
+## Defining an external function
+```
+def extern puts(x: str) -> void;
 ```
 
-This output represents the compiled function with stack management, immediate values, and basic arithmetic operations.
+## Infinite loop
+```
+loop {
+   // do sth
+}
+```

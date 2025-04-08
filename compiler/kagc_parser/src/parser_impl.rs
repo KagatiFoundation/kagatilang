@@ -80,7 +80,7 @@ pub struct Parser<'parser> {
     /// Local symbols of the function that is currently being parsed.
     temp_local_syms: Symtable<Symbol>,
 
-    temp_local_params: Symtable<FuncParam>,
+    temp_local_params: Symtable<Symbol>,
 
     /// Offset of next local variable.
     local_offset: i32,
@@ -293,27 +293,27 @@ impl<'parser> Parser<'parser> {
         let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
         _ = self.token_match(TokenKind::T_LPAREN)?;
 
-        let current_file = self.get_current_file_name();
+        let current_file: String = self.get_current_file_name();
 
-        let mut func_params: Symtable<FuncParam> = Symtable::<FuncParam>::new();
+        // let mut func_params: Symtable<FuncParam> = Symtable::<FuncParam>::new();
 
         if self.current_token.kind != TokenKind::T_RPAREN {
             loop {
                 if let Ok(param) = self.parse_parameter() {
-                    self.add_symbol_local(Symbol::__new(
+                    let local_sym = Symbol::__new(
                         param.name.clone(), 
                         param.lit_type, 
                         SymbolType::Variable, 
                         param.lit_type.size(), 
                         StorageClass::PARAM, 
-                        self.local_offset, 
+                        param.offset,
                         None,
                         self.current_function_id
-                    ));
+                    );
 
-                    func_params.add_symbol(param.clone());
+                    self.add_symbol_local(local_sym.clone());
 
-                    self.temp_local_params.add_symbol(param);
+                    self.temp_local_params.add_symbol(local_sym);
                 } 
 
                 let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
@@ -370,9 +370,11 @@ impl<'parser> Parser<'parser> {
             _ = self.token_match_no_advance(TokenKind::T_LBRACE)?;
         }
 
+        let tmp_function_id: usize = function_id.unwrap();
+
         // Parser has to know the function id if it is going into the 
         // "local" state.
-        self.current_function_id = function_id.unwrap();
+        self.current_function_id = tmp_function_id;
 
         // And of course the function name as well :)
         self.current_function_name = Some(id_token.lexeme.clone());
@@ -407,10 +409,9 @@ impl<'parser> Parser<'parser> {
             stack_offset,
             func_return_type,
             func_storage_class,
-            func_params,
             self.temp_local_syms.clone()
         );
-        
+
         // create a new FunctionInfo
         if let Some(ctx_rc) = &mut self.ctx {
             let mut ctx_borrow = ctx_rc.borrow_mut();

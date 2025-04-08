@@ -1,6 +1,6 @@
 use kagc_symbol::StorageClass;
 
-use crate::ir_types::*;
+use crate::{ir_types::*, LabelId};
 
 #[derive(Debug, Clone)]
 pub enum IRInstr {
@@ -13,10 +13,17 @@ pub enum IRInstr {
     ),
 
     Call {
+        /// Function name to call.
         fn_name: String,
 
+        /// Function's parameters explained:
+        /// 
+        /// `usize`: The parameter's position in the argument list.
+        /// 
+        /// `IRLitType`: The parameter.
         params: Vec<(usize, IRLitType)>,
 
+        /// Return type of the function call.
         return_type: Option<IRLitType>
     },
 
@@ -37,7 +44,22 @@ pub enum IRInstr {
         stack_off: usize
     },
 
+    /// Conditional jump
+    CondJump {
+        /// Operand 1
+        op1: IRLitType,
+
+        /// Operand 2
+        op2: IRLitType,
+
+        /// Label ID to jump to.
+        label_id: LabelId,
+
+        operation: IRCondOp
+    },
+
     Jump {
+        /// Label ID to jump to.
         label_id: usize
     },
 
@@ -84,9 +106,16 @@ pub struct IRFunc {
 
 #[derive(Debug, Clone)]
 pub struct IRVarDecl {
+    /// Name of the variable being declared.
     pub sym_name: String,
+
+    /// Storage class of the variable.
     pub class: StorageClass,
+
+    /// Value of the variable.
     pub value: IRLitType,
+
+    /// Stack offset of the variable.
     pub offset: Option<usize>
 }
 
@@ -97,10 +126,29 @@ pub struct IRReturn {
     pub early_label_id: usize
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct IRLabel(pub LabelId);
+
+#[derive(Debug, Default, Clone)]
+pub struct IRLoop {
+    pub start_label: IRLabel,
+
+    pub end_label: IRLabel,
+
+    pub body: Vec<IR>
+}
+
 #[derive(Debug, Clone)]
 pub enum IR {
     Func(IRFunc),
+
     VarDecl(IRVarDecl),
+    
     Return(IRReturn),
+    
+    Loop(IRLoop),
+    
+    Label(IRLabel),
+    
     Instr(IRInstr)
 }

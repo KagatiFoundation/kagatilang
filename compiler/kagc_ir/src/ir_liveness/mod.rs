@@ -43,7 +43,6 @@ impl LivenessAnalyzer {
                 temp_liveness.insert(*temp_idx, (*first_occurrence, live_range));
             }
         }
-
         temp_liveness
     }
 
@@ -51,8 +50,20 @@ impl LivenessAnalyzer {
         let mut live_set: HashMap<usize, usize> = HashMap::new();
 
         for (idx, ir) in body.iter().enumerate() {
-            if let Some(temp) = Self::extract_temp_dest(ir) {
-                live_set.entry(temp).or_insert(idx);
+            match ir {
+                IR::VarDecl(_) 
+                | IR::Instr(_) => {
+                    if let Some(temp) = Self::extract_temp_dest(ir) {
+                        live_set.entry(temp).or_insert(idx);
+                    }
+                },
+                
+                // IR::Loop(ir_loop) => {
+                //     let loop_temps: HashMap<usize, usize> = Self::find_temp_appearances(&ir_loop.body);
+                //     live_set.extend(loop_temps);
+                // },
+
+                _ => ()
             }
         }
 
@@ -64,10 +75,19 @@ impl LivenessAnalyzer {
             .rev()
             .enumerate()
             .find_map(|(rev_idx, ir)| {
-                if Self::is_temp_used(ir, temp_lookup) {
-                    Some(rev_idx)
-                } else {
-                    None
+                match ir {
+                    IR::Instr(_)
+                    | IR::VarDecl(_) => {
+                        if Self::is_temp_used(ir, temp_lookup) {
+                            Some(rev_idx)
+                        } else {
+                            None
+                        }
+                    },
+
+                    // IR::Loop(ir_loop) => Self::find_last_usage(&ir_loop.body, temp_lookup),
+
+                    _ => None
                 }
             })
     }
@@ -122,6 +142,15 @@ impl LivenessAnalyzer {
                             Self::is_temp_used_in_alloc_reg(temp_lookup, param.1.as_alloc_reg())
                         })
                     },
+
+                    IRInstr::CondJump { op1, op2, .. } => {
+                        [
+                            op1.as_temp() == Some(temp_lookup),
+                            op2.as_temp() == Some(temp_lookup),
+                            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_alloc_reg()),
+                            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_alloc_reg())
+                        ].iter().any(|c| *c)
+                    }
 
                     _ => false
                 }

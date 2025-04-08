@@ -1,3 +1,4 @@
+use kagc_ast::ASTOperation;
 use kagc_symbol::Symbol;
 use kagc_target::reg::RegIdx;
 
@@ -45,6 +46,30 @@ pub enum IRLitType {
 
     /// Stack offset
     StackOff(usize)
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
+pub enum IRCondOp {
+    IRLThan,
+    IRGThan,
+    IREqEq,
+    IRNEq,
+    IRGTEq,
+    IRLTEq
+}
+
+impl From<ASTOperation> for IRCondOp {
+    fn from(value: ASTOperation) -> Self {
+        match value {
+            ASTOperation::AST_GTHAN => Self::IRGThan,
+            ASTOperation::AST_LTHAN => Self::IRLThan,
+            ASTOperation::AST_EQEQ => Self::IREqEq,
+            ASTOperation::AST_NEQ => Self::IRNEq,
+            ASTOperation::AST_GTEQ => Self::IRGTEq,
+            ASTOperation::AST_LTEQ => Self::IRLTEq,
+            _ => panic!("Cannot convert!")
+        }
+    }
 }
 
 pub struct IRSymbol {

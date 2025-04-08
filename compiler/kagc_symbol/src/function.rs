@@ -26,15 +26,16 @@ SOFTWARE.
 
 use std::collections::HashMap;
 
+use itertools::Itertools;
 use kagc_types::LitTypeVariant;
 
-use crate::{sym::{StorageClass, Symbol, SymbolTrait}, symbol_table::Symtable};
-
-/// Limit of local variables in a function.
-pub const LOCAL_LIMIT: usize = 1024;
+use crate::{sym::{StorageClass, Symbol}, symbol_table::Symtable};
 
 /// Inavlid function ID.
 pub const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
+
+/// Function ID
+pub type FunctionId = usize;
 
 /// Represents a function parameter in the symbol table.
 #[derive(Clone, Debug)]
@@ -48,52 +49,34 @@ pub struct FuncParam {
     pub offset: i32
 }
 
-impl SymbolTrait for FuncParam {
-    fn uninit() -> Self {
-        Self {
-            lit_type: LitTypeVariant::None,
-            name: "".to_string(),
-            offset: -1
-        }
-    }
-
-    fn name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn is_unused(&self) -> bool {
-        false
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct LocalSymbol {
-    pub name: String,
-    pub sym_type: LitTypeVariant,
-    pub offset: usize,
-}
-
 #[derive(Clone, Debug)]
 pub struct FunctionInfo {
+    /// Name of the function.
     pub name: String,
-    pub func_id: usize,
+
+    /// ID of the function.
+    pub func_id: FunctionId,
+
+    /// The amount of stack space the function takes.
     pub stack_size: i32,
+
+    /// The return type of the function.
     pub return_type: LitTypeVariant,
+
     /// Contains information about the variables defined locally in 'this' function
     pub local_syms: Symtable<Symbol>,
-    pub storage_class: StorageClass,
-    pub params: Symtable<FuncParam>,
+    
+    /// Storage class of the function.
+    pub storage_class: StorageClass
 }
 
 impl FunctionInfo {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String, 
         func_id: usize, 
         stack_size: i32, 
         return_type: LitTypeVariant,
         storage_class: StorageClass,
-        params: Symtable<FuncParam>,
         locals: Symtable<Symbol>,
     ) -> Self {
         Self {
@@ -103,12 +86,27 @@ impl FunctionInfo {
             return_type, 
             local_syms: locals,
             storage_class,
-            params,
         }
     }
 
+    pub fn get_param(&self, param_name: &str) -> Option<&Symbol> {
+        self.collect_params().into_iter().find(|&sym| sym.name == param_name)
+    }
+
     pub fn has_param(&self, param_name: &str) -> bool {
-        self.params.find_symbol(param_name).is_some()
+        self.collect_params().into_iter().any(|sym| sym.name == param_name)
+    }
+
+    pub fn has_local_sym(&self, local_sym_name: &str) -> bool {
+        self.collect_locals().into_iter().any(|sym| sym.name == local_sym_name)
+    }
+
+    pub fn collect_locals(&self) -> Vec<&Symbol> {
+        self.local_syms.iter().filter(|&sym| sym.class == StorageClass::LOCAL).collect_vec()
+    }
+
+    pub fn collect_params(&self) -> Vec<&Symbol> {
+        self.local_syms.iter().filter(|&sym| sym.class == StorageClass::PARAM).collect_vec()
     }
 }
 

@@ -24,7 +24,7 @@ SOFTWARE.
 
 use kagc_symbol::StorageClass;
 
-use crate::{ir_instr::*, ir_types::*};
+use crate::{ir_instr::*, ir_types::*, LabelId};
 
 pub(crate) const NO_INSTR: &str = "";
 
@@ -57,6 +57,10 @@ pub trait IRToASM {
                 }
             },
 
+            IR::Loop(loop_stmt) => self.gen_ir_loop_asm(loop_stmt),
+
+            IR::Label(label) => self.gen_ir_label_asm(label),
+
             IR::Return(irreturn) => self.gen_ir_return_asm(irreturn),
 
             IR::Instr(irinstr) => {
@@ -75,11 +79,15 @@ pub trait IRToASM {
 
                     IRInstr::CallStart => self.start_func_call_proc(),
 
-                    IRInstr::CallEnd => self.stop_func_call_proc()
+                    IRInstr::CallEnd => self.stop_func_call_proc(),
+
+                    IRInstr::CondJump { label_id, operation, op1, op2, .. } => self.gen_cond_jmp_asm(op1, op2, *operation, *label_id)
                 }
             },
         }
     }
+
+    fn gen_cond_jmp_asm(&mut self, op1: &IRLitType, op2: &IRLitType, operation: IRCondOp, label_id: LabelId) -> String;
 
     /// Starts a function call process. Has to return NOP.
     fn start_func_call_proc(&mut self) -> String;
@@ -110,6 +118,10 @@ pub trait IRToASM {
 
     /// Generate return statement code.
     fn gen_ir_return_asm(&mut self, ir_return: &IRReturn) -> String;
+
+    fn gen_ir_loop_asm(&mut self, ir_loop: &mut IRLoop) -> String;
+
+    fn gen_ir_label_asm(&mut self, ir_label: &IRLabel) -> String;
 
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String;
     

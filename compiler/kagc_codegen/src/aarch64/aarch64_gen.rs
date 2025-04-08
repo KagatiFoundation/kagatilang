@@ -26,12 +26,14 @@ use core::panic;
 use std::cell::RefCell;
 use std::cell::RefMut;
 use std::rc::Rc;
+use std::vec;
 
 use kagc_ast::*;
 use kagc_ctx::*;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
+use kagc_ir::LabelId;
 use kagc_symbol::*;
 use kagc_target::reg::*;
 use kagc_target::asm::aarch64::Aarch64RegManager2;
@@ -59,7 +61,7 @@ pub struct Aarch64CodeGen<'aarch64> {
     ctx: Rc<RefCell<CompilerCtx<'aarch64>>>,
 
     // label ID tracker
-    label_id: usize,
+    label_id: LabelId,
 
     /// current function's ID
     function_id: usize,
@@ -164,7 +166,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
     fn gen_cmp_and_jmp(&self, operation: ASTOperation, r1: AllocedReg, r2: AllocedReg, label: usize) -> CodeGenResult {
         let r1name: String = self.reg_manager.borrow().name(r1.idx, r1.size);
         let r2name: String = self.reg_manager.borrow().name(r2.idx, r2.size);
-        println!("cmp {}, {}", r1name, r2name);
+        println!("cmp {r1name}, {r2name}");
         let compare_operator: &str = match operation {
             ASTOperation::AST_LTHAN => "bhs",
             ASTOperation::AST_GTHAN => "bls",
@@ -174,12 +176,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             ASTOperation::AST_LTEQ => "bhi",
             _ => panic!("Not a valid ASTOperation for cmp and jmp")
         };
-        println!(
-            "{} _L{}",
-            compare_operator,
-            label
-        );
-        // self.reg_manager.borrow_mut().deallocate_all();
+        println!("{compare_operator} _L{label}");
         Ok(AllocedReg::no_reg())
     }
 
@@ -229,7 +226,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         let mut leaf_fn_stack_off: i32 = stack_size as i32 - AARCH64_ALIGN_SIZE as i32;
 
         // generating code for function parameters
-        for param_sym in func_info.params.iter() {
+        for param_sym in func_info.collect_params().iter() {
             if param_sym.lit_type != LitTypeVariant::None {
                 let param_reg: AllocedReg = self.__allocate_reg(param_sym.lit_type.size());
                 if !calls_fns {
@@ -237,7 +234,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
                     leaf_fn_stack_off -= AARCH64_ALIGN_SIZE as i32;
                 }
                 else {
-                    println!("str {}, [x29, #-{}]", self.reg_manager.borrow().name(param_reg.idx, param_reg.size), (param_sym.offset * 8) + 8);
+                    println!("str {}, [x29, #-{}]", self.reg_manager.borrow().name(param_reg.idx, param_reg.size), (param_sym.local_offset * 8) + 8);
                 }
                 self.reg_manager.borrow_mut().free_register(param_reg.idx);
             }
@@ -646,15 +643,21 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         let mut virtual_reg: usize = 0;
 
-        let params: Vec<IRLitType> = func_info.params.iter().map(|_| {
-            let reg: IRLitType = IRLitType::Reg(virtual_reg);
-            virtual_reg += 1;
-            stack_off += 1;
-            reg
-        }).collect();
+        // Collect function parameters and map each of them to a 
+        // parameter register based on the Aarch64 ABI
+        let params: Vec<IRLitType> = func_info
+                                    .collect_params()
+                                    .iter()
+                                    .map(|_| {
+                                        let reg: IRLitType = IRLitType::Reg(virtual_reg);
+                                        virtual_reg += 1;
+                                        stack_off += 1;
+                                        reg
+                                    }).collect();
 
         let mut fn_body: Vec<IR> = vec![];
 
+        // Setting up function context
         let mut fn_ctx: FnCtx = FnCtx {
             stack_offset: stack_off,
 
@@ -667,12 +670,18 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
             // early return information
             early_return: false,
+
+            parent_ast_kind: ASTOperation::AST_FUNCTION,
+            prev_ast_kind: None,
+
+            next_label: 0,
+            force_label_use: 0
         };
 
-        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        let linearized_body: Vec<&mut AST> = ast.left.as_mut().unwrap().linearize_mut();
 
         for body_ast  in linearized_body {
-            let body_ir = self.gen_ir_from_node(body_ast, &mut fn_ctx, ASTOperation::AST_FUNCTION)?;
+            let body_ir: Vec<IR> = self.gen_ir_from_node(body_ast, &mut fn_ctx, ASTOperation::AST_FUNCTION)?;
             fn_body.extend(body_ir);
         }
 
@@ -702,7 +711,12 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
                 panic!("Variable is not assigned a value!");
             }
 
+            // set parent ast kind as var decl
+            fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
+
             let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
+
+            fn_ctx.reset_parent_ast_kind();
 
             let decl_ir: IR = IR::VarDecl(
                 IRVarDecl {
@@ -754,15 +768,17 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         let mut actual_params: Vec<(usize, IRLitType)> = vec![];
 
         let num_args: usize = func_call_expr.args.len();
+        let mut last_instrs: Vec<IRInstr> = vec![];
 
         for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
             let param_reg_idx = num_args - 1 - rev_idx;
-            
-            fn_ctx.force_reg_use(param_reg_idx);
 
             let current_tmp: usize = fn_ctx.temp_counter;
 
             let p_instr: Vec<IRInstr> = self.__gen_expr(param_expr, fn_ctx)?;
+            
+            let last_instr: IRInstr = p_instr.last().unwrap().clone();
+            last_instrs.push(last_instr);
 
             let new_temp: usize = fn_ctx.temp_counter;
             let tmp_reg_loc: usize = current_tmp + (new_temp - current_tmp) - 1;
@@ -779,37 +795,40 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             fn_ctx.clear_reg_hint();
         }
 
-        let (fn_call_ret_type, preserve_ret_val_instr) = 
+        for (rev_idx, last_instr) in last_instrs.iter().rev().enumerate() {
+            param_instrs.push(
+                IRInstr::Mov(
+                    IRLitType::Reg(rev_idx), 
+                    last_instr.dest().unwrap()
+                )
+            );
+        }
+
+        let preserve_ret_val_instr: Option<IRInstr> = 
         if !func_call_expr.result_type.is_void() {
             if use_reg {
-                (
-                    Some(IRLitType::Reg(forced_reg.unwrap())),
-                    Some(IRInstr::Mov(
-                        IRLitType::Reg(forced_reg.unwrap()),
-                        IRLitType::Reg(0)
-                    ))
-                )
+                Some(IRInstr::Mov(
+                    IRLitType::Reg(forced_reg.unwrap()),
+                    IRLitType::Reg(0)
+                ))
             }
             else {
                 let call_tmp: usize = fn_ctx.temp_counter;
                 fn_ctx.temp_counter += 1;
-                (
-                    Some(IRLitType::Temp(call_tmp)),
-                    Some(IRInstr::Mov(
-                        IRLitType::Temp(call_tmp),
-                        IRLitType::Reg(0)
-                    ))
-                )
+                Some(IRInstr::Mov(
+                    IRLitType::Temp(call_tmp),
+                    IRLitType::Reg(0)
+                ))
             }
         }
         else {
-            (None, None)
+            None
         };
 
         param_instrs.push(IRInstr::Call {
             fn_name: func_call_expr.symbol_name.clone(),
             params: actual_params,
-            return_type: fn_call_ret_type
+            return_type: None // fn_call_ret_type
         });
 
         if let Some(preserve_instr) = preserve_ret_val_instr {
@@ -837,20 +856,106 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             // if the function is non-void type
             if let Some(curr_fn) = &self.current_function {
                 if !curr_fn.return_type.is_void() {
-                    // use the x0 as the return register
-                    fn_ctx.force_reg_use(0);
                     let ret_stmt_instrs: Vec<IRInstr> = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
 
-                    ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
+                    // last instruction is basically the temporary which holds the return 
+                    // expression evaulation result
+                    let last_instr: IRInstr = ret_stmt_instrs.last().cloned().unwrap();
 
-                    // free x0
-                    fn_ctx.clear_reg_hint();
+                    ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
+                    ret_instrs.push(
+                        IR::Instr(
+                            IRInstr::Mov(
+                                IRLitType::Reg(0),
+                                last_instr.dest().unwrap()
+                            )
+                        )
+                    );
                 }
             }
-
             return Ok(ret_instrs);
         }
         panic!("Expected ReturnStmt but found {:?}", ret_stmt);
+    }
+
+    fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+        let label_start: usize = fn_ctx.get_next_label();
+        let label_end: usize = fn_ctx.get_next_label();
+
+        let mut loop_body: Vec<IR> = vec![];
+
+        loop_body.extend(self.gen_ir_label(label_start)?);
+
+        let linearized_body: Vec<&mut AST> = ast.left.as_mut().unwrap().linearize_mut();
+
+        for body_ast  in linearized_body {
+            let body_ir: Vec<IR> = self.gen_ir_from_node(body_ast, fn_ctx, ASTOperation::AST_LOOP)?;
+            loop_body.extend(body_ir);
+        }
+
+        loop_body.extend(self.gen_ir_jump(label_start)?);
+        loop_body.extend(self.gen_ir_label(label_end)?);
+
+        Ok(loop_body)
+    }
+
+    fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+        // Label for jumping to the 'else' block if the condition is false
+        let label_if_false: usize = fn_ctx.get_next_label();
+
+        // Label marking the end of the entire if-else block
+        let label_end: usize = fn_ctx.get_next_label();
+
+        let mut output: Vec<IR> = vec![];
+
+        // change the parent AST kind to AST_IF
+        fn_ctx.change_parent_ast_kind(ASTOperation::AST_IF);
+
+        // Evaluate the condition and store the resilt in a register.
+        // Every if-else must have the `left` branch set in the main if-else AST tree.
+
+        fn_ctx.change_label_use(label_if_false);
+        
+        let cond_result: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
+        
+        fn_ctx.reset_label_hint();
+
+        for cond_res_ir in cond_result {
+            output.push(IR::Instr(cond_res_ir));
+        }
+
+        fn_ctx.reset_parent_ast_kind();
+
+        let if_body: Vec<IR> = self.gen_ir_from_node(ast.mid.as_mut().unwrap(), fn_ctx, ASTOperation::AST_IF)?;
+        output.extend(if_body);
+
+        if ast.right.is_some() {
+            output.extend(self.gen_ir_jump(label_end)?);
+        }
+
+        output.extend(self.gen_ir_label(label_if_false)?);
+
+        if let Some(right_ast) = ast.right.as_mut() {
+            let else_block: Vec<IR> = self.gen_ir_from_node(right_ast, fn_ctx, ASTOperation::AST_IF)?;
+            output.extend(else_block);
+            output.extend(self.gen_ir_label(label_end)?);
+        }
+
+        Ok(output)
+    }
+
+    fn gen_ir_jump(&self, label_id: LabelId) -> CGRes {
+        Ok(vec![
+            IR::Instr(
+                IRInstr::Jump { label_id }
+            )
+        ])
+    }
+
+    fn gen_ir_label(&self, label_id: LabelId) -> CGRes {
+        Ok(
+            vec![IR::Label(IRLabel(label_id))]
+        )
     }
 }
 
@@ -900,8 +1005,8 @@ impl<'aarch64> Aarch64CodeGen<'aarch64> {
         self.start_gen(nodes);
     }
 
-    fn get_next_label(&mut self) -> usize {
-        let lbl: usize = self.label_id;
+    fn get_next_label(&mut self) -> LabelId {
+        let lbl = self.label_id;
         self.label_id += 1;
         lbl
     }

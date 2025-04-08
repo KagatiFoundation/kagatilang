@@ -31,7 +31,7 @@ use std::cell::RefMut;
 
 use errors::CodeGenErr;
 use kagc_ast::*;
-use kagc_ir::{ir_instr::*, ir_types::*};
+use kagc_ir::{ir_instr::*, ir_types::*, LabelId};
 use kagc_symbol::StorageClass;
 use kagc_target::reg::*;
 use kagc_types::*;
@@ -66,7 +66,13 @@ pub trait CodeGen {
             return self.gen_ir_var_decl(node, fn_ctx);
         }
         else if node.operation == ASTOperation::AST_FUNC_CALL {
-            return self.__gen_ir_fn_call(node, fn_ctx)
+            return self.__gen_ir_fn_call(node, fn_ctx);
+        }
+        else if node.operation == ASTOperation::AST_LOOP {
+            return self.gen_ir_loop(node, fn_ctx);
+        }
+        else if node.operation == ASTOperation::AST_IF {
+            return self.gen_ir_if(node, fn_ctx);
         }
         else if node.operation == ASTOperation::AST_RETURN {
             if parent_ast_kind != ASTOperation::AST_FUNCTION {
@@ -383,6 +389,14 @@ pub trait CodeGen {
 
     fn gen_ir_return(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
 
+    fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_label(&self, label_id: LabelId) -> CGRes;
+
+    fn gen_ir_jump(&self, label_id: LabelId) -> CGRes;
+
     /// Generate IR nodes from an AST expression node.
     fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         if !ast.kind.is_expr() {
@@ -439,14 +453,6 @@ pub trait CodeGen {
     fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
 
-        let use_reg: bool = fn_ctx.force_reg_use;
-        let forced_reg = fn_ctx.reg_counter;
-
-        // make sure the intermediate instructions aren't using registers
-        if use_reg {
-            fn_ctx.clear_reg_hint();
-        }
-
         let left_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.left, fn_ctx)?;
         let right_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.right, fn_ctx)?;
 
@@ -457,21 +463,26 @@ pub trait CodeGen {
             ASTOperation::AST_ADD => {
                 let dest_temp: usize = fn_ctx.temp_counter;
                 fn_ctx.temp_counter += 1;
-                
-                if use_reg {
-                    let reg_idx: usize = forced_reg.unwrap();
-                    let dest_instr: IRLitType = IRLitType::AllocReg { reg: reg_idx, temp: dest_temp };
 
-                    self.gen_ir_add(
-                        dest_instr,
-                        left_dest.dest().unwrap(),
-                        right_dest.dest().unwrap()
-                    )
-                }
-                else {
-                    self.gen_ir_add(IRLitType::Temp(dest_temp), left_dest.dest().unwrap(), right_dest.dest().unwrap())
-                }
-            }
+                self.gen_ir_add(IRLitType::Temp(dest_temp), left_dest.dest().unwrap(), right_dest.dest().unwrap())
+            },
+
+            ASTOperation::AST_GTHAN
+            | ASTOperation::AST_LTHAN
+            | ASTOperation::AST_LTEQ
+            | ASTOperation::AST_GTEQ
+            | ASTOperation::AST_NEQ
+            | ASTOperation::AST_EQEQ => {
+                let parent_ast_kind: ASTOperation = fn_ctx.parent_ast_kind;
+                if (parent_ast_kind == ASTOperation::AST_IF)
+                || (parent_ast_kind == ASTOperation::AST_WHILE)
+                {
+                    self.gen_ir_cmp_and_jump(left_dest.dest().unwrap(), right_dest.dest().unwrap(), fn_ctx.force_label_use, IRCondOp::from(bin_expr.operation))
+                } else {
+                    self.gen_ir_cmp_and_jump(left_dest.dest().unwrap(), right_dest.dest().unwrap(), fn_ctx.force_label_use, IRCondOp::from(bin_expr.operation))
+                } 
+            },
+
             _ => todo!()
         };
 
@@ -479,9 +490,16 @@ pub trait CodeGen {
         irs.extend(right_expr);
         irs.push(bin_expr_type);
 
-        Ok(
-            irs
-        )
+        Ok(irs)
+    }
+
+    fn gen_ir_cmp_and_jump(&mut self, op1: IRLitType, op2: IRLitType, label_id: LabelId, operation: IRCondOp) -> IRInstr {
+        IRInstr::CondJump {
+            label_id,
+            op1,
+            op2,
+            operation
+        }
     }
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, fs::read_to_string, hash::Hash, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::StorageClass;
@@ -7,8 +7,8 @@ use kagc_target::{asm::aarch64::*, reg::*};
 use crate::{
     ir_asm::ir_asm_gen::*, 
     ir_instr::*, 
-    ir_liveness::{spill_pass::SpillCompilerPass, *}, 
-    ir_types::*
+    ir_liveness::*, 
+    ir_types::*, LabelId
 };
 
 #[derive(Debug)]
@@ -70,14 +70,6 @@ pub struct Aarch64IRToASM<'asmgen> {
 
     /// Code generators state
     state: IRToASMState,
-
-    /// Temporary register spill tracking.
-    /// Maps a temporary (TempId) to a tuple of (original register, secondary register)
-    /// used for spill management during code generation. When a register is reassigned,
-    /// the original register's value is spilled to a secondary register (or potentially
-    /// the stack in future iterations), and this map tracks both locations to refill
-    /// the original register when the temporary is needed again.
-    spills: HashMap<TempId, (AllocedReg, AllocedReg)>
 }
 
 impl<'asmgen> Aarch64IRToASM<'asmgen> {
@@ -89,8 +81,7 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
             compt_fn_props: None,
             temp_reg_map: TempRegMap { reg_map: HashMap::new() },
             ip: 0,
-            state: IRToASMState::Global,
-            spills: HashMap::new()
+            state: IRToASMState::Global
         }
     }
 
@@ -314,10 +305,10 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
     
     fn gen_leaf_fn_epl(&self, stack_size: usize) -> String {
         if stack_size != 0 {
-            format!("ADD SP, SP, #{stack_size}\nRET")
+            format!("ADD SP, SP, #{stack_size}\nRET\n")
         }
         else {
-            "RET".to_string()
+            "RET\n".to_string()
         }
     }
 
@@ -368,18 +359,11 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], return_type: &Option<IRLitType>) -> String {
         let mut output_str: String = String::new();
 
-        // println!("Spills: {:#?}", self.spills);
-        // println!("Params: {:#?}", params);
-
-        // for (reg_counter, (_, param)) in params.iter().enumerate() {
-        //     if let IRLitType::Temp(temp) = param {
-        //         if let Some((primary, secondary)) = self.spills.get(temp) {
-        //             if primary.idx != reg_counter {
-        //                 output_str.push_str(&format!("MOV {}, {}\n", primary.name(), secondary.name()));
-        //             }
-        //         }
-        //     }
-        // }
+        for (_, param) in params{
+            if let IRLitType::Temp(temp) = param {
+                self.try_dropping_temp(*temp);
+            }
+        }
 
         output_str.push_str(&format!("BL _{fn_name}"));
         output_str
@@ -424,38 +408,40 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String {
         format!("B _L{}", label_id)
     }
-}
 
-impl<'asmgen> Aarch64IRToASM<'asmgen> {
-    fn check_for_spill(&mut self, temp_reg_map: (TempId, AllocedReg), code_to_append: String) -> String {
-        if temp_reg_map.1.status != RegStatus::Spilled {
-            return code_to_append;   
-        }
-
-        let temp_reg_map_ = self.temp_reg_map.reg_map.iter().find(|map| {
-            temp_reg_map.0 == *map.0 && map.1.idx == temp_reg_map.1.idx
-        }).unwrap_or_else(|| panic!("Error! A fatal one!!!"));
-
-        let temp_id: usize = *temp_reg_map_.0;
-        let register: AllocedReg = temp_reg_map_.1.clone();
-
+    fn gen_ir_loop_asm(&mut self, ir_loop: &mut IRLoop) -> String {
         let mut output_str: String = String::new();
 
-        let mut reg_mgr = self.reg_manager.borrow_mut();
+        for body_ir in &mut ir_loop.body {
+            output_str.push_str(&format!("{}\n", self.gen_asm_from_ir_node(body_ir)));
+            self.advance_ip();
+        }
 
-        let secondary_reg: AllocedReg = reg_mgr.allocate_register(64);
-        let second_reg_name: String = secondary_reg.name();
-
-        // temporary will point to the spill container
-        self.temp_reg_map.reg_map.insert(temp_id, secondary_reg.clone());
-            
-        self.spills.insert(temp_id, (register.clone(), secondary_reg));
-
-        output_str.push_str(&format!("MOV {}, {}\n", second_reg_name, register.name()));
-        output_str.push_str(&code_to_append);
         output_str
     }
 
+    fn gen_ir_label_asm(&mut self, ir_label: &IRLabel) -> String {
+        format!("_L{}:", ir_label.0)
+    }
+
+    fn gen_cond_jmp_asm(&mut self, op1: &IRLitType, op2: &IRLitType, operation: IRCondOp, label_id: LabelId) -> String {
+        let compare_operator: &str = match operation {
+            IRCondOp::IRLThan => "BGE",
+            IRCondOp::IRGThan => "BLE",
+            IRCondOp::IREqEq => "BNE",
+            IRCondOp::IRNEq => "BEQ",
+            IRCondOp::IRGTEq => "BLT",
+            IRCondOp::IRLTEq => "BGT"
+        };
+        
+        let mut output_str: String = String::new();
+        output_str.push_str(&format!("CMP {}, {}\n", self.extract_operand(op1), self.extract_operand(op2)));
+        output_str.push_str(&format!("{compare_operator} _L{label_id}"));
+        output_str
+    }
+}
+
+impl<'asmgen> Aarch64IRToASM<'asmgen> {
     /// Extract the IRLitType as an operand(String)
     fn extract_operand(&mut self, irlit: &IRLitType) -> String {
         match irlit {
@@ -492,7 +478,7 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
 
             IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp)),
             
-            // IRLitType::Reg(idx) => AllocedReg { size: 64, idx: *idx, status: RegStatus::Alloced },
+            IRLitType::Reg(idx) => (0, AllocedReg { size: 64, idx: *idx, status: RegStatus::Alloced }),
             
             _ => todo!(),
         }

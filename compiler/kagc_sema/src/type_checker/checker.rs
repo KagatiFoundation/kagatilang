@@ -89,7 +89,7 @@ impl TypeChecker {
     pub fn check_bin_expr_type_compatability(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation) -> SAResult {
         match op {
             ASTOperation::AST_ADD => {
-                // addition operation requires both of the expressions to be integer types
+                // addition operation requires both of the expressions to be integer types(for now)
                 if a.is_int_variant() && b.is_int_variant() {
                     let a_size: usize = a.size();
                     let b_size: usize = b.size();
@@ -107,6 +107,22 @@ impl TypeChecker {
                 }
                 panic!()
             },
+            ASTOperation::AST_GTHAN => {
+                if Self::are_comparable(a, b, op) {
+                    Ok(LitTypeVariant::I32)
+                }
+                else {
+                    Err(
+                        SAError::TypeError(
+                            SATypeError::IncompatibleTypes { 
+                                a, 
+                                b, 
+                                operation: op
+                            }
+                        )
+                    )
+                }
+            },
             _ => {
                 Err(
                     SAError::TypeError(
@@ -118,6 +134,26 @@ impl TypeChecker {
                     )
                 )
             }
+        }
+    }
+
+    fn are_comparable(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation) -> bool {
+        let compare_ops = [
+            ASTOperation::AST_GTHAN, 
+            ASTOperation::AST_LTHAN, 
+            ASTOperation::AST_EQEQ, 
+            ASTOperation::AST_NEQ
+        ];
+
+        if compare_ops.iter().any(|cop| *cop == op) {
+            [
+                a == b,
+                is_type_coalescing_possible(a, b),
+                is_type_coalescing_possible(b, a)
+            ].iter().any(|c| *c)
+        }
+        else {
+            false
         }
     }
 
