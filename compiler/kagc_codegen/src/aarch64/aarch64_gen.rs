@@ -41,9 +41,9 @@ use kagc_types::*;
 use kagc_utils::integer::*;
 
 use crate::errors::CodeGenErr;
+use crate::fn_ctx::FnCtx;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
-use crate::typedefs::FnCtx;
 use crate::CodeGen;
 use crate::CodeGenResult;
 
@@ -55,10 +55,10 @@ lazy_static::lazy_static! {
     static ref CMP_CONDS_LIST: Vec<&'static str> = vec!["ne", "eq", "ge", "le", "lt", "gt"];
 }
 
-pub struct Aarch64CodeGen<'aarch64> {
+pub struct Aarch64CodeGen {
     reg_manager: Rc<RefCell<Aarch64RegManager2>>,
 
-    ctx: Rc<RefCell<CompilerCtx<'aarch64>>>,
+    ctx: Rc<RefCell<CompilerCtx>>,
 
     // label ID tracker
     label_id: LabelId,
@@ -72,10 +72,11 @@ pub struct Aarch64CodeGen<'aarch64> {
     early_return_label_id: usize,
 }
 
-impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
+impl CodeGen for Aarch64CodeGen {
     fn gen_global_symbols(&self) {
         let ctx_borrow = self.ctx.borrow();
-        for symbol in ctx_borrow.sym_table.iter() {
+        let curr_scope = ctx_borrow.root_scope();
+        for symbol in curr_scope.table.iter() {
             // symbol information is not generated if any of the following conditions matches
             if 
                 symbol.lit_type == LitTypeVariant::None 
@@ -96,7 +97,6 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
                 Aarch64CodeGen::dump_global_with_alignment(symbol);
             } else if symbol.sym_type == SymbolType::Array {
                 let array_data_size: usize = symbol.lit_type.size();
-                println!("here i come");
                 println!("{}:", symbol.name);
                 for _ in 0..symbol.size {
                     Aarch64CodeGen::alloc_data_space(array_data_size);
@@ -205,7 +205,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
             return Ok(AllocedReg::no_reg());
         }
 
-        self.ctx.borrow_mut().switch_to_func_scope(func_info.func_id);
+        // self.ctx.borrow_mut().switch_to_func_scope(func_info.func_id);
 
         // check if this function calls other functions
         let calls_fns: bool = ast.left.as_ref()
@@ -249,7 +249,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         }
 
         self.current_function = None;
-        self.ctx.borrow_mut().switch_to_global_scope();
+        // self.ctx.borrow_mut().switch_to_global_scope();
 
         if calls_fns {
             self.emit_non_leaf_fn_epl(stack_size);
@@ -304,7 +304,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
     fn gen_load_id_into_reg(&mut self, id_name: &str) -> CodeGenResult {
         let ctx_borrow = self.ctx.borrow();
-        let symbol: Symbol = if let Ok(sym) = ctx_borrow.find_sym(id_name) {
+        let symbol: Symbol = if let Some(sym) = ctx_borrow.deep_lookup(id_name) {
             sym.clone()
         } else {
             return Err(CodeGenErr::UndefinedSymbol);
@@ -343,7 +343,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         let ctx_borrow = self.ctx.borrow();
 
-        let symbol: Symbol = if let Ok(sym) = ctx_borrow.find_sym(id_name) {
+        let symbol: Symbol = if let Some(sym) = ctx_borrow.deep_lookup(id_name) {
             sym.clone()
         } else {
             return Err(CodeGenErr::UndefinedSymbol);
@@ -376,7 +376,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         }
         let result: Result<String, ()> = Aarch64CodeGen::gen_int_value_load_code(value, &reg.name());
         if let Ok(code) = result {
-            println!("{}", code);
+            println!("{code}");
         } else {
             panic!("Was that supposed to be an integer: {:?}", value);
         }
@@ -451,7 +451,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         // dealloc the expr register
         self.reg_manager.borrow_mut().free_register(expr_res_reg.idx);
 
-        let symbol: Symbol = self.ctx.borrow().sym_table.get_symbol(id).unwrap().clone();
+        let symbol: Symbol = self.ctx.borrow().live_scope().unwrap().table.lookup(&id).unwrap().clone();
 
         let offset_shift: usize = match symbol.lit_type {
             LitTypeVariant::I32 | // as of now, this compiler does not know how to index 32-bit int array
@@ -520,7 +520,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         }
 
         let func_info: &FunctionInfo = self.current_function.as_ref().unwrap();
-        let symbol: Symbol = func_info.local_syms.get_or_fail(arr_var_decl_stmt.symtbl_pos).clone();
+        let symbol: Symbol = func_info.local_syms.lookup(&arr_var_decl_stmt.symtbl_pos).unwrap().clone();
 
         // dump array size information onto the stack
         let size_reg: AllocedReg = self.gen_load_intlit_into_reg(&LitType::I32(symbol.size as i32))?;
@@ -548,7 +548,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
     
     fn gen_func_call_expr(&mut self, func_call_expr: &FuncCallExpr) -> CodeGenResult {
         let ctx_borrow = self.ctx.borrow_mut();
-        let func_info = if let Ok(symbol) = ctx_borrow.find_sym(&func_call_expr.symbol_name) {
+        let func_info = if let Some(symbol) = ctx_borrow.deep_lookup(&func_call_expr.symbol_name) {
             ctx_borrow.func_table.get(&symbol.name).unwrap()
         } else {
             return Err(CodeGenErr::UndefinedSymbol);
@@ -607,8 +607,9 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
     fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes {
         self.reg_manager.borrow_mut().reset();
 
-        let func_id: usize = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
-            func_decl.func_id
+        let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
+            self.ctx.borrow_mut().enter_scope(func_decl.scope_id);
+            (func_decl.func_id, func_decl.scope_id)
         } else {
             panic!("Expected FuncStmt but found {:?}", ast);
         };
@@ -629,13 +630,12 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
                         params: vec![], 
                         body: vec![],
                         class: func_info.storage_class,
-                        is_leaf: true
+                        is_leaf: true,
+                        scope_id: self.ctx.borrow().live_scope_id()
                     }
                 )]
             );
         }
-
-        self.ctx.borrow_mut().switch_to_func_scope(func_id);
 
         let store_class: StorageClass = func_info.storage_class;
         let mut stack_off: usize = 0;
@@ -643,8 +643,8 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
-        let params: Vec<IRLitType> = func_info
-                                    .collect_params()
+        let params: Vec<IRLitType> = self.ctx.borrow()
+                                    .collect_params(func_scope)
                                     .iter()
                                     .map(|_| {
                                         let reg: IRLitType = IRLitType::Reg(virtual_reg);
@@ -684,7 +684,9 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
         }
 
         self.current_function = None;
-        self.ctx.borrow_mut().switch_to_global_scope();
+
+        // exit function's scope
+        let func_scope: usize = self.ctx.borrow_mut().exit_scope();
 
         let calls_fns: bool = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
 
@@ -695,7 +697,8 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
                     params, 
                     body: fn_body,
                     class: store_class,
-                    is_leaf: !calls_fns
+                    is_leaf: !calls_fns,
+                    scope_id: func_scope
                 }
             )]
         )
@@ -898,6 +901,10 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
     }
 
     fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+        if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
+            self.ctx.borrow_mut().enter_scope(if_stmt.scope_id);
+        }
+
         // Label for jumping to the 'else' block if the condition is false
         let label_if_false: usize = fn_ctx.get_next_label();
 
@@ -908,7 +915,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         // change the parent AST kind to AST_IF
         fn_ctx.change_parent_ast_kind(ASTOperation::AST_IF);
-        fn_ctx.change_label_use(label_if_false);
+        fn_ctx.change_label_hint(label_if_false);
 
         // Evaluate the condition and store the resilt in a register.
         // Every if-else must have the `left` branch set in the main if-else AST tree.
@@ -934,8 +941,12 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
 
         output.extend(self.gen_ir_label(label_if_false)?);
 
+        // end `if` scope
+        self.ctx.borrow_mut().exit_scope();
+
+        // else block
         if let Some(right_ast) = ast.right.as_mut() {
-            let else_block: Vec<IR> = self.gen_ir_from_node(right_ast, fn_ctx, ASTOperation::AST_IF)?;
+            let else_block: Vec<IR> = self.gen_ir_from_node(right_ast, fn_ctx, ASTOperation::AST_GLUE)?;
             output.extend(else_block);
             output.extend(self.gen_ir_label(label_end)?);
         }
@@ -958,7 +969,7 @@ impl<'aarch64> CodeGen for Aarch64CodeGen<'aarch64> {
     }
 }
 
-impl<'aarch64> Aarch64CodeGen<'aarch64> {
+impl Aarch64CodeGen {
     pub fn sort_fn_call_args(args: &mut [FuncArg]) {
         args.sort_by(|a, b| {
             let a_priority = match &a.1 {
@@ -984,10 +995,10 @@ impl<'aarch64> Aarch64CodeGen<'aarch64> {
     }
 }
 
-impl<'aarch64> Aarch64CodeGen<'aarch64> {
+impl Aarch64CodeGen {
     pub fn new(
         reg_manager: Rc<RefCell<Aarch64RegManager2>>,
-        ctx: Rc<RefCell<CompilerCtx<'aarch64>>>
+        ctx: Rc<RefCell<CompilerCtx>>
     ) -> Self {
         Self {
             reg_manager,
@@ -1000,7 +1011,6 @@ impl<'aarch64> Aarch64CodeGen<'aarch64> {
     }
 
     pub fn gen_with_ctx(&mut self, nodes: &[AST]) {
-        self.label_id = self.ctx.borrow().label_id + 10;
         self.start_gen(nodes);
     }
 
@@ -1113,20 +1123,12 @@ impl<'aarch64> Aarch64CodeGen<'aarch64> {
 
     fn get_func_name(&mut self, index: usize) -> Option<String> {
         let ctx_borrow = self.ctx.borrow();
-        ctx_borrow.get_func_name(index)
+        ctx_borrow.lookup_fn(index).map(|func| func.name.clone())
     }
 
     fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Symbol> {
         let ctx_borrow = self.ctx.borrow();
-
-        if self.current_function.is_none() {
-            let sym: Option<&Symbol> = ctx_borrow.sym_table.find(sym_name);
-            Some(sym.unwrap_or_else(|| panic!("Symbol not found with the name: {}", sym_name)).clone())
-        }
-        else {
-            let func_info: &FunctionInfo = self.current_function.as_ref().unwrap();
-            Some(func_info.local_syms.find(sym_name).unwrap_or_else(|| panic!("Symbol not defined inside the function!")).clone())
-        }
+        ctx_borrow.deep_lookup(sym_name).cloned()
     }
 }
 

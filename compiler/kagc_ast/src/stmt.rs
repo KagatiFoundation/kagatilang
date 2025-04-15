@@ -1,25 +1,57 @@
-use kagc_symbol::StorageClass;
+/*
+MIT License
+
+Copyright (c) 2023 Kagati Foundation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+use kagc_symbol::*;
 use kagc_types::LitTypeVariant;
 
 use super::Expr;
 
 #[derive(Clone, Debug)]
 pub struct FuncDeclStmt {
-    pub func_id: usize, // id of this 'function'
+    /// Function ID
+    pub func_id: usize, 
+
+    pub name: String,
+
+    pub scope_id: usize
 }
 
 #[derive(Clone, Debug)]
 pub struct ReturnStmt {
-    pub func_id: usize, // id of the function that this 'return' statement is in
+    /// ID of the function that this `return` statement is in.
+    pub func_id: usize
 }
 
 #[derive(Clone, Debug)]
 pub struct VarDeclStmt {
-    pub symtbl_pos: usize, // position of this symbol in the symbol table
+    /// Position of the symbol in the symbol table.
+    pub symtbl_pos: usize, 
 
-    /// Name of the symbol
+    /// Name of the symbol.
     pub sym_name: String,
 
+    /// Storage class of the symbol.
     pub class: StorageClass
 }
 
@@ -52,10 +84,15 @@ pub struct FuncCallStmt {
     pub result_type: LitTypeVariant
 }
 
+#[derive(Debug, Clone)]
+pub struct IfStmt {
+    pub scope_id: usize
+}
+
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Glue,
-    If,
+    If(IfStmt),
     For,
     While,
     Loop,

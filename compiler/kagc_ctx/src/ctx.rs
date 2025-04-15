@@ -22,10 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use kagc_ast::SourceFile;
+use itertools::Itertools;
+use kagc_ast::SourceFileMeta;
+use kagc_scope::{manager::*, scope::*};
 use kagc_symbol::*;
-
-use crate::errors::CtxError;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum CompilerScope {
@@ -34,125 +34,126 @@ pub enum CompilerScope {
 }
 
 #[derive(Debug)]
-pub struct CompilerCtx<'ctx> {
-    /// Symbol table that is passed around each compilation unit
-    /// during the whole compilation process.
-    pub sym_table: &'ctx mut Symtable<Symbol>,
-
+pub struct CompilerCtx {
     /// Functions information table.
-    pub func_table: &'ctx mut FunctionInfoTable,
-
-    /// Next label ID.
-    pub label_id: usize,
+    pub func_table: FunctionInfoTable,
 
     /// Source file that is currently being processed.
-    pub current_file: Option<&'ctx SourceFile>,
+    pub current_file: Option<SourceFileMeta>,
 
     pub current_function: usize,
 
-    pub scope: CompilerScope
+    pub scope_mgr: ScopeManager,
+    
+    scope_id: usize,
+
+    current_scope: usize,
+    prev_scope: usize
 }
 
-impl<'ctx> CompilerCtx<'ctx> {
-    pub fn new(symt: &'ctx mut Symtable<Symbol>, func_table: &'ctx mut FunctionInfoTable) -> Self {
+impl CompilerCtx {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let mut scope_mgr: ScopeManager = ScopeManager::default();
+        scope_mgr.push((0, Scope::default()));
+
         Self {
-            sym_table: symt,
-            func_table,
-            label_id: 0,
+            func_table: FunctionInfoTable::new(),
             current_file: None,
             current_function: INVALID_FUNC_ID,
-            scope: CompilerScope::GLOBAL
+            scope_id: 1, // next scope ID
+            current_scope: 0,
+            prev_scope: 0,
+            scope_mgr
         }
     }
 
-    pub fn incr_label_count(&mut self) {
-        self.label_id += 1;
+    pub fn live_scope_id(&self) -> usize {
+        self.current_scope
     }
 
-    pub fn reset_label_count(&mut self) {
-        self.label_id = 0;
-    }
-
-    pub fn get_curr_func(&self) -> Option<&FunctionInfo> {
-        if let Some(symbol) = self.sym_table.get_symbol(self.current_function) {
-            if let Some(func_info) = self.func_table.get(&symbol.name) {
-                return Some(func_info);
-            }
+    pub fn live_scope(&self) -> Option<&Scope> {
+        if self.scope_mgr.is_empty() {
+            None
         }
-        None
-    }
-
-    pub fn get_curr_func_mut(&mut self) -> Option<&mut FunctionInfo> {
-        if let Some(symbol) = self.sym_table.get_symbol(self.current_function) {
-            if let Some(func_info) = self.func_table.get_mut(&symbol.name) {
-                return Some(func_info);
-            }
+        else {
+            self.scope_mgr.get(self.current_scope)
         }
-        None
     }
 
-    pub fn switch_to_func_scope(&mut self, func_id: usize) {
-        self.current_function = func_id;
-        self.scope = CompilerScope::FUNCTION;
-    }
-
-    pub fn switch_to_global_scope(&mut self) {
-        self.current_function = INVALID_FUNC_ID;
-        self.scope = CompilerScope::GLOBAL;
-    }
-
-    /// Searches for a symbol either in the local scope of the current function 
-    /// or in the global context.
-    /// 
-    /// # Returns
-    /// * `Ok(Symbol)` - The symbol found at the specified index.
-    /// * `Err(CodeGenErr::UndefinedSymbol)` - If neither local nor global context is 
-    ///   available for the lookup.
-    pub fn find_sym(&self, name: &str) -> Result<&Symbol, CtxError> {
-        if let Some(func_info) = self.get_curr_func() {
-            if let Some(sym_pos) = func_info.local_syms.find_symbol(name) {
-                if let Some(sym) = func_info.local_syms.get_symbol(sym_pos) {
-                    return Ok(sym);
-                }
-            }
+    pub fn live_scope_mut(&mut self) -> Option<&mut Scope> {
+        if self.scope_mgr.is_empty() {
+            None
         }
-        return self.find_sym_in_table(name, self.sym_table);
-    }
-
-    pub fn find_sym_mut(&mut self, name: &str) -> Result<&mut Symbol, CtxError> {
-        if let Some(local_sym_pos) = {
-            if let Some(func_info) = self.get_curr_func_mut() {
-                func_info.local_syms.find_symbol(name)
-            } else {
-                None
-            }
-        } {
-            if let Some(func_mut) = self.get_curr_func_mut() {
-                if let Some(mut_sym) = func_mut.local_syms.get_symbol_mut(local_sym_pos) {
-                    return Ok(mut_sym);
-                }
-            }
-        } else if let Some(sym_pos) = self.sym_table.find_symbol(name) {
-            if let Some(sym) = self.sym_table.get_symbol_mut(sym_pos) {
-                return Ok(sym);
-            } else {
-                return Err(CtxError::UndefinedSymbol);
-            }
+        else {
+            self.scope_mgr.get_mut(self.current_scope)
         }
-        Err(CtxError::UndefinedSymbol)
     }
 
-    fn find_sym_in_table<'a>(&'a self, name: &str, table: &'a Symtable<Symbol>) -> Result<&Symbol, CtxError> {
-        if let Some(sym_pos) = table.find_symbol(name) {
-            if let Some(sym) = table.get_symbol(sym_pos) {
-                return Ok(sym);
-            }
+    pub fn root_scope(&self) -> &Scope {
+        self.scope_mgr.get(0).unwrap() // root scope's ID is 0 and it is always present
+    }
+
+    pub fn root_scope_mut(&mut self) -> &mut Scope {
+        self.scope_mgr.get_mut(0).unwrap() // root scope's ID is 0 and it is always present
+    }
+
+    pub fn enter_scope(&mut self, scope_id: usize) -> Option<usize> {
+        if self.scope_mgr.contains_scope(scope_id) {
+            self.prev_scope = self.current_scope;
+            self.current_scope = scope_id;
+            Some(self.current_scope)
         }
-        Err(CtxError::UndefinedSymbol)
+        else {
+            None
+        }
     }
 
-    pub fn get_func_name(&self, index: usize) -> Option<String> {
-        let func_name: String = self.sym_table.get_symbol(index).unwrap().name.clone();
-        self.func_table.get(&func_name).map(|_| func_name)
+    pub fn enter_new_scope(&mut self) -> usize {
+        let new_scope_id: usize = self.scope_id;
+        self.scope_mgr.push((new_scope_id, Scope::new(self.current_scope)));
+        self.scope_id += 1;
+
+        // set scope id
+        self.prev_scope = self.current_scope;
+        self.current_scope = new_scope_id;
+        self.current_scope
+    }
+
+    /// Returns the ID of the exited scope.
+    pub fn exit_scope(&mut self) -> usize {
+        let ret: usize = self.current_scope;
+        self.current_scope = self.prev_scope;
+        ret
+    }
+
+    pub fn deep_lookup(&self, name: &str) -> Option<&Symbol> {
+        self.scope_mgr.deep_lookup(self.current_scope, name)
+    }
+
+    pub fn deep_lookup_mut(&mut self, name: &str) -> Option<&mut Symbol> {
+        self.scope_mgr.deep_lookup_mut(self.current_scope, name)
+    }
+
+    pub fn declare(&mut self, sym: Symbol) -> Option<usize> {
+        if let Some(curr) = self.scope_mgr.get_mut(self.current_scope) {
+            curr.declare(sym)
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn lookup_fn(&self, func_id: usize) -> Option<&FunctionInfo> {
+        self.func_table.get_by_id(func_id)
+    }
+
+    pub fn collect_params(&self, scope_id: usize) -> Vec<&Symbol> {
+        if let Some(scope) = self.scope_mgr.get(scope_id) {
+            scope.table.iter().filter(|&sym| sym.class == StorageClass::PARAM).collect_vec()
+        }
+        else {
+            vec![]
+        }
     }
 }

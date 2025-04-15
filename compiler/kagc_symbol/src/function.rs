@@ -65,6 +65,8 @@ pub struct FunctionInfo {
 
     /// Contains information about the variables defined locally in 'this' function
     pub local_syms: Symtable<Symbol>,
+
+    pub param_types: Vec<LitTypeVariant>,
     
     /// Storage class of the function.
     pub storage_class: StorageClass
@@ -78,6 +80,7 @@ impl FunctionInfo {
         return_type: LitTypeVariant,
         storage_class: StorageClass,
         locals: Symtable<Symbol>,
+        param_types: Vec<LitTypeVariant>
     ) -> Self {
         Self {
             name, 
@@ -86,6 +89,7 @@ impl FunctionInfo {
             return_type, 
             local_syms: locals,
             storage_class,
+            param_types
         }
     }
 
@@ -132,5 +136,15 @@ impl FunctionInfoTable {
 
     pub fn get_mut(&mut self, name: &str) -> Option<&mut FunctionInfo> {
         self.functions.get_mut(name)
+    }
+
+    pub fn get_by_id(&self, id: usize) -> Option<&FunctionInfo> {
+        let func_info = self.functions.iter().find(|func| func.1.func_id == id);
+        if let Some(func) = func_info {
+            Some(func.1)
+        }
+        else {
+            None
+        }
     }
 }

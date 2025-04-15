@@ -62,13 +62,29 @@ pub enum ParsingStage {
     Error(ParsingStageError),
 }
 
-#[derive(Clone, Debug)]
-pub struct SourceFile {
+/// Meta information of the source files.
+#[derive(Debug, Clone)]
+pub struct SourceFileMeta {
     /// Path of the source file.
     pub path: String,
 
     /// Name of the source file.
     pub name: String,
+}
+
+impl SourceFileMeta {
+    pub fn new(path: String, name: String) -> Self {
+        Self {
+            path,
+            name
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceFile {
+    /// Meta information
+    pub meta_info: SourceFileMeta,
 
     /// This contains the tokens after they have been
     /// generated
@@ -86,19 +102,24 @@ impl SourceFile {
     pub fn new(path: &str) -> Self {
         let file_path: &Path = Path::new(&path);
         let mut stage: ParsingStage = ParsingStage::Unprocessed;
+
         if !file_path.exists() {
-            println!("File not found: {:?}", file_path);
-            stage = ParsingStage::Error(ParsingStageError::FileNotFound)
+            stage = ParsingStage::Error(ParsingStageError::FileNotFound);
+            panic!("File not found: {:?}", file_path);
         }
+
         if !file_path.is_file() {
-            println!("{} is not a file!", path);
+            panic!("{} is not a file!", path);
         }
+
         Self {
-            path: String::from_str(path).ok().unwrap(),
-            name: file_path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or(String::from("")),
+            meta_info: SourceFileMeta::new(
+                String::from_str(path).ok().unwrap(),
+                file_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or(String::from(""))
+            ),
             tokens: None,
             stage,
             source: Rc::new("".to_string()),
@@ -109,17 +130,21 @@ impl SourceFile {
     ///
     /// Returns ```Result<i32, Error>```.
     pub fn read(&mut self) -> Result<i32, Error> {
-        let mut file_res: Result<File, std::io::Error> = File::open(Path::new(&self.path));
+        let mut file_res: Result<File, std::io::Error> = File::open(Path::new(&self.meta_info.path));
         let mut file_size: i32 = -1;
+
         if let Ok(ref mut file) = file_res {
             let mut input_holder: String = String::from("");
-            let file_read_res: Result<usize, std::io::Error> =
-                file.read_to_string(&mut input_holder);
+            let file_read_res: Result<usize, std::io::Error> = file.read_to_string(&mut input_holder);
+
+            // read as string
             self.source = Rc::new(input_holder.clone());
+
             if let Ok(fs) = file_read_res {
                 self.stage = ParsingStage::Loaded;
                 file_size = fs as i32;
-            } else {
+            } 
+            else {
                 self.stage = ParsingStage::Error(ParsingStageError::FileReadingError);
                 return Err(file_read_res.err().unwrap());
             }

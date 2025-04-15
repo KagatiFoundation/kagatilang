@@ -23,50 +23,79 @@ SOFTWARE.
 */
 
 use std::slice::Iter;
-use crate::sym::SymbolTrait;
+use crate::{sym::SymbolTrait, STableLookupKey};
 
-// Maximum number of symbols in program
+/// Maximum number of symbols that can be stored in the symbol table.
 pub const NSYMBOLS: usize = 1024;
 
+/// A generic symbol table that stores declared symbols of type `T`.
+/// 
+/// Keeps track of a list of symbols and their declaration order.
 #[derive(Clone, Debug)]
 pub struct Symtable<T: SymbolTrait + Clone> {
-    syms: Vec<T>, //
-    counter: usize,    // next free slot in the table
+    /// List of declared symbols.
+    syms: Vec<T>,
+
+    /// Points to the next free index for symbol insertion.
+    counter: usize,
+}
+
+impl<T: SymbolTrait + Clone> Default for Symtable<T> {
+    fn default() -> Self {
+        Self { 
+            syms: Default::default(), 
+            counter: Default::default() 
+        }
+    }
 }
 
 impl<T: SymbolTrait + Clone> Symtable<T> {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self {
-            syms: vec![],
-            counter: 0,
+    /// Looks up a symbol by name (immutable reference).
+    ///
+    /// Returns `Some(&T)` if found, or `None` otherwise.
+    pub fn lookup<Key>(&self, key: &Key) -> Option<&T> 
+    where Key: STableLookupKey {
+        if let Some(name) = key.key_as_str() {
+            return self.syms.iter().find(|&sym| sym.name() == name);
         }
+
+        if let Some(index) = key.key_as_int() {
+            return self.syms.get(index);
+        }
+        None
     }
 
-    pub fn find(&self, name: &str) -> Option<&T> {
-        self.syms.iter().find(|sym| sym.name() == name)
+    /// Looks up a symbol by name (mutable reference).
+    ///
+    /// Returns `Some(&mut T)` if found, or `None` otherwise.
+     pub fn lookup_mut<Key>(&mut self, key: &Key) -> Option<&mut T> 
+     where Key: STableLookupKey {
+        if let Some(name) = key.key_as_str() {
+            return self.syms.iter_mut().find(|sym| sym.name() == name);
+        }
+
+        if let Some(index) = key.key_as_int() {
+            return self.syms.get_mut(index);
+        }
+        None
     }
 
-    pub fn find_symbol(&self, name: &str) -> Option<usize> {
-        self.syms.iter().position(|sym| sym.name() == name)
-    }
-
-    fn next(&mut self) -> usize {
-        assert!(self.counter < NSYMBOLS, "Symbol table is full!");
-        self.counter += 1;
-        self.counter
-    }
-
-    pub fn add_symbol(&mut self, sym: T) -> Option<usize> {
+    /// Declares a new symbol if it doesn't already exist.
+    ///
+    /// Returns the position it was inserted at, or `None` if duplicate.
+    pub fn declare(&mut self, sym: T) -> Option<usize> {
         let act_pos: usize = self.next();
-        if self.find_symbol(&sym.name()).is_some() { 
+        if self.get_symbol_pos(&sym.name()).is_some() { 
             return None;
         }
         self.syms.push(sym);
         Some(act_pos - 1)
     }
 
-    pub fn insert(&mut self, pos: usize, sym: T) -> Option<usize> {
+    /// Declares a symbol at a specific position in the table.
+    ///
+    /// Panics if the position exceeds `NSYMBOLS`.
+    pub fn declare_at(&mut self, pos: usize, sym: T) -> Option<usize> {
         assert!(
             pos < NSYMBOLS,
             "value '{}' out of bounds for range '{}'",
@@ -77,41 +106,14 @@ impl<T: SymbolTrait + Clone> Symtable<T> {
         Some(pos)
     }
 
-    // TODO: Convert return type to Option<&Symbol>
-    pub fn get_symbol(&self, idx: usize) -> Option<&T> {
-        assert!(
-            idx < NSYMBOLS,
-            "value '{}' out of bounds for range '{}'",
-            idx,
-            self.counter
-        );
-        self.syms.get(idx)
+    pub fn get_symbol_pos(&self, name: &str) -> Option<usize> {
+        self.syms.iter().position(|sym| sym.name() == name)
     }
 
-    pub fn get_symbol_mut(&mut self, idx: usize) -> Option<&mut T> {
-        assert!(
-            idx < NSYMBOLS,
-            "value '{}' out of bounds for range '{}'",
-            idx,
-            self.counter
-        );
-        self.syms.get_mut(idx)
-    }
-
-    pub fn get_or_fail(&self, idx: usize) -> &T {
-        if let Some(sym) = self.get_symbol(idx) {
-            sym
-        } else {
-            panic!("Symbol at index '{}' not found in provided symbol table", idx);
-        }
-    }
-
-   pub fn get_mut_or_fail(&mut self, idx: usize) -> &mut T {
-        if let Some(sym) = self.get_symbol_mut(idx) {
-            sym
-        } else {
-            panic!("Symbol at index '{}' not found in provided symbol table", idx);
-        }
+    fn next(&mut self) -> usize {
+        assert!(self.counter < NSYMBOLS, "Symbol table is full!");
+        self.counter += 1;
+        self.counter
     }
 
     pub fn remove_symbol(&mut self, index: usize) -> T {
@@ -136,9 +138,9 @@ mod tests {
 
     #[test]
     fn test_symbol_addition() {
-        let mut table: Symtable<Symbol> = Symtable::new();
+        let mut table: Symtable<Symbol> = Symtable::default();
         matches!(
-            table.insert(0, Symbol::new(
+            table.declare_at(0, Symbol::new(
                 String::from("number"),
                 LitTypeVariant::I32,
                 SymbolType::Variable,
@@ -147,7 +149,7 @@ mod tests {
             Option::Some(0)
         );
         assert_eq!(
-            table.insert(1, Symbol::new(
+            table.declare_at(1, Symbol::new(
                 String::from("number2"),
                 LitTypeVariant::I32,
                 SymbolType::Variable,
@@ -156,7 +158,7 @@ mod tests {
             Option::Some(1)
         );
         assert_eq!(
-            table.insert(2, Symbol::new(
+            table.declare_at(2, Symbol::new(
                 String::from("number3"),
                 LitTypeVariant::I32,
                 SymbolType::Variable,
@@ -168,46 +170,46 @@ mod tests {
 
     #[test]
     fn test_find_symbol_index_from_its_name() {
-        let mut table: Symtable<Symbol> = Symtable::new();
-        table.insert(0, Symbol::new(
+        let mut table: Symtable<Symbol> = Symtable::default();
+        table.declare_at(0, Symbol::new(
             String::from("number2"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.insert(1, Symbol::new(
+        table.declare_at(1, Symbol::new(
             String::from("number3"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.insert(2, Symbol::new(
+        table.declare_at(2, Symbol::new(
             String::from("number4"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        assert_eq!(table.find_symbol("number2"), Option::Some(0));
-        assert_eq!(table.find_symbol("number3"), Option::Some(1));
-        assert_eq!(table.find_symbol("number4"), Option::Some(2));
+        assert_eq!(table.get_symbol_pos("number2"), Option::Some(0));
+        assert_eq!(table.get_symbol_pos("number3"), Option::Some(1));
+        assert_eq!(table.get_symbol_pos("number4"), Option::Some(2));
     }
 
     #[test]
     fn test_symbol_removal() {
-        let mut table: Symtable<Symbol> = Symtable::new();
-        table.insert(0, Symbol::new(
+        let mut table: Symtable<Symbol> = Symtable::default();
+        table.declare_at(0, Symbol::new(
             String::from("number2"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.insert(1, Symbol::new(
+        table.declare_at(1, Symbol::new(
             String::from("number3"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.insert(2, Symbol::new(
+        table.declare_at(2, Symbol::new(
             String::from("number4"),
             LitTypeVariant::I32,
             SymbolType::Variable,

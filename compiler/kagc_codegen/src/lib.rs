@@ -26,10 +26,12 @@ pub mod aarch64;
 pub mod errors;
 pub mod x86;
 pub mod typedefs;
+pub mod fn_ctx;
 
 use std::cell::RefMut;
 
 use errors::CodeGenErr;
+use fn_ctx::FnCtx;
 use kagc_ast::*;
 use kagc_ir::{ir_instr::*, ir_types::*, LabelId};
 use kagc_symbol::StorageClass;
@@ -51,13 +53,16 @@ pub trait CodeGen {
 
     fn gen_ir_from_node(&mut self, node: &mut AST, fn_ctx: &mut FnCtx, parent_ast_kind: ASTOperation) -> CGRes {
         if node.operation == ASTOperation::AST_GLUE {
+            let mut output: Vec<IR> = vec![];
             if let Some(left) = node.left.as_mut() {
-                self.gen_ir_from_node(left, fn_ctx, parent_ast_kind)?;
+                let left_irs: Vec<IR> = self.gen_ir_from_node(left, fn_ctx, parent_ast_kind)?;
+                output.extend(left_irs);
             }
             if let Some(right) = node.right.as_mut() {
-                self.gen_ir_from_node(right, fn_ctx, parent_ast_kind)?;
+                let right_irs: Vec<IR> = self.gen_ir_from_node(right, fn_ctx, parent_ast_kind)?;
+                output.extend(right_irs);
             }
-            Ok(vec![])
+            Ok(output)
         }
         else if node.operation == ASTOperation::AST_FUNCTION {
             return self.gen_ir_fn(node);

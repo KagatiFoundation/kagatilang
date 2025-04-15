@@ -157,22 +157,9 @@ impl TypeChecker {
         }
     }
 
-    #[deprecated]
-    pub fn is_bin_expr_type_compatibile(bin_expr: &BinExpr) -> bool {
-        let left_type: LitTypeVariant = bin_expr.left.result_type();
-        let right_type: LitTypeVariant = bin_expr.right.result_type();
-        match bin_expr.operation {
-            ASTOperation::AST_ADD 
-            | ASTOperation::AST_SUBTRACT
-            | ASTOperation::AST_MULTIPLY => {
-                if left_type.is_int() && right_type.is_int() {
-                    return TypeChecker::is_type_coalesciable(left_type, right_type) 
-                            || TypeChecker::is_type_coalesciable(right_type, left_type);
-                }
-                false
-            },
-            _ => false
-        }
+    pub fn is_coalesciable_both_ways(src: LitTypeVariant, dest: LitTypeVariant) -> bool {
+        TypeChecker::is_type_coalesciable(src, dest) 
+        && TypeChecker::is_type_coalesciable(dest, src)
     }
 
     pub fn is_type_coalesciable(src: LitTypeVariant, dest: LitTypeVariant) -> bool {

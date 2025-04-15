@@ -55,8 +55,8 @@ struct ComptFnProps {
 /// 
 /// - `compt_fn_props`: Optional function properties, used for tracking 
 ///                     whether a function is a leaf and its stack size.
-pub struct Aarch64IRToASM<'asmgen> {
-    pub ctx: Rc<RefCell<CompilerCtx<'asmgen>>>,
+pub struct Aarch64IRToASM {
+    pub ctx: Rc<RefCell<CompilerCtx>>,
 
     reg_manager: Rc<RefCell<Aarch64RegManager2>>,
 
@@ -73,9 +73,9 @@ pub struct Aarch64IRToASM<'asmgen> {
     state: IRToASMState,
 }
 
-impl<'asmgen> Aarch64IRToASM<'asmgen> {
+impl Aarch64IRToASM {
     #[allow(clippy::new_without_default)]
-    pub fn new(ctx: Rc<RefCell<CompilerCtx<'asmgen>>>, rm: Rc<RefCell<Aarch64RegManager2>>) -> Self {
+    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, rm: Rc<RefCell<Aarch64RegManager2>>) -> Self {
         Self {
             ctx,
             reg_manager: rm,
@@ -200,11 +200,12 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
 
     fn dump_global_strings(&self) -> String {
         let ctx_borrow = self.ctx.borrow();
+        let global_scope = ctx_borrow.root_scope();
 
         // output
         let mut output_str: String = String::new();
 
-        for symbol in ctx_borrow.sym_table.iter() {
+        for symbol in global_scope.table.iter() {
             // ignore non-global constants
             if (symbol.lit_type == LitTypeVariant::None) || symbol.sym_type == SymbolType::Function || symbol.class != StorageClass::GLOBAL {
                 continue;
@@ -282,7 +283,7 @@ impl<'asmgen> Aarch64IRToASM<'asmgen> {
     }
 }
 
-impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
+impl IRToASM for Aarch64IRToASM {
     fn gen_ir_fn_asm(&mut self, fn_ir: &mut IRFunc) -> String {
         if fn_ir.class == StorageClass::EXTERN {
             return format!(".extern _{}\n", fn_ir.name);
@@ -339,8 +340,8 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
         output_str
     }
 
-    fn gen_ir_return_asm(&mut self, ir_return: &IRReturn) -> String {
-        format!("hello")
+    fn gen_ir_return_asm(&mut self, _ir_return: &IRReturn) -> String {
+        "hello".to_string()
     }
     
     fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &IRVarDecl) -> String {
@@ -436,11 +437,11 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
         }
     }
 
-    fn gen_asm_store(&mut self, src: &IRLitType, stack_off: usize) -> String {
+    fn gen_asm_store(&mut self, src: &IRLitType, _stack_off: usize) -> String {
         format!("STR {:?}", src.as_reg())
     }
 
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], return_type: &Option<IRLitType>) -> String {
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], _return_type: &Option<IRLitType>) -> String {
         let mut output_str: String = String::new();
 
         for (_, param) in params{
@@ -536,7 +537,7 @@ impl<'irgen> IRToASM for Aarch64IRToASM<'irgen> {
     }
 }
 
-impl<'asmgen> Aarch64IRToASM<'asmgen> {
+impl Aarch64IRToASM {
     /// Extract the IRLitType as an operand(String)
     fn extract_operand(&mut self, irlit: &IRLitType) -> String {
         match irlit {

@@ -9,3 +9,5 @@ lazy_static = "1.4.0"
 
 kagc_ast = { path = "../kagc_ast" }
 kagc_symbol = { path = "../kagc_symbol" }
+kagc_types = { path = "../kagc_types" }
+kagc_scope = { path = "../kagc_scope" }

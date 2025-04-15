@@ -112,7 +112,8 @@ pub struct IRFunc {
     pub params: Vec<IRLitType>,
     pub body: Vec<IR>,
     pub class: StorageClass,
-    pub is_leaf: bool
+    pub is_leaf: bool,
+    pub scope_id: usize
 }
 
 #[derive(Debug, Clone)]

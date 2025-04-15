@@ -59,7 +59,7 @@ impl ParserContext {
 
 /// Represents a parser for converting tokens into an
 /// abstract syntax tree (AST).
-pub struct Parser<'parser> {
+pub struct Parser {
     /// Tokens that are going to be parsed.
     tokens: Vec<Token>,
 
@@ -80,29 +80,27 @@ pub struct Parser<'parser> {
     /// Local symbols of the function that is currently being parsed.
     temp_local_syms: Symtable<Symbol>,
 
-    temp_local_params: Symtable<Symbol>,
-
     /// Offset of next local variable.
     local_offset: i32,
-
-    /// Position of next global symbol.
-    next_global_sym_pos: usize,
 
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
     /// Context in which the ```Parser``` is going to work on.
-    ctx: Option<Rc<RefCell<CompilerCtx<'parser>>>>,
+    ctx: Rc<RefCell<CompilerCtx>>,
 
     /// Context of this parser.
     __pctx: ParserContext,
 
-    __panic_mode: bool
+    __panic_mode: bool,
+
+    /// Label generator that is going to be used by string literals only.
+    _str_label_: usize
 }
 
-impl<'parser> Parser<'parser> {
+impl Parser {
     #[allow(clippy::new_without_default)]
-    pub fn new(panic_mode: bool) -> Self {
+    pub fn new(panic_mode: bool, ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         let current_token: Token = Token::none();
         Self {
             tokens: vec![],
@@ -110,16 +108,15 @@ impl<'parser> Parser<'parser> {
             current_token,
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
-            temp_local_syms: Symtable::new(),
-            temp_local_params: Symtable::new(),
+            temp_local_syms: Symtable::default(),
             local_offset: 0,
-            next_global_sym_pos: 0,
             next_local_sym_pos: 0,
-            ctx: None,
+            ctx,
             __pctx: ParserContext {
                 is_erronous_parse: false,
             },
-            __panic_mode: panic_mode
+            __panic_mode: panic_mode,
+            _str_label_: 0
         }
     }
 
@@ -134,10 +131,10 @@ impl<'parser> Parser<'parser> {
     /// Panics if a parsing error occurs.
     pub fn parse_with_ctx(
         &mut self,
-        ctx: Rc<RefCell<CompilerCtx<'parser>>>,
+        ctx: Rc<RefCell<CompilerCtx>>,
         tokens: Vec<Token>,
     ) -> Vec<AST> {
-        self.ctx = Some(ctx);
+        self.ctx = ctx;
         self.tokens = tokens;
         self.current_token = self.tokens[0].clone();
         let mut nodes: Vec<AST> = vec![];
@@ -157,7 +154,6 @@ impl<'parser> Parser<'parser> {
                 }
             }
         }
-        self.ctx = None;
         nodes
     }
 
@@ -276,11 +272,15 @@ impl<'parser> Parser<'parser> {
         // reset local offset counter to 0
         self.local_offset = 0;
 
+        // Creating a new scope for function declaration
+        let func_scope_id: usize = self.ctx.borrow_mut().enter_new_scope();
+
         // match and ignore function declaration keyword 'def'
         _ = self.token_match(TokenKind::KW_DEF)?;
 
-        // Storage class of the function that is being parsed.
-        // By default, it is set to 'GLOBAL'.
+        /* Storage class of the function that is being parsed.
+          * By default, it is set to 'GLOBAL'.
+          */
         let mut func_storage_class: StorageClass = StorageClass::GLOBAL;
 
         // 'def' keyword could be followed by the 'extern' keyword, 
@@ -295,25 +295,25 @@ impl<'parser> Parser<'parser> {
 
         let current_file: String = self.get_current_file_name();
 
-        // let mut func_params: Symtable<FuncParam> = Symtable::<FuncParam>::new();
+        let mut func_param_types: Vec<LitTypeVariant> = vec![];
 
         if self.current_token.kind != TokenKind::T_RPAREN {
             loop {
                 if let Ok(param) = self.parse_parameter() {
-                    let local_sym = Symbol::__new(
-                        param.name.clone(), 
-                        param.lit_type, 
-                        SymbolType::Variable, 
-                        param.lit_type.size(), 
-                        StorageClass::PARAM, 
-                        param.offset,
-                        None,
-                        self.current_function_id
+                    let sym = Symbol::__new(
+                            param.name.clone(), 
+                            param.lit_type, 
+                            SymbolType::Variable, 
+                            param.lit_type.size(), 
+                            StorageClass::PARAM, 
+                            param.offset,
+                            None,
+                            self.current_function_id,
                     );
 
-                    self.add_symbol_local(local_sym.clone());
+                    func_param_types.push(sym.lit_type);
 
-                    self.temp_local_params.add_symbol(local_sym);
+                    self.add_symbol_local(sym.clone());
                 } 
 
                 let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
@@ -409,25 +409,29 @@ impl<'parser> Parser<'parser> {
             stack_offset,
             func_return_type,
             func_storage_class,
-            self.temp_local_syms.clone()
+            self.temp_local_syms.clone(),
+            func_param_types
         );
 
         // create a new FunctionInfo
-        if let Some(ctx_rc) = &mut self.ctx {
-            let mut ctx_borrow = ctx_rc.borrow_mut();
-            ctx_borrow.func_table.add(func_info);
-        }
+        let mut ctx_borrow = self.ctx.borrow_mut();
+        ctx_borrow.func_table.add(func_info);
+
+        // get out of scope
+        ctx_borrow.exit_scope();
 
         // reset offset counter after parsing function
         self.local_offset = 0;
 
         // reset temporary symbols holder after the function has been parsed
-        self.temp_local_syms = Symtable::new();
+        self.temp_local_syms = Symtable::default();
 
         // Return AST for function declaration
         Ok(AST::new(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 func_id: temp_func_id,
+                name: id_token.lexeme.clone(),
+                scope_id: func_scope_id
             })),
             ASTOperation::AST_FUNCTION,
             function_body,
@@ -476,27 +480,41 @@ impl<'parser> Parser<'parser> {
     fn parse_return_stmt(&mut self) -> ParseResult2 {
         // check whether parser's parsing a function or not
         if self.current_function_id == INVALID_FUNC_ID {
-            let __err: Result<_, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
-                self.get_current_file_name(), 
-                vec![],
-                self.current_token.clone()
-            )));
+            let __err: Result<_, Box<BErr>> = Err(
+                Box::new(
+                    BErr::unexpected_token(
+                        self.get_current_file_name(), 
+                        vec![],
+                        self.current_token.clone()
+                    )
+                )
+            );
+
             if self.__panic_mode {
                 panic!("{:?}", __err);
             }
+
             return __err;
         }
+
         _ = self.token_match(TokenKind::KW_RETURN)?;
+
         if self.current_token.kind == TokenKind::T_SEMICOLON {
-            return Ok(AST::create_leaf(
-                ASTKind::StmtAST(Stmt::Return(ReturnStmt {
-                    func_id: self.current_function_id,
-                })),
-                ASTOperation::AST_RETURN,
-                LitTypeVariant::None,
-                None,
-                None
-            ));
+            return Ok(
+                AST::create_leaf(
+                    ASTKind::StmtAST(
+                        Stmt::Return(
+                            ReturnStmt {
+                                func_id: self.current_function_id,
+                            }
+                        )
+                    ),
+                    ASTOperation::AST_RETURN,
+                    LitTypeVariant::None,
+                    None,
+                    None
+                )
+            );
         }
         let return_expr: AST = self.parse_equality()?;
         Ok(AST::new(
@@ -589,14 +607,20 @@ impl<'parser> Parser<'parser> {
 
     fn parse_if_stmt(&mut self) -> ParseResult2 {
         let cond_ast: AST = self.parse_conditional_stmt(TokenKind::KW_IF)?;
+
+        let if_scope = self.ctx.borrow_mut().enter_new_scope();
+
         let if_true_ast: AST = self.parse_single_stmt()?;
+
+        self.ctx.borrow_mut().exit_scope();
+
         let mut if_false_ast: Option<AST> = None;
         if self.current_token.kind == TokenKind::KW_ELSE {
             self.skip_to_next_token(); // skip 'else'
             if_false_ast = Some(self.parse_single_stmt()?);
         }
         Ok(AST::with_mid(
-            ASTKind::StmtAST(Stmt::If),
+            ASTKind::StmtAST(Stmt::If(IfStmt { scope_id: if_scope })),
             ASTOperation::AST_IF,
             Some(cond_ast),
             Some(if_true_ast),
@@ -707,7 +731,7 @@ impl<'parser> Parser<'parser> {
                 }
             }
             else if var_type == LitTypeVariant::Str {
-                let str_const_label: usize = self.ctx.as_ref().unwrap().borrow_mut().label_id + 1;
+                let str_const_label: usize = self._str_label_ + 1;
                 default_value = Some(LitType::I32(str_const_label as i32));
             }
         }
@@ -729,12 +753,7 @@ impl<'parser> Parser<'parser> {
             sym.func_id = Some(self.current_function_id);
         }
 
-        let symbol_add_pos: usize = if inside_func {
-            self.add_symbol_local(sym.clone()).unwrap()
-        } 
-        else {
-            self.add_symbol_global(sym.clone()).unwrap()
-        };
+        let symbol_add_pos: usize = self.add_symbol_local(sym.clone()).unwrap();
 
         let return_result: ParseResult2 = if let Some(assign_ast_node_res) = assignment_parse_res {
             Ok(AST::new(
@@ -829,11 +848,7 @@ impl<'parser> Parser<'parser> {
 
         self.local_offset += (array_size * array_type.size()) as i32 + 4; // allocate '4' extra bytes for size information
 
-        let symbol_add_pos: usize = if self.is_scope_global() {
-            self.add_symbol_global(sym.clone()).unwrap()
-        } else {
-            self.add_symbol_local(sym.clone()).unwrap()
-        };
+        let symbol_add_pos = self.add_symbol_local(sym.clone()).unwrap();
 
         let array_values: Vec<Expr> = self.parse_array_assign_values()?;
 
@@ -1041,21 +1056,19 @@ impl<'parser> Parser<'parser> {
                 ASTOperation::AST_INTLIT,
             )),
             TokenKind::T_STRING => {
-                let str_label: i32 = if let Some(ctx_rc) = &mut self.ctx {
-                    let mut ctx_borrow = ctx_rc.borrow_mut();
-                    let _lbl: i32 = ctx_borrow.label_id as i32;
-                    ctx_borrow.incr_label_count();
-                    _lbl
-                } else {
-                    panic!("No context provided for parser!");
-                };
+                let str_label: i32 = self._str_label_ as i32;
+                self._str_label_ += 1;
+
                 let str_const_symbol: Symbol = Symbol::new(
                     format!("_STR_{}---{}", str_label, current_token.lexeme.clone()),
                     LitTypeVariant::Str,
                     SymbolType::Constant,
                     StorageClass::GLOBAL,
                 );
-                self.add_symbol_global(str_const_symbol);
+
+                // keep strings at the global scope
+                self.ctx.borrow_mut().root_scope_mut().declare(str_const_symbol);
+                
                 Ok(AST::create_leaf(
                     ASTKind::ExprAST(
                         Expr::LitVal(
@@ -1247,33 +1260,19 @@ impl<'parser> Parser<'parser> {
     }
 
     fn get_current_file_name(&self) -> String {
-        if let Some(ctx_rc) = &self.ctx {
-            return ctx_rc
-                .borrow_mut()
-                .current_file
-                .unwrap()
-                .name
-                .clone();
-        } else {
-            panic!("no file is selected");
-        };
+        let ctx_borrow = self.ctx.borrow();
+        let name = ctx_borrow.current_file.as_ref().unwrap().name.clone();
+        name
     }
 
     fn add_symbol_global(&mut self, sym: Symbol) -> Option<usize> {
-        let insert_pos: Option<usize> = {
-            if let Some(ctx_rc) = &mut self.ctx {
-                let mut ctx_borrow = ctx_rc.borrow_mut();
-                self.next_global_sym_pos += 1;
-                ctx_borrow.sym_table.add_symbol(sym)
-            } else {
-                panic!("Can't add a new symbol globally");
-            }
-        };
+        let insert_pos: Option<usize> = self.ctx.borrow_mut().root_scope_mut().declare(sym);
         insert_pos
     }
 
+    /// Adds the symbol to the current scope.
     fn add_symbol_local(&mut self, sym: Symbol) -> Option<usize> {
-        let insert_pos: Option<usize> = self.temp_local_syms.add_symbol(sym.clone());
+        let insert_pos: Option<usize> = self.ctx.borrow_mut().declare(sym.clone());
         self.next_local_sym_pos += 1;
         insert_pos
     }

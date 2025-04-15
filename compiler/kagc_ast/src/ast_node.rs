@@ -50,7 +50,13 @@ pub enum ASTOperation {
     AST_LVIDENT,
     AST_ASSIGN,
     AST_GLUE,
+    
     AST_IF,
+
+    /// AST_ELSE is not a standard AST operation. It is 
+    /// used only to generate IR for `else` block.
+    AST_ELSE,
+
     AST_WHILE,
     AST_LOOP,
     AST_BREAK,

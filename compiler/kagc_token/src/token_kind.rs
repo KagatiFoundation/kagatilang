@@ -120,6 +120,8 @@ pub enum TokenKind {
     KW_IN,
     KW_IMPORT,
     KW_DEF,   // for function declarations
+    KW_MACRO,
+    KW_FROM,
     _KW_END_, // keywords end here
 
     // other tokens

@@ -22,9 +22,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use kagc_types::{LitType, LitTypeVariant};
+use kagc_types::*;
 
-// The types of symbol names inside the symbol table
+pub type SymbolId = usize;
+
+pub trait STableLookupKey {
+    fn key_as_str(&self) -> Option<&str> { None }
+    fn key_as_int(&self) -> Option<SymbolId> { None }
+}
+
+impl STableLookupKey for &str {
+    fn key_as_str(&self) -> Option<&str> {
+        Some(self)
+    }
+}
+
+impl STableLookupKey for SymbolId {
+    fn key_as_int(&self) -> Option<SymbolId> {
+        Some(*self)
+    }
+}
+
+/// The types of symbol names inside the symbol table
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 pub enum SymbolType {
     Variable,
@@ -141,7 +160,7 @@ impl Symbol {
         class: StorageClass,
         local_offset: i32,
         default_value: Option<LitType>,
-        func_id: usize
+        func_id: usize,
     ) -> Self {
         Self {
             name,
@@ -152,7 +171,7 @@ impl Symbol {
             local_offset,
             default_value,
             __use_count: 0,  // Ignored or initialized to 0
-            func_id: Some(func_id)
+            func_id: Some(func_id),
         }
     }
 

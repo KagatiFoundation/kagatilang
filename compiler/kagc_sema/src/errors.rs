@@ -113,12 +113,12 @@ impl fmt::Display for SATypeError {
 impl fmt::Display for SAError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SAError::TypeError(type_error) => write!(f, "Type Error: {}", type_error),
+            SAError::TypeError(type_error) => write!(f, "Type Error: {type_error}"),
             SAError::ArrayLengthError { expected, found } => {
-                write!(f, "Array length mismatch: expected `{}`, found `{}`.", expected, found)
+                write!(f, "Array length mismatch: expected `{expected}`, found `{found}`.")
             },
             SAError::UndefinedSymbol{ sym_name, token} => {
-                write!(f, "{}:{}: compile error: Undefined symbol '{}'", token.pos.line, token.pos.column, sym_name)
+                write!(f, "{}:{}: compile error: Undefined symbol '{sym_name}'", token.pos.line, token.pos.column)
             },
             SAError::None => write!(f, "No error."),
         }
@@ -127,7 +127,7 @@ impl fmt::Display for SAError {
 
 impl SAError {
     pub fn dump(&self) {
-        eprintln!("{}", self);
+        eprintln!("{self}");
         std::process::exit(1);
     }
 }

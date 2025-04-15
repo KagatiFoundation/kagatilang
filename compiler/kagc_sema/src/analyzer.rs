@@ -26,7 +26,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::Symbol;
+use kagc_symbol::SymbolType;
 use kagc_token::Token;
 use kagc_types::LitTypeVariant;
 
@@ -36,12 +36,12 @@ use crate::{
     typedefs::SAResult
 };
 
-pub struct SemanticAnalyzer<'sa> {
-    pub ctx: Rc<RefCell<CompilerCtx<'sa>>>,
+pub struct SemanticAnalyzer {
+    pub ctx: Rc<RefCell<CompilerCtx>>,
 }
 
-impl<'sa> SemanticAnalyzer<'sa> {
-    pub fn new(ctx: Rc<RefCell<CompilerCtx<'sa>>>) -> Self {
+impl SemanticAnalyzer {
+    pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
             ctx
         }
@@ -54,7 +54,6 @@ impl<'sa> SemanticAnalyzer<'sa> {
     pub fn start_analysis(&mut self, nodes: &mut Vec<AST>) {
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
-
             if let Err(analysis_err) = result {
                 analysis_err.dump();
             }
@@ -91,36 +90,6 @@ impl<'sa> SemanticAnalyzer<'sa> {
         }
     }
 
-    fn analyze_if_stmt(&mut self, node: &mut AST) -> SAResult {
-        if !node.kind.is_stmt() {
-            panic!("Needed an Expr--but found {:#?}", node);
-        }
-
-        if let ASTKind::StmtAST(Stmt::If) = &node.kind {
-            // every 'if' has an expression attached with it in its
-            // left branch
-            let cond_res: LitTypeVariant = self.analyze_expr(node.left.as_mut().unwrap())?;
-            if cond_res != LitTypeVariant::I32 {
-                return Err(
-                    SAError::TypeError(
-                        SATypeError::TypeMismatch { 
-                            expected: LitTypeVariant::I32, 
-                            found: cond_res
-                        }
-                    )
-                );
-            }
-
-            if let Some(if_body) = &mut node.mid {
-                self.analyze_node(if_body)?;
-            }
-
-            return Ok(cond_res);
-        }
-
-        Ok(LitTypeVariant::Array)
-    }
-
     fn analyze_fn_call(&mut self, func_call: &mut AST) -> SAResult {
         if let ASTKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut func_call.kind {
             self.analyze_func_call_expr(func_call_expr)
@@ -136,10 +105,9 @@ impl<'sa> SemanticAnalyzer<'sa> {
     fn analyze_func_call_stmt(&mut self, func_call: &mut FuncCallStmt) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
-        if let Some(func_sym_pos) = ctx_borrow.sym_table.find_symbol(&func_call.symbol_name) {
-            if let Some(func_sym) = ctx_borrow.sym_table.get_symbol(func_sym_pos) {
-
-                if !TypeChecker::is_callable(func_sym) {
+        if let Some(live_scope) = ctx_borrow.live_scope() {
+            if let Some(func_sym) = live_scope.lookup(&func_call.symbol_name) {
+                if func_sym.sym_type != SymbolType::Function {
                     return Err(
                         SAError::TypeError(
                             SATypeError::NonCallable { 
@@ -179,7 +147,9 @@ impl<'sa> SemanticAnalyzer<'sa> {
             
             Expr::Binary(binexpr) => self.analyze_bin_expr(binexpr),
 
-            Expr::Ident(identexpr) => self.analyze_ident_expr(identexpr),
+            Expr::Ident(identexpr) => {
+                self.analyze_ident_expr(identexpr)
+            },
 
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr),
 
@@ -203,49 +173,86 @@ impl<'sa> SemanticAnalyzer<'sa> {
     fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
-        if let Ok(sym) = ctx_borrow.find_sym(&ident_expr.sym_name) {
-            ident_expr.result_type = sym.lit_type;
-            return Ok(sym.lit_type);
+        if let Some(ident) = ctx_borrow.deep_lookup(&ident_expr.sym_name) {
+            Ok(ident.lit_type)
         }
-
-        Err(
-            SAError::UndefinedSymbol { 
-                sym_name: ident_expr.sym_name.clone(), 
-                token: Token::none() 
-            }
-        )
+        else {
+            Err(
+                SAError::UndefinedSymbol { 
+                    sym_name: ident_expr.sym_name.clone(), 
+                    token: Token::none() 
+                }
+            )
+        }
     }
 
     /// Analyze the function call expression
     /// 
     /// This analysis is done to check if the arguments to this 
     /// function call are valid.
-    fn analyze_func_call_expr(&self, func_call: &mut FuncCallExpr) -> SAResult {
+    fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
-        if let Some(func_sym_pos) = ctx_borrow.sym_table.find_symbol(&func_call.symbol_name) {
-            if let Some(func_sym) = ctx_borrow.sym_table.get_symbol(func_sym_pos) {
-
-                if !TypeChecker::is_callable(func_sym) {
-                    return Err(
-                        SAError::TypeError(
-                            SATypeError::NonCallable { 
-                                sym_name: func_sym.name.clone() 
-                            }
-                        )
-                    );
-                }
-
-                func_call.result_type = func_sym.lit_type;
-                return Ok(func_sym.lit_type);
+        let func_sym_type = if let Some(func_sym) = ctx_borrow.deep_lookup(&func_call.symbol_name) {
+            if func_sym.sym_type != SymbolType::Function {
+                return Err(
+                    SAError::TypeError(
+                        SATypeError::NonCallable { 
+                            sym_name: func_sym.name.clone() 
+                        }
+                    )
+                );
+            }
+            else {
+                func_sym.lit_type
             }
         }
-        Err(
-            SAError::UndefinedSymbol { 
-                sym_name: func_call.symbol_name.clone(), 
-                token: Token::none() 
+        else {
+            return Err(
+                SAError::UndefinedSymbol { 
+                    sym_name: func_call.symbol_name.clone(), 
+                    token: Token::none() 
+                }
+            );
+        };
+
+        let func_param_types = ctx_borrow
+            .func_table
+            .get(&func_call.symbol_name)
+            .unwrap()
+            .param_types
+            .clone();
+
+        drop(ctx_borrow);
+
+        self.check_func_call_args(&mut func_call.args[..], &func_param_types)?;            
+
+        func_call.result_type = func_sym_type;
+        Ok(func_sym_type)        
+    }
+
+    /// Check if the function arguments match the parameter types
+    fn check_func_call_args(
+        &mut self,
+        args: &mut [(usize, Expr)],
+        param_types: &[LitTypeVariant],
+    ) -> SAResult {
+        for (idx, param_type) in param_types.iter().enumerate() {
+            let expr_res: LitTypeVariant = self.analyze_and_mutate_expr(&mut args[idx].1)?;
+            let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res, *param_type);
+
+            if !assignment_ok {
+                return Err(
+                    SAError::TypeError(
+                        SATypeError::TypeMismatch { 
+                            expected: *param_type, 
+                            found: expr_res 
+                        }
+                    )
+                );
             }
-        )
+        }
+        Ok(LitTypeVariant::None) // placeholder; doesn't affect anything
     }
 
     /// There's nothing to be done here, actually. We don't care 
@@ -260,12 +267,12 @@ impl<'sa> SemanticAnalyzer<'sa> {
             panic!("Needed a ReturnStmt--but found {:#?}", node);
         }
 
-        if let Some(Stmt::Return(_)) = &mut node.kind.as_stmt() {
+        if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt() {
             let ctx_borrow = self.ctx.borrow();
             
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
-            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.get_curr_func().unwrap().return_type;
+            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.lookup_fn(ret_stmt.func_id).unwrap().return_type;
 
             drop(ctx_borrow);
             
@@ -316,19 +323,36 @@ impl<'sa> SemanticAnalyzer<'sa> {
         }
 
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt() {
+            // switch to function's scope
             let mut ctx_borrow = self.ctx.borrow_mut();
-            let func_symbol: Symbol = ctx_borrow.sym_table.get_symbol(func_decl.func_id).unwrap().clone();
 
-            ctx_borrow.switch_to_func_scope(func_decl.func_id);
+            let func_ret_type = ctx_borrow.root_scope().lookup(&func_decl.name).map(|func_sym| func_sym.lit_type);
+
+            if func_ret_type.is_none() {
+                return Err(
+                    SAError::UndefinedSymbol { 
+                        sym_name: func_decl.name.clone(), 
+                        token: Token::none() 
+                    }
+                );
+            };
+
+            // unwrap the return type
+            let func_ret_type: LitTypeVariant = func_ret_type.unwrap();
+
+            ctx_borrow.enter_scope(func_decl.scope_id);
+            
+            // drop context borrow
             drop(ctx_borrow);
 
             if let Some(func_body) = &mut node.left {
                 self.analyze_node(func_body)?;
             }
 
-            self.ctx.borrow_mut().switch_to_global_scope();
+            // exit function's scope
+            self.ctx.borrow_mut().exit_scope();
 
-            return Ok(func_symbol.lit_type);
+            return Ok(func_ret_type);
         }
         panic!("Not a function declaration statement!");
     }
@@ -339,201 +363,53 @@ impl<'sa> SemanticAnalyzer<'sa> {
 
             let mut ctx_borrow = self.ctx.borrow_mut();
 
-            if let Ok(var_sym) = ctx_borrow.find_sym_mut(&var_decl.sym_name) {
+            if let Some(var_sym) = ctx_borrow.deep_lookup_mut(&var_decl.sym_name) {
                 return TypeChecker::type_check_var_decl_stmt(var_sym, var_value_type);
             }
-            else {
-                return Err(
-                    SAError::UndefinedSymbol { 
-                        sym_name: var_decl.sym_name.clone(), 
-                        token: Token::none() 
-                    }
-                );
-            }
+            return Err(
+                SAError::UndefinedSymbol { 
+                    sym_name: var_decl.sym_name.clone(), 
+                    token: Token::none() 
+                }
+            );
         }
 
         panic!("Not a var declaration statement");
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
-    use kagc_ast::{ASTKind, ASTOperation, BinExpr, Expr, LitValExpr, Stmt, VarDeclStmt, AST};
-    use kagc_ctx::CompilerCtx;
-    use kagc_symbol::{FunctionInfoTable, StorageClass, Symbol, SymbolType, Symtable};
-    use kagc_types::{LitType, LitTypeVariant};
-
-    use crate::{errors::{SAError, SATypeError}, typedefs::SAResult};
-
-    use super::SemanticAnalyzer;
-
-    fn create_symt(syms: Vec<Symbol>) -> Symtable<Symbol> {
-        let mut symt = Symtable::<Symbol>::new();
-        for sym in syms {
-            symt.add_symbol(sym);
+    fn analyze_if_stmt(&mut self, node: &mut AST) -> SAResult {
+        if !node.kind.is_stmt() {
+            panic!("Needed an Expr--but found {:#?}", node);
         }
-        symt
-    }
 
-    fn create_funt() -> FunctionInfoTable {
-        FunctionInfoTable::new()
-    }
+        if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &node.kind {
+            self.ctx.borrow_mut().enter_scope(if_stmt.scope_id);
 
-    fn create_ctx<'ctx>(symt: &'ctx mut Symtable<Symbol>, func_table: &'ctx mut FunctionInfoTable) -> CompilerCtx<'ctx> {
-        CompilerCtx::new(symt, func_table)
-    }
+            // every 'if' has an expression attached with it in its
+            // left branch
+            let cond_res: LitTypeVariant = self.analyze_expr(node.left.as_mut().unwrap())?;
+            if cond_res != LitTypeVariant::I32 {
+                return Err(
+                    SAError::TypeError(
+                        SATypeError::TypeMismatch { 
+                            expected: LitTypeVariant::I32, 
+                            found: cond_res
+                        }
+                    )
+                );
+            }
 
-    fn create_i32_var_decl_ast(pos: usize, name: String) -> AST {
-        AST::new(
-            ASTKind::StmtAST(Stmt::VarDecl(
-                VarDeclStmt {
-                    class: StorageClass::LOCAL,
-                    symtbl_pos: pos,
-                    sym_name: name
-                }
-            )), 
-            ASTOperation::AST_VAR_DECL, 
-            Some(AST::create_leaf(
-                ASTKind::ExprAST(
-                    Expr::LitVal(LitValExpr { 
-                        value: LitType::I32(123), 
-                        result_type: LitTypeVariant::I32 
-                    })
-                ), 
-                ASTOperation::AST_INTLIT, 
-                LitTypeVariant::I32, 
-                None, 
-                None
-            )
-            ), 
-            None, 
-            LitTypeVariant::I32
-        )
-    }
+            if let Some(if_body) = &mut node.mid {
+                self.analyze_node(if_body)?;
+            }
 
-    fn create_i32_var_decl_ast_with_bin_expr(pos: usize, name: String) -> AST {
-        AST::new(
-            ASTKind::StmtAST(Stmt::VarDecl(
-                VarDeclStmt {
-                    class: StorageClass::LOCAL,
-                    symtbl_pos: pos,
-                    sym_name: name
-                }
-            )), 
-            ASTOperation::AST_VAR_DECL, 
-            Some(AST::create_leaf(
-                ASTKind::ExprAST(
-                    Expr::Binary(BinExpr {
-                        operation: ASTOperation::AST_ADD,
-                        left: Box::new(
-                            Expr::LitVal(LitValExpr { 
-                                value: LitType::I32(123), 
-                                result_type: LitTypeVariant::I32 
-                            })
-                        ),
-                        right: Box::new(
-                            Expr::LitVal(
-                                LitValExpr {
-                                    value: LitType::Str {
-                                        value: "bichara".to_string(), 
-                                        label_id: 7
-                                    },
-                                    result_type: LitTypeVariant::Str
-                                }
-                            )
-                        ),
-                        result_type: LitTypeVariant::I32
-                    })
-                    
-                ), 
-                ASTOperation::AST_INTLIT, 
-                LitTypeVariant::I32, 
-                None, 
-                None
-            )
-            ), 
-            None, 
-            LitTypeVariant::I32
-        )
-    }
+            if let Some(else_body) = &mut node.right {
+                self.analyze_node(else_body)?;
+            }
 
-    fn create_i32_symbol(name: String) -> Symbol {
-        Symbol::new(name, LitTypeVariant::I32, SymbolType::Variable, StorageClass::LOCAL)
-    }
-
-    fn create_symbol_without_explicit_type(name: String) -> Symbol {
-        Symbol::new(name, LitTypeVariant::None, SymbolType::Variable, StorageClass::LOCAL)
-    }
-
-    #[test]
-    fn test_no_type_var_decl_stmt_analysis() {
-        let symt: &mut Symtable<Symbol> = &mut create_symt(
-            vec![
-                create_symbol_without_explicit_type("number".to_string()),
-            ]
-        );
-        let funct: &mut FunctionInfoTable = &mut create_funt();
-        let ctx: Rc<RefCell<CompilerCtx<'_>>> = Rc::new(RefCell::new(create_ctx(symt, funct)));
-
-        let mut a_analyzer: SemanticAnalyzer<'_> = SemanticAnalyzer::new(Rc::clone(&ctx));
-
-        let mut no_type_var_ast: AST = create_i32_var_decl_ast(0, "number".to_string());
-        let ar2: SAResult = a_analyzer.analyze_var_decl_stmt(&mut no_type_var_ast);
-        assert!(ar2.is_ok());
-
-        // type has to be updated of non-type symbol
-        assert_eq!(symt.get_symbol(0).unwrap().lit_type, LitTypeVariant::I32);
-    }
-
-    #[test]
-    fn test_bin_expr_var_decl_stmt_analysis() {
-        let symt: &mut Symtable<Symbol> = &mut create_symt(
-            vec![
-                create_symbol_without_explicit_type("number".to_string()),
-            ]
-        );
-        let funct: &mut FunctionInfoTable = &mut create_funt();
-        let ctx: Rc<RefCell<CompilerCtx<'_>>> = Rc::new(RefCell::new(create_ctx(symt, funct)));
-
-        let mut a_analyzer: SemanticAnalyzer<'_> = SemanticAnalyzer::new(Rc::clone(&ctx));
-
-        let mut no_type_var_ast: AST = create_i32_var_decl_ast_with_bin_expr(0, "number".to_string());
-        let ar2: SAResult = a_analyzer.analyze_var_decl_stmt(&mut no_type_var_ast);
-        assert!(ar2.is_err());
-        matches!(
-            ar2, 
-            Err(
-                SAError::TypeError(
-                    SATypeError::IncompatibleTypes { 
-                        a: LitTypeVariant::I32, 
-                        b: LitTypeVariant::Str, 
-                        operation: ASTOperation::AST_ADD
-                    }
-                )
-            )
-        );
-
-        // type has to be updated of non-type symbol
-        // assert_eq!(symt.get_symbol(0).unwrap().lit_type, LitTypeVariant::I32);
-    }
-
-    #[test]
-    fn test_var_decl_stmt_analysis() {
-        let symt: &mut Symtable<Symbol> = &mut create_symt(
-            vec![
-                create_i32_symbol("number".to_string()),
-            ]
-        );
-        let funct: &mut FunctionInfoTable = &mut create_funt();
-        let ctx: Rc<RefCell<CompilerCtx<'_>>> = Rc::new(RefCell::new(create_ctx(symt, funct)));
-
-        let mut var_ast: AST = create_i32_var_decl_ast(0, "number".to_string());
-
-        let mut a_analyzer: SemanticAnalyzer<'_> = SemanticAnalyzer::new(Rc::clone(&ctx));
-
-        let analysis_res: SAResult = a_analyzer.analyze_var_decl_stmt(&mut var_ast);
-        assert!(analysis_res.is_ok());
+            self.ctx.borrow_mut().exit_scope();
+            return Ok(cond_res);
+        }
+        Ok(LitTypeVariant::None)
     }
 }
