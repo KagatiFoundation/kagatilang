@@ -112,17 +112,6 @@ pub trait CodeGen {
     /// # Arguments
     ///
     /// * `nodes` - The Abstract Syntax Tree (AST) list used for code generation.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use code_gen::CodeGen;
-    /// use ast::AST;
-    ///
-    /// let mut generator = CodeGen::new();
-    /// let ast = AST::new();
-    /// generator.start_gen(&ast);
-    /// ```
     fn start_gen(&mut self, nodes: &[AST]) where Self: Sized {
         self.gen_global_symbols();
         // .text section starts from here

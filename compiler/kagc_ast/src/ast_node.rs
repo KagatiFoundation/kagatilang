@@ -111,21 +111,6 @@ impl FromTokenKind<ASTOperation> for ASTOperation {
 /// * `value` - An optional literal value associated with the AST node (`LitType`).
 /// * `result_type` - The variant of literal type representing the result type of 
 ///     the AST node (`LitTypeVariant`).
-///
-/// # Examples
-///
-/// ```
-/// // Create a new AST node representing an addition operation
-/// let ast_node = AST {
-///     kind: ASTKind::Expr(...),
-///     operation: ASTOperation::Addition,
-///     left: Box::new(Some(left_ast_node)),
-///     mid: Box::new(None), // No middle subtree
-///     right: Box::new(Some(right_ast_node)),
-///     value: None, // No associated literal value
-///     result_type: LitTypeVariant::Int, // Result type is integer
-/// };
-/// ```
 #[derive(Clone, Debug)]
 pub struct AST {
     pub kind: ASTKind,

@@ -848,7 +848,7 @@ impl Parser {
 
         self.local_offset += (array_size * array_type.size()) as i32 + 4; // allocate '4' extra bytes for size information
 
-        let symbol_add_pos = self.add_symbol_local(sym.clone()).unwrap();
+        let symbol_add_pos: usize = self.add_symbol_local(sym.clone()).unwrap();
 
         let array_values: Vec<Expr> = self.parse_array_assign_values()?;
 

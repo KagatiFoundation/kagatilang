@@ -6,9 +6,7 @@ pub fn to_hex<T: LowerHex>(num: T) -> String {
 }
 
 /// Split the given 64 bit hex string  into 4 parts.
-/// Example:
-/// 
-///     0xf98dcba4b4bacd23 into vec!["f98d", "cba4", "b4ba", "cd23"]
+/// Example: 0xf98dcba4b4bacd23 into vec!["f98d", "cba4", "b4ba", "cd23"]
 pub fn i64_hex_split_quarter(x: String) -> Vec<String> {
     if !x.starts_with("0x") {
         return vec![];
@@ -26,10 +24,7 @@ pub fn i64_hex_split_quarter(x: String) -> Vec<String> {
 }
 
 /// Split the given 32 bit hex string into 2 parts.
-/// ```Example:```
-/// ```
-///     0xf98dcba4 into vec!["f98d", "cba4"]
-/// ```
+/// Example: 0xf98dcba4 into vec!["f98d", "cba4"]
 pub fn i32_hex_split_half(x: String) -> Vec<String> {
     if !x.starts_with("0x") {
         return vec![];

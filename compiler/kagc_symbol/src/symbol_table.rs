@@ -140,7 +140,7 @@ mod tests {
     fn test_symbol_addition() {
         let mut table: Symtable<Symbol> = Symtable::default();
         matches!(
-            table.declare_at(0, Symbol::new(
+            table.declare(Symbol::new(
                 String::from("number"),
                 LitTypeVariant::I32,
                 SymbolType::Variable,
@@ -149,7 +149,7 @@ mod tests {
             Option::Some(0)
         );
         assert_eq!(
-            table.declare_at(1, Symbol::new(
+            table.declare(Symbol::new(
                 String::from("number2"),
                 LitTypeVariant::I32,
                 SymbolType::Variable,
@@ -158,7 +158,7 @@ mod tests {
             Option::Some(1)
         );
         assert_eq!(
-            table.declare_at(2, Symbol::new(
+            table.declare(Symbol::new(
                 String::from("number3"),
                 LitTypeVariant::I32,
                 SymbolType::Variable,
@@ -171,19 +171,19 @@ mod tests {
     #[test]
     fn test_find_symbol_index_from_its_name() {
         let mut table: Symtable<Symbol> = Symtable::default();
-        table.declare_at(0, Symbol::new(
+        table.declare(Symbol::new(
             String::from("number2"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.declare_at(1, Symbol::new(
+        table.declare(Symbol::new(
             String::from("number3"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.declare_at(2, Symbol::new(
+        table.declare(Symbol::new(
             String::from("number4"),
             LitTypeVariant::I32,
             SymbolType::Variable,
@@ -197,19 +197,19 @@ mod tests {
     #[test]
     fn test_symbol_removal() {
         let mut table: Symtable<Symbol> = Symtable::default();
-        table.declare_at(0, Symbol::new(
+        table.declare(Symbol::new(
             String::from("number2"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.declare_at(1, Symbol::new(
+        table.declare(Symbol::new(
             String::from("number3"),
             LitTypeVariant::I32,
             SymbolType::Variable,
             StorageClass::GLOBAL
         ));
-        table.declare_at(2, Symbol::new(
+        table.declare(Symbol::new(
             String::from("number4"),
             LitTypeVariant::I32,
             SymbolType::Variable,
