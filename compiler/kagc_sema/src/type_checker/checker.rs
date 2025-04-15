@@ -65,27 +65,6 @@ impl TypeChecker {
         Ok(expr_type)
     }
 
-    /// this fucktion is bullshit. do not use
-    /// IGNORE
-    pub fn type_check_arr_var_decl_stmt(sym: &mut Symbol, vals: &Vec<Expr>) -> SAResult {
-        for expr in vals {
-            if expr.result_type() != sym.lit_type 
-                && !is_type_coalescing_possible(expr.result_type(), sym.lit_type) {
-                    return Err(SAError::TypeError(
-                        SATypeError::AssignmentTypeMismatch { 
-                            expected: sym.lit_type, 
-                            found: expr.result_type() 
-                        })
-                    );
-                }
-        }
-        if sym.lit_type == LitTypeVariant::None && !vals.is_empty() {
-            let array_type: LitTypeVariant = Self::infer_type(&vals[0])?;
-            sym.lit_type = array_type;
-        }
-        Ok(sym.lit_type)
-    }
-
     pub fn check_bin_expr_type_compatability(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation) -> SAResult {
         match op {
             ASTOperation::AST_ADD => {
@@ -173,56 +152,5 @@ impl TypeChecker {
 
     pub fn is_callable(sym: &Symbol) -> bool {
         sym.sym_type == SymbolType::Function
-    }
-
-    #[deprecated]
-    pub fn infer_type(expr: &Expr) -> Result<LitTypeVariant, SAError> {
-        return match expr {
-            Expr::LitVal(lit_val_expr) => Ok(lit_val_expr.result_type),
-            Expr::Ident(ident_expr) => Ok(ident_expr.result_type),
-            Expr::FuncCall(func_call_expr) => Ok(func_call_expr.result_type),
-            Expr::Binary(bin_expr) => {
-                let left_type: LitTypeVariant = TypeChecker::infer_type(&bin_expr.left)?;
-                let right_type: LitTypeVariant = TypeChecker::infer_type(&bin_expr.right)?;
-                for typ in [&left_type, &right_type] {
-                    match typ {
-                        LitTypeVariant::Str 
-                        | LitTypeVariant::Array
-                        | LitTypeVariant::Null
-                        | LitTypeVariant::Void => {
-                            return Err(
-                                SAError::TypeError(SATypeError::IncompatibleTypes { 
-                                    a: left_type, 
-                                    b: right_type,
-                                    operation: bin_expr.operation 
-                                })
-                            )
-                        },
-                        _ => ()
-                    };
-                }
-                if left_type != right_type {
-                    let lprec: Option<&u8> = TYPE_PRECEDENCE_EXPR.get(&(left_type as u8));
-                    let rprec: Option<&u8> = TYPE_PRECEDENCE_EXPR.get(&(right_type as u8));
-                    let lp: u8 = if let Some(lp) = lprec {
-                        *lp
-                    } else {
-                        panic!("Type precedence not defined for operation {:?}", left_type);
-                    };
-                    let rp: u8 = if let Some(rp) = rprec {
-                        *rp
-                    } else {
-                        panic!("Type precedence not defined for operation {:?}", right_type);
-                    };
-                    if lp > rp {
-                        return Ok(left_type);
-                    } else {
-                        return Ok(right_type);
-                    }
-                }
-                Ok(left_type)
-            }
-            _ => Err(SAError::None)
-        };
     }
 }

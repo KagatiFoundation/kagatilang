@@ -1,7 +1,5 @@
-use kagc_ast::ASTOperation;
-use kagc_ir::{ir_instr::{IRInstr, IR}, LabelId};
-use kagc_symbol::INVALID_FUNC_ID;
-use kagc_target::reg::{AllocedReg, RegIdx};
+use kagc_ir::ir_instr::{IRInstr, IR};
+use kagc_target::reg::AllocedReg;
 
 use crate::errors::CodeGenErr;
 

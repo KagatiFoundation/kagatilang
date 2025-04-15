@@ -300,7 +300,7 @@ impl Parser {
         if self.current_token.kind != TokenKind::T_RPAREN {
             loop {
                 if let Ok(param) = self.parse_parameter() {
-                    let sym = Symbol::__new(
+                    let sym: Symbol = Symbol::create(
                             param.name.clone(), 
                             param.lit_type, 
                             SymbolType::Variable, 
@@ -835,7 +835,7 @@ impl Parser {
         self.token_match(TokenKind::T_RBRACKET)?;
         self.token_match(TokenKind::T_EQUAL)?;
 
-        let sym: Symbol = Symbol::__new(
+        let sym: Symbol = Symbol::create(
             id_token.lexeme.clone(), 
             array_type, 
             SymbolType::Array, 

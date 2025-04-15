@@ -152,7 +152,8 @@ impl Symbol {
         }
     }
 
-    pub fn __new(
+    #[allow(clippy::too_many_arguments)]
+    pub fn create(
         name: String,
         lit_type: LitTypeVariant,
         sym_type: SymbolType,

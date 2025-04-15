@@ -1,7 +1,7 @@
 # Bugs to Fix:
 [✅] Semantic analyzer not reporting an undefined symbol error when calling a non-existing function.
 [] Fix the instruction order after parameter parsing
-[] Fix no symbol found issues (CURRENT)
+[✅] Fix no symbol found issues (CURRENT)
 
 # Features to implement:
 [✅] Allocate registers from x0-x7 only for function parameters.
