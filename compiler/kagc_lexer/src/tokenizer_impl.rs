@@ -51,7 +51,7 @@ lazy_static! {
         _keys.insert("extern", TokenKind::KW_EXTERN);
         _keys.insert("let", TokenKind::KW_LET);
         _keys.insert("def", TokenKind::KW_DEF);
-        _keys.insert("str", TokenKind::KW_STR);
+        _keys.insert("string", TokenKind::KW_STR);
         _keys.insert("in", TokenKind::KW_IN);
         _keys.insert("import", TokenKind::KW_IMPORT);
         _keys.insert("null", TokenKind::KW_NULL);

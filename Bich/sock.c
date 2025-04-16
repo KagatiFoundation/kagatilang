@@ -13,6 +13,10 @@ socklen_t addrlen;
 
 typedef void thisptr;
 
+void _println(char *str) {
+    printf("%s\n", str);
+}
+
 void __BICH_POSIX__close_socket(Bich_Int fd) {
     close(fd);
 }

@@ -86,7 +86,12 @@ impl TypeChecker {
                 }
                 panic!()
             },
-            ASTOperation::AST_GTHAN => {
+            ASTOperation::AST_GTHAN
+            | ASTOperation::AST_LTHAN 
+            | ASTOperation::AST_EQEQ
+            | ASTOperation::AST_NEQ
+            | ASTOperation::AST_LTEQ
+            | ASTOperation::AST_GTEQ => {
                 if Self::are_comparable(a, b, op) {
                     Ok(LitTypeVariant::I32)
                 }

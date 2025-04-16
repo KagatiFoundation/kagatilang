@@ -237,6 +237,15 @@ impl SemanticAnalyzer {
         args: &mut [(usize, Expr)],
         param_types: &[LitTypeVariant],
     ) -> SAResult {
+        if args.len() != param_types.len() {
+            return Err(
+                SAError::ArgLengthMismatch { 
+                    expected: args.len(), 
+                    found: param_types.len() 
+                }
+            );
+        }
+
         for (idx, param_type) in param_types.iter().enumerate() {
             let expr_res: LitTypeVariant = self.analyze_and_mutate_expr(&mut args[idx].1)?;
             let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res, *param_type);
@@ -269,6 +278,7 @@ impl SemanticAnalyzer {
 
         if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt() {
             let ctx_borrow = self.ctx.borrow();
+            // println!("{:#?}", ctx_borrow.lookup_fn(ret_stmt.func_id));
             
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
@@ -281,10 +291,11 @@ impl SemanticAnalyzer {
                 self.analyze_expr(return_expr)?
             }
             else {
-                LitTypeVariant::None
+                LitTypeVariant::Void
             };
 
-            if expected_fn_ret_type.is_void() && found_fn_ret_type != LitTypeVariant::None {
+            if expected_fn_ret_type.is_void() 
+                && (found_fn_ret_type.is_none() || !found_fn_ret_type.is_void()) {
                 return Err(
                     SAError::TypeError(
                         SATypeError::ReturnType(
@@ -296,11 +307,11 @@ impl SemanticAnalyzer {
                 );
             }
 
-            let return_type_mismatch: bool = 
+            let ret_typ_mismatch: bool = 
                 !expected_fn_ret_type.is_void() && found_fn_ret_type.is_none() ||
                 ((expected_fn_ret_type != found_fn_ret_type) && !TypeChecker::is_type_coalesciable(found_fn_ret_type, expected_fn_ret_type));
 
-            if return_type_mismatch {
+            if ret_typ_mismatch {
                 return Err(
                     SAError::TypeError(
                         SATypeError::ReturnType(

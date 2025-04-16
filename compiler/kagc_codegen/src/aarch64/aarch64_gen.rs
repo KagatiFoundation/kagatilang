@@ -69,7 +69,7 @@ pub struct Aarch64CodeGen {
     /// Current function that is being parsed
     current_function: Option<FunctionInfo>,
     
-    early_return_label_id: usize,
+    early_return_label_id: Option<usize>,
 }
 
 impl CodeGen for Aarch64CodeGen {
@@ -242,9 +242,9 @@ impl CodeGen for Aarch64CodeGen {
 
         if let Some(ref body) = ast.left {
             self.gen_code_from_ast(body, 0xFFFFFFFF, ast.operation)?;
-            if self.early_return_label_id != NO_REG {
-                println!("_L{}:", self.early_return_label_id);
-                self.early_return_label_id = NO_REG; // reset early return label after function code generation
+            if let Some(id) = self.early_return_label_id {
+                println!("_L{}:", id);
+                self.early_return_label_id = None; // reset early return label after function code generation
             }
         }
 
@@ -435,9 +435,9 @@ impl CodeGen for Aarch64CodeGen {
         // let func_ret_type: LitTypeVariant = self.sym_table.get_symbol(func_id).lit_type;
         // is it an early return? 
         if early_return {
-            self.early_return_label_id = self.get_next_label();
+            self.early_return_label_id = Some(self.get_next_label());
             
-            self.emit(&format!("b _L{}", self.early_return_label_id));
+            self.emit(&format!("b _L{}", self.early_return_label_id.unwrap()));
 
             return Ok(AllocedReg::early_return());
         }
@@ -631,7 +631,8 @@ impl CodeGen for Aarch64CodeGen {
                         body: vec![],
                         class: func_info.storage_class,
                         is_leaf: true,
-                        scope_id: self.ctx.borrow().live_scope_id()
+                        scope_id: self.ctx.borrow().live_scope_id(),
+                        id: func_id
                     }
                 )]
             );
@@ -672,7 +673,7 @@ impl CodeGen for Aarch64CodeGen {
             parent_ast_kind: ASTOperation::AST_FUNCTION,
             prev_ast_kind: None,
 
-            next_label: 0,
+            next_label: self.label_id,
             force_label_use: 0
         };
 
@@ -683,10 +684,24 @@ impl CodeGen for Aarch64CodeGen {
             fn_body.extend(body_ir);
         }
 
+        if let Some(early_ret) = self.early_return_label_id {
+            fn_body.push(
+                IR::Label(
+                    IRLabel(
+                        early_ret
+                    )
+                )
+            );
+            self.early_return_label_id = None;
+        }
+
+        // get out of function
         self.current_function = None;
 
         // exit function's scope
         let func_scope: usize = self.ctx.borrow_mut().exit_scope();
+
+        self.label_id = fn_ctx.next_label;
 
         let calls_fns: bool = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
 
@@ -698,7 +713,8 @@ impl CodeGen for Aarch64CodeGen {
                     body: fn_body,
                     class: store_class,
                     is_leaf: !calls_fns,
-                    scope_id: func_scope
+                    scope_id: func_scope,
+                    id: func_id 
                 }
             )]
         )
@@ -841,21 +857,11 @@ impl CodeGen for Aarch64CodeGen {
 
     fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
-            let mut ret_instrs: Vec<IR> = if fn_ctx.early_return {
-                // turn off early return ASAP
-                fn_ctx.early_return = false;
+            let mut ret_instrs: Vec<IR> = vec![]; 
 
-                self.early_return_label_id = self.get_next_label();
-                vec![
-                    IR::Instr(IRInstr::Jump { label_id: self.early_return_label_id })
-                ]
-            }
-            else {
-                vec![]
-            };
-
-            // if the function is non-void type
+            // always check function's existense
             if let Some(curr_fn) = &self.current_function {
+                // if the function is non-void type
                 if !curr_fn.return_type.is_void() {
                     let ret_stmt_instrs: Vec<IRInstr> = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
 
@@ -874,6 +880,30 @@ impl CodeGen for Aarch64CodeGen {
                     );
                 }
             }
+
+            let early_ret_instrs = if fn_ctx.early_return {
+                // turn off early return ASAP
+                fn_ctx.early_return = false;
+
+                let jump_to: usize = if let Some(lbl_id) = self.early_return_label_id {
+                    lbl_id
+                }
+                else {
+                    let next_id: usize = fn_ctx.get_next_label();
+                    self.early_return_label_id = Some(next_id);
+                    next_id
+                };
+
+                vec![
+                    IR::Instr(IRInstr::Jump { label_id: jump_to })
+                ]
+            }
+            else {
+                vec![]
+            };
+
+            ret_instrs.extend(early_ret_instrs);
+
             return Ok(ret_instrs);
         }
         panic!("Expected ReturnStmt but found {:?}", ret_stmt);
@@ -1005,7 +1035,7 @@ impl Aarch64CodeGen {
             ctx,
             label_id: 0,
             function_id: NO_REG,
-            early_return_label_id: NO_REG,
+            early_return_label_id: None,
             current_function: None,
         }
     }
@@ -1130,9 +1160,4 @@ impl Aarch64CodeGen {
         let ctx_borrow = self.ctx.borrow();
         ctx_borrow.deep_lookup(sym_name).cloned()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    
 }

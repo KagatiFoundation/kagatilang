@@ -78,6 +78,11 @@ pub enum SAError {
         token: Token
     },
 
+    ArgLengthMismatch {
+        expected: usize,
+        found: usize
+    },
+
     None
 }
 
@@ -119,6 +124,9 @@ impl fmt::Display for SAError {
             },
             SAError::UndefinedSymbol{ sym_name, token} => {
                 write!(f, "{}:{}: compile error: Undefined symbol '{sym_name}'", token.pos.line, token.pos.column)
+            },
+            SAError::ArgLengthMismatch { expected, found } => {
+                write!(f, "compile error: Argument length mismatch: expected '{}' but found '{}'", expected, found)
             },
             SAError::None => write!(f, "No error."),
         }

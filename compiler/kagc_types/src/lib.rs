@@ -130,6 +130,8 @@ impl Display for LitTypeVariant {
             Self::U8 => write!(f, "byte"),
             Self::Str => write!(f, "str"),
             Self::Array => write!(f, "array"),
+            Self::None => write!(f, "none"),
+            Self::Void => write!(f, "void"),
             _ => write!(f, ""),
         }
     }

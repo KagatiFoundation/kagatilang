@@ -113,7 +113,8 @@ pub struct IRFunc {
     pub body: Vec<IR>,
     pub class: StorageClass,
     pub is_leaf: bool,
-    pub scope_id: usize
+    pub scope_id: usize,
+    pub id: usize
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +136,7 @@ pub struct IRVarDecl {
 pub struct IRReturn {
     pub early: bool,
 
-    pub early_label_id: usize
+    pub early_label_id: LabelId
 }
 
 #[derive(Debug, Default, Clone)]

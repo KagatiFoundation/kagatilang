@@ -26,13 +26,15 @@ def extern __BICH_POSIX__accept_socket_conn(fd: integer) -> integer;
 // fd: The file descriptor for the socket.
 // msg: The message to be sent over the socket.
 // size: The size of the message in bytes.
-def extern __BICH_POSIX__write_socket(fd: integer, msg: str, size: integer) -> void;
+def extern __BICH_POSIX__write_socket(fd: integer, msg: string, size: integer) -> void;
 
 // Closes the specified socket file descriptor.
 // 
 // Arguments:
 // fd: The file descriptor for the socket to be closed.
 def extern __BICH_POSIX__close_socket(fd: integer) -> void;
+
+def extern _println(msg: string) -> void;
 
 // Create a socket
 def create_socket(port: integer) -> integer {
@@ -49,17 +51,18 @@ def listen_socket(fd: integer, backlog: integer) -> void {
     if (fd < 0) {
         return;
     }
-    __BICH_POSIX__listen_socket(fd);
+    __BICH_POSIX__listen_socket(fd, backlog);
 }
 
 def accept_socket(fd: integer) -> integer {
     if (fd < 0) {
         return 0;
     }
+    _println("New connection accepted!");
     return __BICH_POSIX__accept_socket_conn(fd);
 }
 
-def write_socket(fd: integer, msg: str, size: integer) -> void {
+def write_socket(fd: integer, msg: string, size: integer) -> void {
     if (fd < 0) {
         return;
     }
@@ -70,7 +73,13 @@ def close_socket(fd: integer) -> void {
     __BICH_POSIX__close_socket(fd);
 }
 
+def get_string() -> string {
+    return "hello world!";
+}
+
 def main() -> void {
+    _println(get_string());
+    
     let fd: integer = create_socket(8080);
     listen_socket(fd, 3);
 

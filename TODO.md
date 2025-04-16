@@ -14,6 +14,7 @@
 [] Support Macros(Preprocessing Pass :D)
 [] Support `break` and `continue` keywords
 [] Support `for` [item] `from` [array] statements
+[] Make sure the functions aren't overriding other functions' labels.
 
 # Improvements to make:
 [✅] Remove double insertion of function parameters in local params list and arguments list

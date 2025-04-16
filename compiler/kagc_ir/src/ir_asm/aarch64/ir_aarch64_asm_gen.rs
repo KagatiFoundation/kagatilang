@@ -42,6 +42,7 @@ struct ComptFnProps {
     pub is_leaf: bool,
     pub stack_size: usize,
     pub liveness_info: HashMap<usize, LiveRange>,
+    pub id: usize
 }
 
 /// Handles the translation of IR (Intermediate Representation) to 
@@ -266,7 +267,7 @@ impl Aarch64IRToASM {
                     panic!("No label id provided for string literal");
                 };
 
-                format!("{}:\t.quad ._L{:?}", symbol.name, label_id)
+                format!("{}:\t.quad .LB_{}", symbol.name, label_id)
             },
 
             _ => panic!("Symbol's size is not supported right now: '{:?}'", symbol),
@@ -315,6 +316,7 @@ impl IRToASM for Aarch64IRToASM {
                 is_leaf: fn_ir.is_leaf, 
                 stack_size,
                 liveness_info: temp_liveness,
+                id: fn_ir.id
             }
         );
 
@@ -491,7 +493,7 @@ impl IRToASM for Aarch64IRToASM {
     }
     
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String {
-        format!("B _L{}", label_id)
+        format!("B .LB_{label_id}")
     }
 
     fn gen_ir_loop_asm(&mut self, ir_loop: &mut IRLoop) -> String {
@@ -506,7 +508,7 @@ impl IRToASM for Aarch64IRToASM {
     }
 
     fn gen_ir_label_asm(&mut self, ir_label: &IRLabel) -> String {
-        format!("_L{}:", ir_label.0)
+        format!(".LB_{}:", ir_label.0)
     }
 
     fn gen_load_global_asm(&mut self, var_name: &str, dest: &IRLitType) -> String {
@@ -532,7 +534,7 @@ impl IRToASM for Aarch64IRToASM {
         
         let mut output_str: String = String::new();
         output_str.push_str(&format!("CMP {}, {}\n", self.extract_operand(op1), self.extract_operand(op2)));
-        output_str.push_str(&format!("{compare_operator} _L{label_id}"));
+        output_str.push_str(&format!("{compare_operator} .LB_{label_id}"));
         output_str
     }
 }

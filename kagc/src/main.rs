@@ -50,7 +50,7 @@ fn main() {
     let parsr: Rc<RefCell<Parser>> = Rc::new(RefCell::new(Parser::new(false, Rc::clone(&ctx))));
 
     // example source file
-    let file1: SourceFile = SourceFile::new("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.bic");
+    let file1: SourceFile = SourceFile::new("/Users/rigelstar/Desktop/KagatiFoundation/bichara/Lib/socket/lib.bic");
 
     let mut source_files: Vec<SourceFile> = vec![
         file1

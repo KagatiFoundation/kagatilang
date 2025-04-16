@@ -477,12 +477,16 @@ pub trait CodeGen {
             | ASTOperation::AST_NEQ
             | ASTOperation::AST_EQEQ => {
                 let parent_ast_kind: ASTOperation = fn_ctx.parent_ast_kind;
-                if (parent_ast_kind == ASTOperation::AST_IF)
-                || (parent_ast_kind == ASTOperation::AST_WHILE)
-                {
-                    self.gen_ir_cmp_and_jump(left_dest.dest().unwrap(), right_dest.dest().unwrap(), fn_ctx.force_label_use, IRCondOp::from(bin_expr.operation))
-                } else {
-                    self.gen_ir_cmp_and_jump(left_dest.dest().unwrap(), right_dest.dest().unwrap(), fn_ctx.force_label_use, IRCondOp::from(bin_expr.operation))
+                if (parent_ast_kind == ASTOperation::AST_IF) || (parent_ast_kind == ASTOperation::AST_WHILE) {
+                    self.gen_ir_cmp_and_jump(
+                        left_dest.dest().unwrap(), 
+                        right_dest.dest().unwrap(), 
+                        fn_ctx.force_label_use, 
+                        IRCondOp::from(bin_expr.operation)
+                    )
+                } 
+                else {
+                    todo!()
                 } 
             },
 
