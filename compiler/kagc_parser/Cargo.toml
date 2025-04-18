@@ -13,3 +13,4 @@ kagc_symbol = { path = "../kagc_symbol" }
 kagc_token = { path = "../kagc_token" }
 kagc_ctx = { path = "../kagc_ctx" }
 kagc_errors = { path = "../kagc_errors" }
+kagc_comp_unit = { path = "../kagc_comp_unit" }

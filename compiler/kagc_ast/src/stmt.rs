@@ -84,9 +84,18 @@ pub struct FuncCallStmt {
     pub result_type: LitTypeVariant
 }
 
+/// Represents an `if` statement and its associated lexical scope.
 #[derive(Debug, Clone)]
 pub struct IfStmt {
-    pub scope_id: usize
+    /// Unique identifier for the scope introduced by the `if` statement.
+    pub scope_id: usize,
+}
+
+/// Represents a top-level `import` statement in a source file.
+#[derive(Debug, Clone)]
+pub struct ImportStmt {
+    /// Path to the module being imported.
+    pub path: String
 }
 
 #[derive(Clone, Debug)]
@@ -107,4 +116,5 @@ pub enum Stmt {
         name: String
     },
     FuncCall(FuncCallStmt),
+    Import(ImportStmt)
 }

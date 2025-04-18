@@ -27,6 +27,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use kagc_ast::*;
+use kagc_comp_unit::CompilationUnit;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::{BErr, BErrType, BTypeErr};
 use kagc_symbol::*;
@@ -61,7 +62,7 @@ impl ParserContext {
 /// abstract syntax tree (AST).
 pub struct Parser {
     /// Tokens that are going to be parsed.
-    tokens: Vec<Token>,
+    tokens: Rc<Vec<Token>>,
 
     /// Counter which points to the current token index.
     current: usize,
@@ -103,7 +104,7 @@ impl Parser {
     pub fn new(panic_mode: bool, ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         let current_token: Token = Token::none();
         Self {
-            tokens: vec![],
+            tokens: Rc::new(vec![]),
             current: 0,
             current_token,
             current_function_id: INVALID_FUNC_ID,
@@ -118,6 +119,36 @@ impl Parser {
             __panic_mode: panic_mode,
             _str_label_: 0
         }
+    }
+
+    pub fn parse(&mut self, unit: &mut CompilationUnit) -> Vec<AST> {
+        if let Some(tokens) = &unit.tokens {
+            self.tokens = tokens.clone();
+        }
+        else {
+            panic!("No tokens provided!");
+        }
+
+        self.current_token = self.tokens[0].clone();
+
+        let mut nodes: Vec<AST> = vec![];
+        loop {
+            if self.current_token.kind == TokenKind::T_EOF {
+                break;
+            }
+            let stmt_parse_result: ParseResult2 = self.parse_single_stmt();
+            if let Ok(stmt) = stmt_parse_result {
+                nodes.push(stmt);
+            } else if let Some(parse_error) = stmt_parse_result.err() {
+                if !parse_error.is_ignorable() {
+                    parse_error.fatal();
+                    self.__pctx.toggle_error_flag();
+                    // self.skip_past(TokenKind::T_SEMICOLON);
+                    self.skip_to_next_stmt();
+                }
+            }
+        } 
+        nodes
     }
 
     pub fn has_parsing_errors(&self) -> bool {
@@ -135,7 +166,7 @@ impl Parser {
         tokens: Vec<Token>,
     ) -> Vec<AST> {
         self.ctx = ctx;
-        self.tokens = tokens;
+        self.tokens = Rc::new(tokens);
         self.current_token = self.tokens[0].clone();
         let mut nodes: Vec<AST> = vec![];
         loop {
@@ -172,39 +203,54 @@ impl Parser {
     /// - Returns a `ParseResult` representing the parsed statement or an error
     ///   if parsing fails.
     fn parse_single_stmt(&mut self) -> ParseResult2 {
-        let is_global_scope: bool = self.is_scope_global();
-        let curr_tok_kind: TokenKind = self.current_token.kind;
-        if is_global_scope {
-            if curr_tok_kind == TokenKind::KW_DEF {
-                return self.parse_function_stmt();
-            } 
-            else if curr_tok_kind == TokenKind::KW_LET {
-                return self.parse_var_decl_stmt();
-            }
-        }
         let curr_tok_kind: TokenKind = self.current_token.kind;
         let result: ParseResult2 = match curr_tok_kind {
+            TokenKind::KW_DEF => self.parse_function_stmt(),
+
             TokenKind::KW_LET => self.parse_var_decl_stmt(),
+
             TokenKind::T_IDENTIFIER => self.assign_stmt_or_func_call(),
+            
             TokenKind::KW_IF => self.parse_if_stmt(),
+            
             TokenKind::KW_WHILE => self.parse_while_stmt(),
+            
             TokenKind::KW_FOR => self.parse_for_stmt(),
+            
             TokenKind::T_LBRACE => self.parse_compound_stmt(),
+            
             TokenKind::KW_RETURN => self.parse_return_stmt(),
+            
             TokenKind::KW_LOOP => self.parse_loop_stmt(),
+            
             TokenKind::KW_BREAK => self.parse_break_stmt(),
+
+            TokenKind::KW_IMPORT => self.parse_import_stmt(),
+            
             _ => {
-                let __err: Result<_, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
-                    self.get_current_file_name(),
-                    vec![TokenKind::KW_LET, TokenKind::KW_IF, TokenKind::KW_WHILE, TokenKind::KW_FOR, TokenKind::KW_LOOP],
-                    self.current_token.clone(),
-                )));
+                let err: Result<_, Box<BErr>> = Err(
+                    Box::new(
+                        BErr::unexpected_token(
+                            self.get_current_file_name(),
+                            vec![
+                                TokenKind::KW_LET, 
+                                TokenKind::KW_IF, 
+                                TokenKind::KW_WHILE, 
+                                TokenKind::KW_FOR, 
+                                TokenKind::KW_LOOP
+                            ],
+                            self.current_token.clone(),
+                        )
+                    )
+                );
+
                 if self.__panic_mode {
-                    panic!("{:?}", __err);
+                    panic!("{err:?}");
                 }
-                __err
+                err
             }
         };
+
         match curr_tok_kind {
             TokenKind::KW_LET
             | TokenKind::KW_RETURN
@@ -264,6 +310,27 @@ impl Parser {
             }
             __err
         }
+    }
+
+    fn parse_import_stmt(&mut self) -> ParseResult2 {
+        _ = self.token_match(TokenKind::KW_IMPORT)?; // match 'import' keyword
+        let module_path_tok: Token = self.token_match(TokenKind::T_STRING)?.clone();
+        _ = self.token_match(TokenKind::T_SEMICOLON); // match ';'
+        Ok(
+            AST::create_leaf(
+                ASTKind::StmtAST(
+                    Stmt::Import(
+                        ImportStmt { 
+                            path: module_path_tok.lexeme.clone() 
+                        }
+                    )
+                ), 
+                ASTOperation::AST_IMPORT,
+                LitTypeVariant::None, // none type
+                None,
+                None
+            )
+        )
     }
 
     // parsing a function declaration and definition
@@ -1260,9 +1327,7 @@ impl Parser {
     }
 
     fn get_current_file_name(&self) -> String {
-        let ctx_borrow = self.ctx.borrow();
-        let name = ctx_borrow.current_file.as_ref().unwrap().name.clone();
-        name
+        String::from("ok")
     }
 
     fn add_symbol_global(&mut self, sym: Symbol) -> Option<usize> {
@@ -1308,8 +1373,9 @@ impl Parser {
 
     fn token_match(&mut self, kind: TokenKind) -> TokenMatch {
         let current: Token = self.current_token.clone();
+
         if kind != current.kind {
-            let __err: Result<_, Box<BErr>> = Err(
+            let err = Err(
                 Box::new(
                     BErr::unexpected_token(
                         self.get_current_file_name(), 
@@ -1318,11 +1384,14 @@ impl Parser {
                     )
                 )
             );
+
             if self.__panic_mode {
-                panic!("{:?}", __err);
+                panic!("{:?}", err);
             }
-            return __err;
+
+            return err;
         }
+
         self.skip_to_next_token();
         Ok(&self.tokens[self.current - 1])
     }

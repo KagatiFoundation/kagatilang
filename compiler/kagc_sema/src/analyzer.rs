@@ -74,6 +74,8 @@ impl SemanticAnalyzer {
 
             ASTOperation::AST_IF => self.analyze_if_stmt(node),
 
+            ASTOperation::AST_IMPORT => Ok(LitTypeVariant::Void),
+
             ASTOperation::AST_GLUE => {
                 if let Some(left) = &mut node.left {
                     self.analyze_node(left)?;

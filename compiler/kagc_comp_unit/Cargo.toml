@@ -1,0 +1,8 @@
+[package]
+name = "kagc_comp_unit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kagc_ast = { path = "../kagc_ast" }
+kagc_token = { path = "../kagc_token" }

@@ -22,45 +22,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use kagc_ast::*;
-use kagc_ctx::CompilerCtx;
-use kagc_symbol::FunctionInfo;
+use kagc_ast::import::Import;
 
-use super::aarch64_gen::AARCH64_ALIGN_SIZE;
+use crate::source::SourceFile;
 
-pub fn compute_stack_size(kctx: &CompilerCtx, func_ast: &AST, func_name: &str) -> Result<usize, ()> {
-    // check if this function calls other functions
-    let calls_fns: bool = func_ast.left.as_ref()
-        .map_or(
-            false, 
-            |body| body.contains_operation(ASTOperation::AST_FUNC_CALL)
-        );
-    
-    let func_info: &FunctionInfo = kctx.func_table.get(func_name)
-            .unwrap_or_else(|| panic!("Function '{}' not found in function table", func_name));
+pub struct ImportResolver;
 
-    let mut stack_size: usize = func_info.local_syms.count() * AARCH64_ALIGN_SIZE;
-    if calls_fns {
-        stack_size += 2 * AARCH64_ALIGN_SIZE * 2;
+impl ImportResolver {
+    pub fn resolve(import: &Import) -> std::io::Result<SourceFile> {
+        SourceFile::from_file(&import.path)
     }
-    Ok(align_to_16(stack_size))
-}
-
-// align values to addresses divisible by 8
-fn _align_to_8(value: usize) -> usize {
-    (value + 8 - 1) & !7
-}
-
-fn align_to_16(value: usize) -> usize {
-    (value + 16 - 1) & !15
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn test_sth() {
-
-    }
-
 }

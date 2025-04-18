@@ -45,17 +45,15 @@ pub enum ASTOperation {
     AST_MULTIPLY, // an AST node with "*" as the root node
     AST_DIVIDE,   // an AST node with "/" as the root node
     // end of relational operators
+
     AST_INTLIT, // a leaf AST node with literal integer value
     AST_IDENT,  // a leaf AST node with an identifier name
     AST_LVIDENT,
     AST_ASSIGN,
     AST_GLUE,
-    
     AST_IF,
 
-    /// AST_ELSE is not a standard AST operation. It is 
-    /// used only to generate IR for `else` block.
-    AST_ELSE,
+    AST_IMPORT,
 
     AST_WHILE,
     AST_LOOP,

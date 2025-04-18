@@ -22,14 +22,45 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub mod compiler;
-
-use std::{cell::RefCell, collections::HashMap, io::Error, rc::Rc};
-
-use compiler::Compiler;
+use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
+use kagc_symbol::FunctionInfo;
 
-fn main() -> Result<(), Error> {
-    let mut comp = Compiler { ctx: Rc::new(RefCell::new(CompilerCtx::new())), units: HashMap::new(), compiler_order: vec![] };
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.bic")
+use super::aarch64_lowerer::AARCH64_ALIGN_SIZE;
+
+pub fn compute_stack_size(kctx: &CompilerCtx, func_ast: &AST, func_name: &str) -> Result<usize, ()> {
+    // check if this function calls other functions
+    let calls_fns: bool = func_ast.left.as_ref()
+        .map_or(
+            false, 
+            |body| body.contains_operation(ASTOperation::AST_FUNC_CALL)
+        );
+    
+    let func_info: &FunctionInfo = kctx.func_table.get(func_name)
+            .unwrap_or_else(|| panic!("Function '{}' not found in function table", func_name));
+
+    let mut stack_size: usize = func_info.local_syms.count() * AARCH64_ALIGN_SIZE;
+    if calls_fns {
+        stack_size += 2 * AARCH64_ALIGN_SIZE * 2;
+    }
+    Ok(align_to_16(stack_size))
+}
+
+// align values to addresses divisible by 8
+fn _align_to_8(value: usize) -> usize {
+    (value + 8 - 1) & !7
+}
+
+fn align_to_16(value: usize) -> usize {
+    (value + 16 - 1) & !15
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_sth() {
+
+    }
+
 }

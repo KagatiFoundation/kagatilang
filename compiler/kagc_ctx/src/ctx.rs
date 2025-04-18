@@ -23,7 +23,6 @@ SOFTWARE.
 */
 
 use itertools::Itertools;
-use kagc_ast::SourceFileMeta;
 use kagc_scope::{manager::*, scope::*};
 use kagc_symbol::*;
 
@@ -38,9 +37,6 @@ pub struct CompilerCtx {
     /// Functions information table.
     pub func_table: FunctionInfoTable,
 
-    /// Source file that is currently being processed.
-    pub current_file: Option<SourceFileMeta>,
-
     pub current_function: usize,
 
     pub scope_mgr: ScopeManager,
@@ -48,7 +44,7 @@ pub struct CompilerCtx {
     scope_id: usize,
 
     current_scope: usize,
-    prev_scope: usize
+    prev_scope: usize,
 }
 
 impl CompilerCtx {
@@ -59,12 +55,11 @@ impl CompilerCtx {
 
         Self {
             func_table: FunctionInfoTable::new(),
-            current_file: None,
             current_function: INVALID_FUNC_ID,
             scope_id: 1, // next scope ID
             current_scope: 0,
             prev_scope: 0,
-            scope_mgr
+            scope_mgr,
         }
     }
 

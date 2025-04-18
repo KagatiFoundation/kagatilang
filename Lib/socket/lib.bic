@@ -35,6 +35,7 @@ def extern __BICH_POSIX__write_socket(fd: integer, msg: string, size: integer) -
 def extern __BICH_POSIX__close_socket(fd: integer) -> void;
 
 def extern _println(msg: string) -> void;
+def extern _eprintln(msg: string) -> void;
 
 // Create a socket
 def create_socket(port: integer) -> integer {
@@ -56,14 +57,15 @@ def listen_socket(fd: integer, backlog: integer) -> void {
 
 def accept_socket(fd: integer) -> integer {
     if (fd < 0) {
+        _eprintln("Couldn't accept a new connection!");
         return 0;
     }
-    _println("New connection accepted!");
     return __BICH_POSIX__accept_socket_conn(fd);
 }
 
 def write_socket(fd: integer, msg: string, size: integer) -> void {
     if (fd < 0) {
+        _eprintln("Couldn't write to a socket");
         return;
     }
     __BICH_POSIX__write_socket(fd, msg, size);
@@ -73,13 +75,10 @@ def close_socket(fd: integer) -> void {
     __BICH_POSIX__close_socket(fd);
 }
 
-def get_string() -> string {
-    return "hello world!";
-}
+import "std/*";
+// import "socket";
 
 def main() -> void {
-    _println(get_string());
-    
     let fd: integer = create_socket(8080);
     listen_socket(fd, 3);
 
@@ -88,6 +87,7 @@ def main() -> void {
         let http_response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 25\r\n\r\n<b>Hello from Bichara</b>";
         write_socket(new_fd, http_response, 90);
         close_socket(new_fd);
+        _println("Served one client!");
     }
     close_socket(fd);
 }

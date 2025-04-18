@@ -1,1 +1,0 @@
-def extern print(x: msg) -> void;

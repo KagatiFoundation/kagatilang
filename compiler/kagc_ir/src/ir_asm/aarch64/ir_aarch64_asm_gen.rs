@@ -42,7 +42,6 @@ struct ComptFnProps {
     pub is_leaf: bool,
     pub stack_size: usize,
     pub liveness_info: HashMap<usize, LiveRange>,
-    pub id: usize
 }
 
 /// Handles the translation of IR (Intermediate Representation) to 
@@ -87,7 +86,7 @@ impl Aarch64IRToASM {
         }
     }
 
-    pub fn gen_asm(&mut self, irs: &mut [IR]) -> Vec<String> {
+    pub fn gen_asm(&mut self, irs: &mut [IR]) -> String {
         // println!("{:#?}", irs);
         // return vec![];
 
@@ -99,7 +98,7 @@ impl Aarch64IRToASM {
             let output_str: String = self.gen_asm_from_ir_node(ir);
             output.push(output_str);
         }
-        output
+        output.join("\n")
     }
 
     /// Switches to the given state returning the old state.
@@ -316,7 +315,6 @@ impl IRToASM for Aarch64IRToASM {
                 is_leaf: fn_ir.is_leaf, 
                 stack_size,
                 liveness_info: temp_liveness,
-                id: fn_ir.id
             }
         );
 

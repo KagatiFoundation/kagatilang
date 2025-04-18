@@ -22,14 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub mod compiler;
+mod comp_unit;
+pub mod source;
+mod import_resolver;
 
-use std::{cell::RefCell, collections::HashMap, io::Error, rc::Rc};
-
-use compiler::Compiler;
-use kagc_ctx::CompilerCtx;
-
-fn main() -> Result<(), Error> {
-    let mut comp = Compiler { ctx: Rc::new(RefCell::new(CompilerCtx::new())), units: HashMap::new(), compiler_order: vec![] };
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.bic")
-}
+pub use comp_unit::*;
+pub use import_resolver::*;

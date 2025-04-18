@@ -984,6 +984,10 @@ impl CodeGen for Aarch64CodeGen {
         Ok(output)
     }
 
+    fn lower_import_to_ir(&self) -> CGRes {
+        Ok(vec![])   
+    }
+
     fn gen_ir_jump(&self, label_id: LabelId) -> CGRes {
         Ok(vec![
             IR::Instr(

@@ -22,14 +22,28 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub mod compiler;
+use std::{
+    fs, 
+    path::Path, rc::Rc, 
+};
 
-use std::{cell::RefCell, collections::HashMap, io::Error, rc::Rc};
+use super::SourceFile;
 
-use compiler::Compiler;
-use kagc_ctx::CompilerCtx;
+pub struct SourceFileLoader;
 
-fn main() -> Result<(), Error> {
-    let mut comp = Compiler { ctx: Rc::new(RefCell::new(CompilerCtx::new())), units: HashMap::new(), compiler_order: vec![] };
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.bic")
+impl SourceFileLoader {
+    /// Loads a file from disk and returns a SourceFile.
+    pub fn load(path: &str) -> std::io::Result<SourceFile> {
+        let path = Path::new(path);
+        let content = fs::read_to_string(path)?;
+
+        Ok(SourceFile {
+            path: path.to_string_lossy().to_string(),
+            name: path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            content: Rc::new(content)
+        })
+    }
 }

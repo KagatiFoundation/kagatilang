@@ -22,13 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-mod source_file;
 mod ast_node;
 mod expr;
 mod stmt;
 mod ast_kind;
+pub mod import;
 
-pub use source_file::*;
 pub use ast_node::*;
 pub use expr::*;
 pub use stmt::*;
