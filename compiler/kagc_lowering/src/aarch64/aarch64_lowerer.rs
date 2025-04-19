@@ -674,7 +674,7 @@ impl CodeGen for Aarch64CodeGen {
             prev_ast_kind: None,
 
             next_label: self.label_id,
-            force_label_use: 0
+            force_label_use: 0,
         };
 
         let linearized_body: Vec<&mut AST> = ast.left.as_mut().unwrap().linearize_mut();

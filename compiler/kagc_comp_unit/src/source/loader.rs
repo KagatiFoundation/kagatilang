@@ -24,7 +24,7 @@ SOFTWARE.
 
 use std::{
     fs, 
-    path::Path, rc::Rc, 
+    path::PathBuf, rc::Rc, 
 };
 
 use super::SourceFile;
@@ -33,8 +33,7 @@ pub struct SourceFileLoader;
 
 impl SourceFileLoader {
     /// Loads a file from disk and returns a SourceFile.
-    pub fn load(path: &str) -> std::io::Result<SourceFile> {
-        let path = Path::new(path);
+    pub fn load(path: &PathBuf) -> std::io::Result<SourceFile> {
         let content = fs::read_to_string(path)?;
 
         Ok(SourceFile {

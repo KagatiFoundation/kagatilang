@@ -31,5 +31,5 @@ use kagc_ctx::CompilerCtx;
 
 fn main() -> Result<(), Error> {
     let mut comp = Compiler { ctx: Rc::new(RefCell::new(CompilerCtx::new())), units: HashMap::new(), compiler_order: vec![] };
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.bic")
+    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.kag")
 }

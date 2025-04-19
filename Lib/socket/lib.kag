@@ -1,0 +1,49 @@
+import "std/io";
+
+def extern __BICH_POSIX__create_socket(port: integer) -> integer;
+
+def extern __BICH_POSIX__listen_socket(fd: integer, backlog: integer) -> void;
+
+def extern __BICH_POSIX__accept_socket_conn(fd: integer) -> integer;
+
+def extern __BICH_POSIX__write_socket(fd: integer, msg: string, size: integer) -> void;
+
+def extern __BICH_POSIX__close_socket(fd: integer) -> void;
+
+def create_socket(port: integer) -> integer {
+    if (port < 0) {
+        return 0;
+    }
+    if (port > 65535) {
+        return 0;
+    }
+    return __BICH_POSIX__create_socket(port);
+}
+
+def listen_socket(fd: integer, backlog: integer) -> void {
+    if (fd < 0) {
+        eprintln("Invalid socket file descriptor")
+        return;
+    }
+    __BICH_POSIX__listen_socket(fd, backlog);
+}
+
+def accept_socket(fd: integer) -> integer {
+    if (fd < 0) {
+        eprintln("Couldn't accept a new connection!");
+        return 0;
+    }
+    return __BICH_POSIX__accept_socket_conn(fd);
+}
+
+def write_socket(fd: integer, msg: string, size: integer) -> void {
+    if (fd < 0) {
+        eprintln("Couldn't write to a socket");
+        return;
+    }
+    __BICH_POSIX__write_socket(fd, msg, size);
+}
+
+def close_socket(fd: integer) -> void {
+    __BICH_POSIX__close_socket(fd);
+}

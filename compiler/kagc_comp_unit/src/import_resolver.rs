@@ -22,14 +22,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use kagc_ast::import::Import;
+use std::{
+    env, 
+    path::{
+        Path, 
+        PathBuf
+    }
+};
 
-use crate::source::SourceFile;
+use crate::source::{
+    loader::SourceFileLoader, 
+    SourceFile
+};
 
 pub struct ImportResolver;
 
 impl ImportResolver {
-    pub fn resolve(import: &Import) -> std::io::Result<SourceFile> {
-        SourceFile::from_file(&import.path)
+    pub fn resolve(import_path_str: &str) -> std::io::Result<SourceFile> {
+        let import_path = Path::new(import_path_str).with_extension("kag");
+
+        if import_path.exists() {
+            return SourceFile::from_file(import_path_str);
+        }
+
+        if let Ok(kagc_path) = env::var("KAGC_PATH") {
+            let alt_path = PathBuf::from(kagc_path).join(import_path);
+            if alt_path.exists() {
+                return SourceFileLoader::load(&alt_path);
+            }
+        }
+        else {
+            eprintln!("KAGC_PATH is not set.");
+        }
+
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("No module named '{}' found", import_path_str),
+        ))
     }
 }
