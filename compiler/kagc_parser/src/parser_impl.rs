@@ -48,6 +48,22 @@ type TokenMatch<'a> = Result<&'a Token, Box<BErr>>;
 /// to detect error states and invalid contexts.
 const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
 
+pub type StringLabel = usize;
+
+#[derive(Debug, Clone, Default)]
+pub struct SharedParserCtx {
+    next_str_label: StringLabel
+}
+
+impl SharedParserCtx {
+    pub fn next_str_label(&mut self) -> StringLabel {
+        let ret = self.next_str_label;
+        self.next_str_label += 1;
+        ret
+    }
+}
+
+#[derive(Debug, Clone)]
 struct ParserContext {
     is_erronous_parse: bool,
 }
@@ -60,6 +76,7 @@ impl ParserContext {
 
 /// Represents a parser for converting tokens into an
 /// abstract syntax tree (AST).
+#[derive(Debug, Clone)]
 pub struct Parser {
     /// Tokens that are going to be parsed.
     tokens: Rc<Vec<Token>>,
@@ -93,6 +110,8 @@ pub struct Parser {
     /// Context of this parser.
     __pctx: ParserContext,
 
+    shared_pctx: Rc<RefCell<SharedParserCtx>>,
+
     __panic_mode: bool,
 
     /// Label generator that is going to be used by string literals only.
@@ -101,7 +120,7 @@ pub struct Parser {
 
 impl Parser {
     #[allow(clippy::new_without_default)]
-    pub fn new(panic_mode: bool, ctx: Rc<RefCell<CompilerCtx>>) -> Self {
+    pub fn new(panic_mode: bool, ctx: Rc<RefCell<CompilerCtx>>, shared_pctx: Rc<RefCell<SharedParserCtx>>) -> Self {
         let current_token: Token = Token::none();
         Self {
             tokens: Rc::new(vec![]),
@@ -116,6 +135,7 @@ impl Parser {
             __pctx: ParserContext {
                 is_erronous_parse: false,
             },
+            shared_pctx,
             __panic_mode: panic_mode,
             _str_label_: 0
         }
@@ -143,11 +163,11 @@ impl Parser {
                 if !parse_error.is_ignorable() {
                     parse_error.fatal();
                     self.__pctx.toggle_error_flag();
-                    // self.skip_past(TokenKind::T_SEMICOLON);
                     self.skip_to_next_stmt();
                 }
             }
-        } 
+        }
+
         nodes
     }
 
@@ -798,7 +818,7 @@ impl Parser {
                 }
             }
             else if var_type == LitTypeVariant::Str {
-                let str_const_label: usize = self._str_label_ + 1;
+                let str_const_label: usize = self.shared_pctx.borrow_mut().next_str_label();
                 default_value = Some(LitType::I32(str_const_label as i32));
             }
         }
@@ -1123,8 +1143,7 @@ impl Parser {
                 ASTOperation::AST_INTLIT,
             )),
             TokenKind::T_STRING => {
-                let str_label: i32 = self._str_label_ as i32;
-                self._str_label_ += 1;
+                let str_label = self.shared_pctx.borrow_mut().next_str_label();
 
                 let str_const_symbol: Symbol = Symbol::new(
                     format!("_STR_{}---{}", str_label, current_token.lexeme.clone()),
@@ -1142,7 +1161,7 @@ impl Parser {
                             LitValExpr {
                                 value: LitType::Str { 
                                     value: current_token.lexeme.clone(), 
-                                    label_id: str_label as usize
+                                    label_id: str_label
                                 },
                                 result_type: LitTypeVariant::Str,
                             }

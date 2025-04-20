@@ -14,17 +14,30 @@ use kagc_lowering::{
     aarch64::aarch64_lowerer::Aarch64CodeGen, 
     CodeGen
 };
-use kagc_parser::Parser;
+use kagc_parser::{Parser, SharedParserCtx};
 use kagc_sema::SemanticAnalyzer;
 use kagc_target::asm::aarch64::Aarch64RegManager2;
 
 #[derive(Debug, Clone)]
 pub struct Compiler {
-    pub ctx: Rc<RefCell<CompilerCtx>>,
+    ctx: Rc<RefCell<CompilerCtx>>,
 
-    pub units: HashMap<String, CompilationUnit>,
+    units: HashMap<String, CompilationUnit>,
 
-    pub compiler_order: Vec<String>
+    compiler_order: Vec<String>,
+
+    shared_pctx: Rc<RefCell<SharedParserCtx>>
+}
+
+impl Compiler {
+    pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
+        Self {
+            ctx: ctx.clone(),
+            compiler_order: vec![],
+            units: HashMap::new(),
+            shared_pctx: Rc::new(RefCell::new(SharedParserCtx::default()))
+        }
+    }
 }
 
 impl Compiler {
@@ -78,7 +91,7 @@ impl Compiler {
         unit.tokens = Some(Rc::new(tokens));
         unit.stage = ParsingStage::Tokenized;
 
-        let mut parser = Parser::new(true, self.ctx.clone());
+        let mut parser = Parser::new(true, self.ctx.clone(), self.shared_pctx.clone());
         let asts = parser.parse(&mut unit);
         unit.asts.extend(asts);
 

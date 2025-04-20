@@ -72,6 +72,7 @@ enum TokenizationResult {
     Error(ErrorType, TokenPos)
 }
 
+#[derive(Debug, Clone)]
 pub struct Tokenizer {
     line: usize,
     curr_char: char, // current char

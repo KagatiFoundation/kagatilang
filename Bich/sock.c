@@ -6,20 +6,12 @@
 #include <unistd.h>
 #include <stdint.h>
 
-typedef int32_t Bich_Int;
+#include "typedefs.h"
 
 struct sockaddr_in address;
 socklen_t addrlen;
 
 typedef void thisptr;
-
-void _println(char *str) {
-    fprintf(stdout, "%s\n", str);
-}
-
-void _eprintln(char *str) {
-    fprintf(stderr, "%s\n", str);
-}
 
 void __BICH_POSIX__close_socket(Bich_Int fd) {
     close(fd);
