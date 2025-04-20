@@ -31,5 +31,5 @@ use kagc_ctx::CompilerCtx;
 
 fn main() -> Result<(), Error> {
     let mut comp = Compiler::new(Rc::new(RefCell::new(CompilerCtx::new())));
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.kag")
+    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/input1.kag")
 }

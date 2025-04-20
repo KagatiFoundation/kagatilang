@@ -15,11 +15,12 @@
 [] Support `break` and `continue` keywords
 [] Support `for` [item] `from` [array] statements
 [✅] Make sure the functions aren't overriding other functions' labels.
-[] Constant Folding
 [✅] Support all of the arithmetic operations--add, sub, mul, and div
-[] Module-level symbol table management
+[] Support arrays
 
 # Improvements to make:
 [✅] Remove double insertion of function parameters in local params list and arguments list
 [] Remove every IR type expect IRInstr (IMPORTANT)
 [] Change the type of symbol list to HashMap from Vec
+[] Constant Folding
+[] Module-level symbol table management

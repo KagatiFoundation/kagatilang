@@ -175,39 +175,6 @@ impl Parser {
         self.__pctx.is_erronous_parse
     }
 
-    /// Parses the entire input into a vector of AST nodes until
-    /// EOF is reached. Each statement is parsed individually and
-    /// added to the AST nodes vector.
-    ///
-    /// Panics if a parsing error occurs.
-    pub fn parse_with_ctx(
-        &mut self,
-        ctx: Rc<RefCell<CompilerCtx>>,
-        tokens: Vec<Token>,
-    ) -> Vec<AST> {
-        self.ctx = ctx;
-        self.tokens = Rc::new(tokens);
-        self.current_token = self.tokens[0].clone();
-        let mut nodes: Vec<AST> = vec![];
-        loop {
-            if self.current_token.kind == TokenKind::T_EOF {
-                break;
-            }
-            let stmt_parse_result: ParseResult2 = self.parse_single_stmt();
-            if let Ok(stmt) = stmt_parse_result {
-                nodes.push(stmt);
-            } else if let Some(parse_error) = stmt_parse_result.err() {
-                if !parse_error.is_ignorable() {
-                    parse_error.fatal();
-                    self.__pctx.toggle_error_flag();
-                    // self.skip_past(TokenKind::T_SEMICOLON);
-                    self.skip_to_next_stmt();
-                }
-            }
-        }
-        nodes
-    }
-
     /// Parses a single statement based on the current token.
     ///
     /// Delegates parsing to specific functions depending on the token kind:
@@ -246,6 +213,8 @@ impl Parser {
             TokenKind::KW_BREAK => self.parse_break_stmt(),
 
             TokenKind::KW_IMPORT => self.parse_import_stmt(),
+
+            TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
             
             _ => {
                 let err: Result<_, Box<BErr>> = Err(
@@ -351,6 +320,16 @@ impl Parser {
                 None
             )
         )
+    }
+
+    fn parse_record_decl_stmt(&mut self) -> ParseResult2 {
+        _ = self.token_match(TokenKind::KW_RECORD); // match 'record' keyword
+        _ = self.token_match(TokenKind::T_LBRACE); // match '{'
+
+
+
+        _ = self.token_match(TokenKind::T_RBRACE); // match '}'
+        todo!()
     }
 
     // parsing a function declaration and definition
@@ -529,25 +508,30 @@ impl Parser {
 
     // parse function's return type
     fn __parse_fn_ret_type(&mut self) -> Result<LitTypeVariant, Box<BErr>> {
-        let curr_tok: &Token = &self.current_token;
+        let curr_tok: Token = self.current_token.clone();
         if curr_tok.kind != TokenKind::T_ARROW {
-            let __err = Err(Box::new(
+            return Err(Box::new(
                 BErr::new(
                     BErrType::MissingReturnType, 
                     self.get_current_file_name(), 
                     curr_tok.clone()
                 )
-            ));
-
-            if self.__panic_mode {
-                panic!("{:?}", __err);
-            }
-
-            return __err;
+            ))
         }
 
         _ = self.token_match(TokenKind::T_ARROW)?;
         let func_ret_type: LitTypeVariant = self.parse_id_type()?;
+
+        if func_ret_type == LitTypeVariant::Null {
+            return Err(Box::new(
+                BErr::new(
+                    BErrType::InvalidReturnType, 
+                    self.get_current_file_name(), 
+                    curr_tok
+                )
+            ));
+        }
+
         Ok(func_ret_type)
     }
 
@@ -720,18 +704,16 @@ impl Parser {
     fn parse_conditional_stmt(&mut self, kind: TokenKind) -> ParseResult2 {
         _ = self.token_match(kind)?;
         _ = self.token_match(TokenKind::T_LPAREN)?; // match and ignore '('
+
         let cond_ast: ParseResult2 = self.parse_equality();
+
         if let Ok(_icast) = &cond_ast {
-            if (_icast.operation < ASTOperation::AST_EQEQ)
-                || (_icast.operation > ASTOperation::AST_LTHAN)
-            {
+            if (_icast.operation < ASTOperation::AST_EQEQ) || (_icast.operation > ASTOperation::AST_LTHAN) {
                 // if operation kind is not "relational operation"
-                panic!(
-                    "'{:?}' is not allowed in {:?}'s condition.",
-                    _icast.operation, kind
-                );
+                panic!("'{:?}' is not allowed in {kind:?}'s condition.", _icast.operation);
             }
         }
+
         _ = self.token_match(TokenKind::T_RPAREN)?; // match and ignore ')'
         cond_ast
     }
@@ -997,6 +979,10 @@ impl Parser {
         Ok(vals)
     }
 
+    /// Parses the current token as a literal type keyword and returns the 
+    /// corresponding `LitTypeVariant`.
+    ///
+    /// Returns an error if the token does not represent a valid data type keyword.
     fn parse_id_type(&mut self) -> Result<LitTypeVariant, Box<BErr>> {
         let current_tok: TokenKind = self.current_token.kind;
         match current_tok {
@@ -1005,6 +991,7 @@ impl Parser {
             TokenKind::KW_STR => Ok(LitTypeVariant::Str),
             TokenKind::KW_LONG => Ok(LitTypeVariant::I64),
             TokenKind::KW_VOID => Ok(LitTypeVariant::Void),
+            TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
             _ => {
                 Err(Box::new(
                     BErr::unexpected_token(
@@ -1216,7 +1203,21 @@ impl Parser {
                 // Group expression terminates with ')'. Match and ignore ')'.
                 self.token_match(TokenKind::T_RPAREN)?;
                 Ok(group_expr.unwrap())
-            }
+            },
+
+            // null type
+            TokenKind::KW_NULL => {
+                Ok(
+                    AST::create_leaf(
+                        ASTKind::ExprAST(Expr::Null), 
+                        ASTOperation::AST_NULL, 
+                        LitTypeVariant::Null, 
+                        None, 
+                        None
+                    )
+                )
+            },
+
             _ => {
                 let __e: Result<AST, Box<BErr>> = Err(
                     Box::new(

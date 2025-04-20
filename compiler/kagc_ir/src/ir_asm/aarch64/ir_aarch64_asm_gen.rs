@@ -88,7 +88,7 @@ impl Aarch64IRToASM {
 
     pub fn gen_asm(&mut self, irs: &mut [IR]) -> String {
         // println!("{:#?}", irs);
-        // return vec![];
+        // return String::new();
 
         let mut output: Vec<String> = vec![];
         output.push(self.dump_global_strings());
@@ -136,7 +136,6 @@ impl Aarch64IRToASM {
     
         Some(Aarch64IRToASM::align_to_16(stack_size))
     }
-    
 
     /// Align the given address into an address divisible by 16.
     fn align_to_16(value: usize) -> usize {
@@ -205,6 +204,7 @@ impl Aarch64IRToASM {
         // output
         let mut output_str: String = String::new();
 
+        println!(".data");
         for symbol in global_scope.table.iter() {
             // ignore non-global constants
             if (symbol.lit_type == LitTypeVariant::None) || symbol.sym_type == SymbolType::Function || symbol.class != StorageClass::GLOBAL {
@@ -215,13 +215,13 @@ impl Aarch64IRToASM {
                 let str_const_name_and_val: Vec<&str> = symbol.name.split("---").collect::<Vec<&str>>();
                 let str_const_name: String = String::from(str_const_name_and_val[0]);
                 
-                output_str.push_str(&format!(".data\n.global {str_const_name}\n"));
+                output_str.push_str(&format!(".global {str_const_name}\n"));
                 output_str.push_str(&format!("{str_const_name}:\n\t.asciz \"{}\"\n", str_const_name_and_val[1]));
 
                 continue;
             }
 
-            output_str.push_str(&format!(".data\n.global {}", symbol.name));
+            output_str.push_str(&format!(".global {}", symbol.name));
             
             if symbol.sym_type == SymbolType::Variable {
                 output_str.push_str(&Self::dump_global_with_alignment(symbol));
@@ -563,6 +563,7 @@ impl Aarch64IRToASM {
                     IRLitVal::Int32(value) => value.to_string(),
                     IRLitVal::U8(value) => value.to_string(),
                     IRLitVal::Str(value, ..) => value.clone(),
+                    IRLitVal::Null => "#0".to_string(), // Null is just '0' under the hood. LOL
                     _ => todo!()
                 }
             },

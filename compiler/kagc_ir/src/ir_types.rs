@@ -12,7 +12,9 @@ pub enum IRLitVal {
     Str(String, LabelId),
     Int64(i64),
     Int32(i32),
-    U8(u8)
+    U8(u8),
+
+    Null
 }
 
 impl IRLitVal {
@@ -21,7 +23,8 @@ impl IRLitVal {
             IRLitVal::Str(value, ..) => value.clone(),
             IRLitVal::Int64(value) => value.to_string(),
             IRLitVal::Int32(value) => value.to_string(),
-            IRLitVal::U8(value) => value.to_string()
+            IRLitVal::U8(value) => value.to_string(),
+            IRLitVal::Null => "null".to_string()
         }
     }
 }

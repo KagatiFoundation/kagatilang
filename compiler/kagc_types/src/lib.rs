@@ -54,32 +54,51 @@ pub trait TypeSized {
     fn type_size(&self) -> usize;
 }
 
-// Literal value types
+/// Represents literal value types used in the language.
 #[derive(Debug, Clone)]
 pub enum LitType {
-    I64(i64), // 64-bit integer
-    I32(i32), // 32-bit integer
-    I16(i16), // 16-bit integer
-    U8(u8),   // 8-bit integer. Also known as 'char' in C programming language.
-    F64(f64), // Double-precision floating point number. 64-bit float type.
-    F32(f32), // Single-precision floating point number. 32-bit float type.
-    Void,     // Void return type
-    
-    /// A string literal value paired with a unique label identifier.
-    Str {
-        /// String literal value
-        value: String, 
+    /// 64-bit signed integer.
+    I64(i64),
 
-        /// String's label ID
-        label_id: usize
+    /// 32-bit signed integer.
+    I32(i32),
+
+    /// 16-bit signed integer.
+    I16(i16),
+
+    /// 8-bit unsigned integer.
+    /// Often referred to as `char` in C-like languages.
+    U8(u8),
+
+    /// 64-bit floating-point number (double precision).
+    F64(f64),
+
+    /// 32-bit floating-point number (single precision).
+    F32(f32),
+
+    /// Represents a `void` type, typically used for functions with no return value.
+    Void,
+
+    /// Represents a string literal paired with a unique label identifier.
+    Str {
+        /// The actual string value.
+        value: String,
+
+        /// The unique label ID associated with the string.
+        label_id: usize,
     },
 
-    /// First usize: Length of the array, second usize: Size of each 
-    /// element in the array
+    /// Represents an array literal.
+    ///
+    /// The first `usize` denotes the array length,
+    /// and the second `usize` represents the size of each element.
     Array(LitTypeArray),
 
-    Null, // null type
-    None, // placeholder
+    /// Represents a null value (e.g., for optional pointers or uninitialized references).
+    Null,
+
+    /// Placeholder value, typically used during intermediate stages of compilation.
+    None,
 }
 
 impl From<LitType> for String {

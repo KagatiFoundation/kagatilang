@@ -1,9 +1,11 @@
 #include <stdio.h>
 
 void println(char *str) {
-    fprintf(stdout, "%s\n", str);
+    puts(str);
+    puts("returning from here");
 }
 
 void eprintln(char *str) {
     fprintf(stderr, "%s\n", str);
+    return;
 }

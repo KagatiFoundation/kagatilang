@@ -419,8 +419,17 @@ pub trait CodeGen {
 
             Expr::FuncCall(funccallexpr) => self.gen_ir_fn_call_expr(funccallexpr, fn_ctx),
 
+            Expr::Null => self.lower_null_const_to_ir(fn_ctx),
+
             _ => todo!()
         }
+    }
+
+    fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let lit_val_tmp: usize = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 1;
+
+        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(IRLitVal::Null))])
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {

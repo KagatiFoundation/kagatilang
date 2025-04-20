@@ -1011,6 +1011,7 @@ impl Aarch64CodeGen {
                 Expr::Widen(_) => 3,
                 Expr::Ident(_) => 4,
                 Expr::LitVal(_) => 5,
+                Expr::Null => 6
             };
             
             let b_priority = match &b.1 {
@@ -1020,6 +1021,7 @@ impl Aarch64CodeGen {
                 Expr::Widen(_) => 3,
                 Expr::Ident(_) => 4,
                 Expr::LitVal(_) => 5,
+                Expr::Null => 6
             };
             
             a_priority.cmp(&b_priority)

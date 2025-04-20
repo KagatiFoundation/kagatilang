@@ -72,6 +72,9 @@ pub enum Expr {
     LitVal(LitValExpr),
     Subscript(SubscriptExpr),
     FuncCall(FuncCallExpr),
+
+    /// Null expression
+    Null
 }
 
 impl Expr {
@@ -83,6 +86,7 @@ impl Expr {
             Self::LitVal(lit) => lit.result_type,
             Self::Subscript(sub) => sub.result_type,
             Self::FuncCall(func) => func.result_type,
+            Self::Null => LitTypeVariant::Null,
         }
     }
 

@@ -27,7 +27,7 @@ use std::str::FromStr;
 
 use kagc_types::{LitType, LitTypeVariant};
 
-// Token Type Of The Program
+/// Every keyword and token supported by the C standard is listed below.
 #[derive(Copy, Clone, PartialEq, Hash, Eq, Debug)]
 pub enum TokenKind {
     _T_LITERAL_START_, // literal types
@@ -122,6 +122,7 @@ pub enum TokenKind {
     KW_DEF,   // for function declarations
     KW_MACRO,
     KW_FROM,
+    KW_RECORD,
     _KW_END_, // keywords end here
 
     // other tokens

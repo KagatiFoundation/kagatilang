@@ -67,7 +67,10 @@ pub enum ASTOperation {
     AST_ARRAY_ACCESS, // access array element
     AST_STRLIT, // string literal node
     AST_VAR_DECL,
-    AST_ARR_VAR_DECL
+    AST_ARR_VAR_DECL,
+
+    /// Null AST
+    AST_NULL
 }
 
 impl FromTokenKind<ASTOperation> for ASTOperation {
@@ -236,15 +239,16 @@ impl AST {
                 if n.operation == op {
                     return true;
                 }
-                return (
-                    check_node_for_operation(&n.left, op) || 
-                    check_node_for_operation(&n.right, op)
-                );
+                return n.children().any(|child| check_node_for_operation(child, op));
             }
             false
         }
-        check_node_for_operation(&self.left, op) || 
-        check_node_for_operation(&self.right, op)
+
+        self.children().any(|child| check_node_for_operation(child, op))
+    }
+
+    fn children(&self) -> impl Iterator<Item = &Option<Box<AST>>> {
+        [&self.left, &self.mid, &self.right].into_iter()
     }
 }
 

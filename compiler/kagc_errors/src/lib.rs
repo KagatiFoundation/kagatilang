@@ -68,6 +68,7 @@ pub enum BErrType {
     NonCallable,
     SymbolAlreadyDefined,
     MissingReturnType,
+    InvalidReturnType,
     TypeError(BTypeErr),
     None
 }
@@ -92,6 +93,7 @@ impl BErr {
             BErrType::NonCallable => "Identifier is not callable".to_string(),
             BErrType::SymbolAlreadyDefined => "Symbol already defined".to_string(),
             BErrType::MissingReturnType => "Missing return type".to_string(),
+            BErrType::InvalidReturnType => "Invalid return type for a function".to_string(),
             BErrType::TypeError(ref type_error) => match type_error {
                 BTypeErr::TypesMismatch { expected, found } => format!("Type mismatch: expected {}, found {}", expected, found),
                 BTypeErr::AssignmentTypeMismatch { var_type, assigned_type } => format!("Cannot assign a value of type '{}' to a variable of type '{}'", assigned_type, var_type),

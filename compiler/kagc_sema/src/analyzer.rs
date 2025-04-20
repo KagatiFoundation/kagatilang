@@ -154,6 +154,8 @@ impl SemanticAnalyzer {
             },
 
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr),
+            
+            Expr::Null => Ok(LitTypeVariant::Null),
 
             _ => todo!()
         }
