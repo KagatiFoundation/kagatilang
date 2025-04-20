@@ -47,8 +47,6 @@ use crate::typedefs::CGRes;
 use crate::CodeGen;
 use crate::CodeGenResult;
 
-use super::stackframe::compute_stack_size;
-
 pub(crate) const AARCH64_ALIGN_SIZE: usize = 8;
 
 lazy_static::lazy_static! {
@@ -214,13 +212,13 @@ impl CodeGen for Aarch64CodeGen {
                 |body| body.contains_operation(ASTOperation::AST_FUNC_CALL)
             );
 
-        let stack_size: usize = compute_stack_size(&self.ctx.borrow(), ast, &func_name).ok().unwrap();
+        let stack_size: usize = 0; // compute_stack_size(&self.ctx.borrow(), ast, &func_name).ok().unwrap();
         
         if calls_fns {
-            self.emit_non_leaf_fn_prol(&func_name, stack_size as usize);
+            self.emit_non_leaf_fn_prol(&func_name, stack_size);
         } 
         else {
-            self.emit_leaf_fn_prol(&func_name, stack_size as usize);
+            self.emit_leaf_fn_prol(&func_name, stack_size);
         }
 
         let mut leaf_fn_stack_off: i32 = stack_size as i32 - AARCH64_ALIGN_SIZE as i32;

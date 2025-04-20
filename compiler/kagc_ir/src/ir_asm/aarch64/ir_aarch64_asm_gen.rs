@@ -463,18 +463,19 @@ impl IRToASM for Aarch64IRToASM {
     }
     
     fn gen_ir_add_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
-        let dest_reg = self.resolve_register(dest);
-        let reg_name: String = dest_reg.1.name();
+        self.gen_ir_bin_op_asm(dest, op1, op2, "ADD")
+    }
 
-        let op1: String = self.extract_operand(op1);
-        let op2: String = self.extract_operand(op2);
-
-        format!(
-            "ADD {}, {}, {}",
-            reg_name, 
-            op1, 
-            op2
-        )
+    fn gen_ir_sub_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
+        self.gen_ir_bin_op_asm(dest, op1, op2, "SUB")
+    }
+    
+    fn gen_ir_mul_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
+        self.gen_ir_bin_op_asm(dest, op1, op2, "MUL")
+    }
+    
+    fn gen_ir_div_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
+        self.gen_ir_bin_op_asm(dest, op1, op2, "DIV")
     }
     
     fn start_func_call_proc(&mut self) -> String {
@@ -538,6 +539,22 @@ impl IRToASM for Aarch64IRToASM {
 }
 
 impl Aarch64IRToASM {
+    fn gen_ir_bin_op_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType, operation: &str) -> String {
+        let dest_reg = self.resolve_register(dest);
+        let reg_name: String = dest_reg.1.name();
+
+        let op1: String = self.extract_operand(op1);
+        let op2: String = self.extract_operand(op2);
+
+        format!(
+            "{} {}, {}, {}",
+            operation,
+            reg_name, 
+            op1, 
+            op2
+        ) 
+    }
+
     /// Extract the IRLitType as an operand(String)
     fn extract_operand(&mut self, irlit: &IRLitType) -> String {
         match irlit {

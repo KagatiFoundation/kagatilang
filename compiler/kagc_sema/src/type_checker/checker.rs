@@ -67,8 +67,11 @@ impl TypeChecker {
 
     pub fn check_bin_expr_type_compatability(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation) -> SAResult {
         match op {
-            ASTOperation::AST_ADD => {
-                // addition operation requires both of the expressions to be integer types(for now)
+            ASTOperation::AST_ADD
+            | ASTOperation::AST_SUBTRACT
+            | ASTOperation::AST_MULTIPLY
+            | ASTOperation::AST_DIVIDE => {
+                // arithmetic operations require both of the expressions to be integer types(for now)
                 if a.is_int() && b.is_int() {
                     let a_size: usize = a.size();
                     let b_size: usize = b.size();

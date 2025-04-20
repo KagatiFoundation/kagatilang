@@ -120,16 +120,10 @@ impl LivenessAnalyzer {
                         Self::is_temp_used_in_alloc_reg(temp_lookup, src.as_alloc_reg())
                     },
 
-                    IRInstr::Add(dest, op1, op2) => {
-                        [
-                            dest.as_temp() == Some(temp_lookup),
-                            op1.as_temp() == Some(temp_lookup),
-                            op2.as_temp() == Some(temp_lookup),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, dest.as_alloc_reg()),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_alloc_reg()),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_alloc_reg())
-                        ].iter().any(|c| *c)
-                    },
+                    IRInstr::Add { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
+                    IRInstr::Sub { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
+                    IRInstr::Mul { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
+                    IRInstr::Div { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
 
                     IRInstr::Load { dest, .. } => {
                        dest.as_temp() == Some(temp_lookup) ||
@@ -160,6 +154,17 @@ impl LivenessAnalyzer {
 
             _ => false,
         }
+    }
+
+    fn is_temp_used_bin_op(dest: &IRLitType, op1: &IRLitType, op2: &IRLitType, temp_lookup: usize) -> bool {
+        [
+            dest.as_temp() == Some(temp_lookup),
+            op1.as_temp() == Some(temp_lookup),
+            op2.as_temp() == Some(temp_lookup),
+            Self::is_temp_used_in_alloc_reg(temp_lookup, dest.as_alloc_reg()),
+            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_alloc_reg()),
+            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_alloc_reg())
+        ].iter().any(|c| *c) 
     }
 
     fn is_temp_used_in_alloc_reg(temp_lookup: usize, alloc_reg: Option<(RegIdx, usize)>) -> bool {

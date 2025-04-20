@@ -16,7 +16,7 @@
 [] Support `for` [item] `from` [array] statements
 [✅] Make sure the functions aren't overriding other functions' labels.
 [] Constant Folding
-[] Support all of the arithmetic operations
+[✅] Support all of the arithmetic operations--add, sub, mul, and div
 [] Module-level symbol table management
 
 # Improvements to make:

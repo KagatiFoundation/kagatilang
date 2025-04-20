@@ -71,7 +71,11 @@ pub trait IRToASM {
                     
                     IRInstr::Mov(irlit_type, irlit_type1) => self.gen_ir_mov_asm(irlit_type, irlit_type1),
                     
-                    IRInstr::Add(dest, op1, op2) => self.gen_ir_add_asm(dest, op1, op2),
+                    // Arithmetic operations
+                    IRInstr::Add { dest, op1, op2 } => self.gen_ir_add_asm(dest, op1, op2),
+                    IRInstr::Sub { dest, op1, op2 } => self.gen_ir_sub_asm(dest, op1, op2),
+                    IRInstr::Mul { dest, op1, op2 } => self.gen_ir_mul_asm(dest, op1, op2),
+                    IRInstr::Div { dest, op1, op2 } => self.gen_ir_div_asm(dest, op1, op2),
                     
                     IRInstr::Call { fn_name, params, return_type } => self.gen_ir_fn_call_asm(fn_name.clone(), params, return_type),
 
@@ -105,6 +109,18 @@ pub trait IRToASM {
     /// Generates AArch64 assembly for an addition operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
     fn gen_ir_add_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+
+    /// Generates AArch64 assembly for an subtraction operation.
+    /// The result is stored in `dest`, using `op1` and `op2` as operands.
+    fn gen_ir_sub_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+
+    /// Generates AArch64 assembly for an multiplication operation.
+    /// The result is stored in `dest`, using `op1` and `op2` as operands.
+    fn gen_ir_mul_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+    
+    /// Generates AArch64 assembly for an division operation.
+    /// The result is stored in `dest`, using `op1` and `op2` as operands.
+    fn gen_ir_div_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
 
     /// Generates AArch64 assembly for a move (assignment) operation.
     /// Moves the value from `src` into `dest`, handling both registers 

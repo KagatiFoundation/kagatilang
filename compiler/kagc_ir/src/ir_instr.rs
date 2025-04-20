@@ -6,11 +6,29 @@ use crate::{ir_types::*, LabelId};
 pub enum IRInstr {
     Mov(IRLitType, IRLitType),
     
-    Add(
-        IRLitType, 
-        IRLitType, 
-        IRLitType
-    ),
+    Add {
+        dest: IRLitType, 
+        op1: IRLitType, 
+        op2: IRLitType
+    },
+
+    Sub {
+        dest: IRLitType,
+        op1: IRLitType,
+        op2: IRLitType,
+    },
+
+    Mul {
+        dest: IRLitType,
+        op1: IRLitType,
+        op2: IRLitType,
+    },
+
+    Div {
+        dest: IRLitType,
+        op1: IRLitType,
+        op2: IRLitType,
+    },
 
     Call {
         /// Function name to call.
@@ -84,7 +102,13 @@ impl IRInstr {
         match self {
             Self::Mov(dst, _) => Some(dst.clone()),
 
-            Self::Add(dst, _, _) => Some(dst.clone()),
+            Self::Add { dest, .. } => Some(dest.clone()),
+            
+            Self::Sub { dest, .. } => Some(dest.clone()),
+            
+            Self::Mul { dest, .. } => Some(dest.clone()),
+            
+            Self::Div { dest, .. } => Some(dest.clone()),
 
             Self::Call { return_type, .. } => return_type.clone(),
 

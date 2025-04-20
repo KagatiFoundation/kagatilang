@@ -467,13 +467,17 @@ pub trait CodeGen {
         let left_dest: &IRInstr = left_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
         let right_dest: &IRInstr = right_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
 
-        let bin_expr_type: IRInstr = match bin_expr.operation {
-            ASTOperation::AST_ADD => {
-                let dest_temp: usize = fn_ctx.temp_counter;
-                fn_ctx.temp_counter += 1;
+        fn dest_temp(fn_ctx: &mut FnCtx) -> usize {
+            let dest_temp: usize = fn_ctx.temp_counter;
+            fn_ctx.temp_counter += 1;
+            dest_temp
+        }
 
-                self.gen_ir_add(IRLitType::Temp(dest_temp), left_dest.dest().unwrap(), right_dest.dest().unwrap())
-            },
+        let bin_expr_type: IRInstr = match bin_expr.operation {
+            ASTOperation::AST_ADD => self.lower_add_to_ir(IRLitType::Temp(dest_temp(fn_ctx)), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
+            ASTOperation::AST_SUBTRACT => self.lower_sub_to_ir(IRLitType::Temp(dest_temp(fn_ctx)), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
+            ASTOperation::AST_MULTIPLY => self.lower_mul_to_ir(IRLitType::Temp(dest_temp(fn_ctx)), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
+            ASTOperation::AST_DIVIDE => self.lower_div_to_ir(IRLitType::Temp(dest_temp(fn_ctx)), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
 
             ASTOperation::AST_GTHAN
             | ASTOperation::AST_LTHAN
@@ -516,8 +520,20 @@ pub trait CodeGen {
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
-    fn gen_ir_add(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
-       IRInstr::Add(dest, op1, op2)
+    fn lower_add_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+       IRInstr::Add { dest, op1, op2 }
+    }
+
+    fn lower_sub_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+       IRInstr::Sub { dest, op1, op2 }
+    }
+
+    fn lower_mul_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+       IRInstr::Mul { dest, op1, op2 }
+    }
+
+    fn lower_div_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+       IRInstr::Div { dest, op1, op2 }
     }
 
     fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;

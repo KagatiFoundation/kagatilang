@@ -67,7 +67,13 @@ impl SpillCompilerPass {
         match instr {
             IRInstr::Mov(dest, _) => dest.as_alloc_reg(),
 
-            IRInstr::Add(dest, _, _) => dest.as_alloc_reg(),
+            IRInstr::Add { dest, .. } => dest.as_alloc_reg(),
+            
+            IRInstr::Sub { dest, .. } => dest.as_alloc_reg(),
+            
+            IRInstr::Mul { dest, .. } => dest.as_alloc_reg(),
+            
+            IRInstr::Div { dest, .. } => dest.as_alloc_reg(),
 
             IRInstr::Load { dest, .. } => dest.as_alloc_reg(),
 
