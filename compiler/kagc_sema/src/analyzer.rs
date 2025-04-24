@@ -75,6 +75,8 @@ impl SemanticAnalyzer {
             ASTOperation::AST_IF => self.analyze_if_stmt(node),
 
             ASTOperation::AST_IMPORT => Ok(LitTypeVariant::Void),
+            
+            ASTOperation::AST_RECORD_DECL => self.analyze_record_decl_stmt(node),
 
             ASTOperation::AST_GLUE => {
                 if let Some(left) = &mut node.left {
@@ -275,9 +277,17 @@ impl SemanticAnalyzer {
         Ok(expr.result_type)
     }
 
+    fn analyze_record_decl_stmt(&mut self, node: &mut AST) -> SAResult {
+        if !node.kind.is_stmt() {
+            panic!("Needed a RecordDeclStmt--but found {node:#?}");
+        }
+
+        Ok(LitTypeVariant::Record)
+    }
+
     fn analyze_return_stmt(&mut self, node: &mut AST) -> SAResult {
         if !node.kind.is_stmt() {
-            panic!("Needed a ReturnStmt--but found {:#?}", node);
+            panic!("Needed a ReturnStmt--but found {node:#?}");
         }
 
         if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt() {

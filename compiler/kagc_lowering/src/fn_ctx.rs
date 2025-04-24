@@ -1,6 +1,6 @@
 use kagc_ast::ASTOperation;
 use kagc_ir::LabelId;
-use kagc_symbol::INVALID_FUNC_ID;
+use kagc_symbol::function::INVALID_FUNC_ID;
 use kagc_target::reg::RegIdx;
 
 use crate::typedefs::*;

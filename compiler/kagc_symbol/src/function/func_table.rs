@@ -22,14 +22,43 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-mod ast_node;
-mod expr;
-mod stmt;
-mod ast_kind;
-pub mod import;
-pub mod record;
+#![allow(clippy::new_without_default)]
 
-pub use ast_node::*;
-pub use expr::*;
-pub use stmt::*;
-pub use ast_kind::*;
+use std::collections::HashMap;
+
+use super::FunctionInfo;
+
+#[derive(Debug)]
+pub struct FunctionInfoTable {
+    functions: HashMap<String, FunctionInfo>,
+}
+
+impl FunctionInfoTable {
+    pub fn new() -> Self {
+        Self {
+            functions: HashMap::new()
+        }
+    }
+    
+    pub fn add(&mut self, func_info: FunctionInfo) {
+        self.functions.insert(func_info.name.clone(), func_info);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&FunctionInfo> {
+        self.functions.get(name)
+    }
+
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut FunctionInfo> {
+        self.functions.get_mut(name)
+    }
+
+    pub fn get_by_id(&self, id: usize) -> Option<&FunctionInfo> {
+        let func_info = self.functions.iter().find(|func| func.1.func_id == id);
+        if let Some(func) = func_info {
+            Some(func.1)
+        }
+        else {
+            None
+        }
+    }
+}

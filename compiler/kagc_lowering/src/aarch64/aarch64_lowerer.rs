@@ -34,6 +34,7 @@ use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
 use kagc_ir::LabelId;
+use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::*;
 use kagc_target::reg::*;
 use kagc_target::asm::aarch64::Aarch64RegManager2;
@@ -984,6 +985,10 @@ impl CodeGen for Aarch64CodeGen {
 
     fn lower_import_to_ir(&self) -> CGRes {
         Ok(vec![])   
+    }
+
+    fn lower_rec_decl_to_ir(&mut self, _node: &mut AST) -> CGRes {
+        Ok(vec![])
     }
 
     fn gen_ir_jump(&self, label_id: LabelId) -> CGRes {

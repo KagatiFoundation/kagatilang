@@ -24,8 +24,6 @@ SOFTWARE.
 
 #![allow(clippy::new_without_default)]
 
-use std::collections::HashMap;
-
 use itertools::Itertools;
 use kagc_types::LitTypeVariant;
 
@@ -111,40 +109,5 @@ impl FunctionInfo {
 
     pub fn collect_params(&self) -> Vec<&Symbol> {
         self.local_syms.iter().filter(|&sym| sym.class == StorageClass::PARAM).collect_vec()
-    }
-}
-
-#[derive(Debug)]
-pub struct FunctionInfoTable {
-    functions: HashMap<String, FunctionInfo>,
-}
-
-impl FunctionInfoTable {
-    pub fn new() -> Self {
-        Self {
-            functions: HashMap::new()
-        }
-    }
-    
-    pub fn add(&mut self, func_info: FunctionInfo) {
-        self.functions.insert(func_info.name.clone(), func_info);
-    }
-
-    pub fn get(&self, name: &str) -> Option<&FunctionInfo> {
-        self.functions.get(name)
-    }
-
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut FunctionInfo> {
-        self.functions.get_mut(name)
-    }
-
-    pub fn get_by_id(&self, id: usize) -> Option<&FunctionInfo> {
-        let func_info = self.functions.iter().find(|func| func.1.func_id == id);
-        if let Some(func) = func_info {
-            Some(func.1)
-        }
-        else {
-            None
-        }
     }
 }

@@ -54,6 +54,10 @@ pub enum ASTOperation {
     AST_IF,
 
     AST_IMPORT,
+    
+    // Record related operations
+    AST_RECORD_DECL,
+    AST_RECORD_FIELD_DECL,
 
     AST_WHILE,
     AST_LOOP,
@@ -138,13 +142,7 @@ impl AST {
         }
     }
 
-    pub fn new(
-        kind: ASTKind, 
-        operation: ASTOperation, 
-        left: Option<AST>, 
-        right: Option<AST>, 
-        result_type: LitTypeVariant
-    ) -> Self {
+    pub fn new(kind: ASTKind, operation: ASTOperation, left: Option<AST>, right: Option<AST>, result_type: LitTypeVariant) -> Self {
         Self {
             kind,
             operation,
@@ -157,13 +155,7 @@ impl AST {
         }
     }
 
-    pub fn create_leaf(
-        kind: ASTKind,
-        operation: ASTOperation, 
-        result_type: LitTypeVariant,
-        start_tok: Option<Token>,
-        end_tok: Option<Token>
-    ) -> Self {
+    pub fn create_leaf(kind: ASTKind, operation: ASTOperation, result_type: LitTypeVariant, start_tok: Option<Token>, end_tok: Option<Token>) -> Self {
         Self {
             kind,
             operation,
@@ -176,14 +168,7 @@ impl AST {
         }
     }
     
-    pub fn with_mid(
-        kind: ASTKind, 
-        op: ASTOperation, 
-        left: Option<AST>, 
-        mid: Option<AST>, 
-        right: Option<AST>, 
-        result_type: LitTypeVariant
-    ) -> Self {
+    pub fn with_mid(kind: ASTKind, op: ASTOperation, left: Option<AST>, mid: Option<AST>, right: Option<AST>, result_type: LitTypeVariant) -> Self {
         Self {
             kind,
             operation: op,

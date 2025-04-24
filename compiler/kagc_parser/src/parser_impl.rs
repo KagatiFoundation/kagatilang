@@ -26,13 +26,13 @@ use core::panic;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use kagc_ast::*;
+use kagc_ast::{record::RecordField, *};
 use kagc_comp_unit::CompilationUnit;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::{BErr, BErrType, BTypeErr};
-use kagc_symbol::*;
+use kagc_symbol::{function::{FuncParam, FunctionInfo}, *};
 use kagc_token::{FromTokenKind, Token, TokenKind};
-use kagc_types::{LitType, LitTypeVariant};
+use kagc_types::{builtins::builtin::TypeId, record::{RecordFieldType, RecordType}, LitType, LitTypeVariant};
 
 /// A type alias representing the result of parsing, which can either
 /// be an AST node on successful parsing or a ParseError indicating a
@@ -324,12 +324,84 @@ impl Parser {
 
     fn parse_record_decl_stmt(&mut self) -> ParseResult2 {
         _ = self.token_match(TokenKind::KW_RECORD); // match 'record' keyword
+
+        // expect name of the record
+        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+
         _ = self.token_match(TokenKind::T_LBRACE); // match '{'
 
-
+        // magic happens here
+        // parsing only one field for now
+        let field = self.parse_record_field_decl_stmt()?;
 
         _ = self.token_match(TokenKind::T_RBRACE); // match '}'
-        todo!()
+
+        let record_entry = RecordType {
+            name: id_token.lexeme.clone(),
+            size: 0,
+            __alignment: 0,
+            fields: vec![
+                RecordFieldType {
+                    name: field.name.clone(),
+                    offset: 0,
+                    typ: field.typ
+                }
+            ]
+        };
+
+        self.ctx.borrow_mut().create_record(record_entry);
+
+        Ok(
+            AST::create_leaf(
+                ASTKind::StmtAST(
+                    Stmt::Record(
+                        RecordDeclStmt {
+                            name: id_token.lexeme.clone(),
+                            fields: vec![field]
+                        }
+                    )
+                ), 
+                ASTOperation::AST_RECORD_DECL,
+                LitTypeVariant::Record,
+                None,
+                None
+            )
+        )
+    }
+
+    fn parse_record_field_decl_stmt(&mut self) -> Result<RecordField, Box<BErr>> {
+        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        _ = self.token_match(TokenKind::T_COLON); // match ':'
+
+        let id_type = self.parse_id_type()?;
+        if id_type == LitTypeVariant::Null {
+            return Err(
+                Box::new(
+                    BErr::new(
+                        BErrType::InvalidRecordFieldType, 
+                        "record".to_string(), 
+                        id_token.clone()
+                    )
+                )
+            )
+        }
+
+        self.skip_to_next_token(); // skip id type
+
+        // check if default value has been assigned
+        if self.current_token.kind == TokenKind::T_EQUAL {
+            todo!("Default value is not supported right now in record field!");
+        }
+
+        _ = self.token_match(TokenKind::T_SEMICOLON); // match ';'
+
+        Ok(
+            RecordField { 
+                typ: TypeId::from(id_type), 
+                name: id_token.lexeme.clone(), 
+                default_value: None 
+            }
+        )
     }
 
     // parsing a function declaration and definition
@@ -409,7 +481,7 @@ impl Parser {
 
         self.token_match(TokenKind::T_RPAREN)?;
 
-        let func_return_type: LitTypeVariant = self.__parse_fn_ret_type()?;
+        let func_return_type: LitTypeVariant = self.parse_fn_ret_type()?;
 
         self.skip_to_next_token();
 
@@ -507,7 +579,7 @@ impl Parser {
     }
 
     // parse function's return type
-    fn __parse_fn_ret_type(&mut self) -> Result<LitTypeVariant, Box<BErr>> {
+    fn parse_fn_ret_type(&mut self) -> Result<LitTypeVariant, Box<BErr>> {
         let curr_tok: Token = self.current_token.clone();
         if curr_tok.kind != TokenKind::T_ARROW {
             return Err(Box::new(

@@ -82,6 +82,9 @@ pub trait CodeGen {
         else if node.operation == ASTOperation::AST_IMPORT {
             return self.lower_import_to_ir();
         }
+        else if node.operation == ASTOperation::AST_RECORD_DECL {
+            return self.lower_rec_decl_to_ir(node);
+        }
         else if node.operation == ASTOperation::AST_RETURN {
             if parent_ast_kind != ASTOperation::AST_FUNCTION {
                 fn_ctx.early_return = true;
@@ -395,6 +398,8 @@ pub trait CodeGen {
     fn gen_ir_jump(&self, label_id: LabelId) -> CGRes;
 
     fn lower_import_to_ir(&self) -> CGRes;
+
+    fn lower_rec_decl_to_ir(&mut self, node: &mut AST) -> CGRes;
 
     /// Generate IR nodes from an AST expression node.
     fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGExprEvalRes {

@@ -25,6 +25,8 @@ SOFTWARE.
 use kagc_symbol::*;
 use kagc_types::LitTypeVariant;
 
+use crate::record::RecordField;
+
 use super::Expr;
 
 #[derive(Clone, Debug)]
@@ -98,6 +100,18 @@ pub struct ImportStmt {
     pub path: String
 }
 
+#[derive(Debug, Clone)]
+pub struct RecordDeclStmt {
+    pub name: String,
+    pub fields: Vec<RecordField>
+}
+
+#[derive(Debug, Clone)]
+pub struct RecordFieldStmt {
+    pub name: String,
+    pub typ: LitTypeVariant
+}
+
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Glue,
@@ -116,5 +130,7 @@ pub enum Stmt {
         name: String
     },
     FuncCall(FuncCallStmt),
-    Import(ImportStmt)
+    Import(ImportStmt),
+    Record(RecordDeclStmt),
+    RecordField(RecordFieldStmt)
 }

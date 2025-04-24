@@ -22,10 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+pub mod record;
+pub mod builtins;
+
 use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
+use builtins::{BoolType, Int32Type, StringType};
 use lazy_static::lazy_static;
+use record::RecordType;
 
 /// Trait for types that can be compared based on their variant and equality.
 pub trait BTypeComparable {
@@ -52,6 +57,20 @@ pub trait TypeSized {
     /// # Returns
     /// - The size of the type as a `usize` value.
     fn type_size(&self) -> usize;
+}
+
+pub enum BaseType {
+    Integer32(Int32Type),
+
+    String(StringType),
+
+    Boolean(BoolType),
+
+    Record(RecordType),
+
+    Null,
+
+    Void
 }
 
 /// Represents literal value types used in the language.
@@ -97,6 +116,8 @@ pub enum LitType {
     /// Represents a null value (e.g., for optional pointers or uninitialized references).
     Null,
 
+    Record,
+
     /// Placeholder value, typically used during intermediate stages of compilation.
     None,
 }
@@ -104,17 +125,8 @@ pub enum LitType {
 impl From<LitType> for String {
     fn from(value: LitType) -> Self {
         match value {
-            LitType::I64(_) => todo!(),
             LitType::I32(val) => val.to_string(),
-            LitType::I16(_) => todo!(),
-            LitType::U8(_) => todo!(),
-            LitType::F64(_) => todo!(),
-            LitType::F32(_) => todo!(),
-            LitType::Void => todo!(),
-            LitType::Str { .. } => todo!(),
-            LitType::Array(_) => todo!(),
-            LitType::Null => todo!(),
-            LitType::None => todo!(),
+            _ => todo!()
         }
     }
 }
@@ -126,9 +138,9 @@ pub struct LitTypeArray {
     items_type: Box<LitTypeVariant>
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum LitTypeVariant {
-    I32,
+    #[default] I32,
     I64,
     I16,
     U8,
@@ -139,6 +151,7 @@ pub enum LitTypeVariant {
     Array,
     Null,
     None, // placeholder
+    Record
 }
 
 impl Display for LitTypeVariant {

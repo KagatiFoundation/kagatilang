@@ -1,8 +1,10 @@
-mod function;
+// mod function;
 mod sym;
 mod symbol_table;
 pub mod symbol_ctx;
+pub mod function;
+pub mod record;
+pub mod registery;
 
-pub use function::*;
 pub use sym::*;
 pub use symbol_table::*;

@@ -22,9 +22,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+use std::collections::HashSet;
+
 use itertools::Itertools;
 use kagc_scope::{manager::*, scope::*};
-use kagc_symbol::*;
+use kagc_symbol::{
+    function::{
+        FunctionInfo, 
+        FunctionInfoTable, 
+        INVALID_FUNC_ID
+    }, 
+    record::RecordRegistery, 
+    registery::Registry, *
+};
+use kagc_types::record::RecordType;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum CompilerScope {
@@ -44,7 +55,12 @@ pub struct CompilerCtx {
     scope_id: usize,
 
     current_scope: usize,
+
     prev_scope: usize,
+
+    record_registery: RecordRegistery,
+
+    user_created_types: HashSet<String>
 }
 
 impl CompilerCtx {
@@ -60,7 +76,26 @@ impl CompilerCtx {
             current_scope: 0,
             prev_scope: 0,
             scope_mgr,
+            record_registery: RecordRegistery::default(),
+            user_created_types: HashSet::new()
         }
+    }
+
+    pub fn create_record(&mut self, record_entry: RecordType) {
+        self.user_created_types.insert(record_entry.name.clone());
+        self.record_registery.declare(record_entry);
+    }
+
+    pub fn lookup_record(&self, rec_name: &str) -> Option<&RecordType> {
+        self.record_registery.lookup(&rec_name)
+    }
+
+    pub fn lookup_record_mut(&mut self, rec_name: &str) -> Option<&mut RecordType> {
+        self.record_registery.lookup_mut(&rec_name)
+    }
+
+    pub fn record_exists(&self, rec_name: &str) -> bool {
+        self.user_created_types.contains(rec_name)
     }
 
     pub fn live_scope_id(&self) -> usize {
