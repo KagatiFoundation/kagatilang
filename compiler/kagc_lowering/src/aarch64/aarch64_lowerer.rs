@@ -731,30 +731,32 @@ impl CodeGen for Aarch64CodeGen {
             fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
 
             let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
+            let last_instr = var_decl_val.last().unwrap().clone();
 
             fn_ctx.reset_parent_ast_kind();
 
-            let decl_ir: IR = IR::VarDecl(
-                IRVarDecl {
-                    sym_name: var_decl.sym_name.clone(),
-                    class: var_sym.class,
-                    offset: Some(fn_ctx.stack_offset),
-                    value: var_decl_val.last().unwrap().clone().dest().unwrap()
-                }
-            );
+            let mut result = var_decl_val.into_iter().map(|instr| {
+                IR::Instr(instr)
+            }).collect::<Vec<IR>>();
 
-            // increment the stack offset after use
-            fn_ctx.stack_offset += 1;
-
-            let mut result: Vec<IR> = vec![];
-
-            for instr in var_decl_val {
-                result.push(IR::Instr(instr));
+            if ASTOperation::AST_RECORD_CREATE == ast.left.as_ref().unwrap().operation {
+                return Ok(result);
             }
+            else {
+                let decl_ir: IR = IR::VarDecl(
+                    IRVarDecl {
+                        sym_name: var_decl.sym_name.clone(),
+                        class: var_sym.class,
+                        offset: Some(fn_ctx.stack_offset),
+                        value: last_instr.dest().unwrap()
+                    }
+                );
 
-            result.push(decl_ir);
-            
-            return Ok(result);
+                // increment the stack offset after use
+                fn_ctx.stack_offset += 1;
+                result.push(decl_ir);
+                return Ok(result);
+            }
         }
 
         // FIND A BETTER SOLUTIN THAN JUST PANICKING
@@ -1007,38 +1009,7 @@ impl CodeGen for Aarch64CodeGen {
 }
 
 impl Aarch64CodeGen {
-    pub fn sort_fn_call_args(args: &mut [FuncArg]) {
-        args.sort_by(|a, b| {
-            let a_priority = match &a.1 {
-                Expr::FuncCall(_) => 0,
-                Expr::Subscript(_) => 1,
-                Expr::Binary(_) => 2,
-                Expr::Widen(_) => 3,
-                Expr::Ident(_) => 4,
-                Expr::LitVal(_) => 5,
-                Expr::Null => 6
-            };
-            
-            let b_priority = match &b.1 {
-                Expr::FuncCall(_) => 0,
-                Expr::Subscript(_) => 1,
-                Expr::Binary(_) => 2,
-                Expr::Widen(_) => 3,
-                Expr::Ident(_) => 4,
-                Expr::LitVal(_) => 5,
-                Expr::Null => 6
-            };
-            
-            a_priority.cmp(&b_priority)
-        });
-    }
-}
-
-impl Aarch64CodeGen {
-    pub fn new(
-        reg_manager: Rc<RefCell<Aarch64RegManager2>>,
-        ctx: Rc<RefCell<CompilerCtx>>
-    ) -> Self {
+    pub fn new(reg_manager: Rc<RefCell<Aarch64RegManager2>>, ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
             reg_manager,
             ctx,

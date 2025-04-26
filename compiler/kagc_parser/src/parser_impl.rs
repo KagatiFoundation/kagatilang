@@ -26,13 +26,21 @@ use core::panic;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use kagc_ast::{record::RecordField, *};
+use kagc_ast::{record::*, *};
 use kagc_comp_unit::CompilationUnit;
 use kagc_ctx::CompilerCtx;
-use kagc_errors::{BErr, BErrType, BTypeErr};
-use kagc_symbol::{function::{FuncParam, FunctionInfo}, *};
-use kagc_token::{FromTokenKind, Token, TokenKind};
-use kagc_types::{builtins::builtin::TypeId, record::{RecordFieldType, RecordType}, LitType, LitTypeVariant};
+use kagc_errors::*;
+use kagc_symbol::{function::*, *};
+use kagc_token::*;
+use kagc_types::{
+    builtins::builtin::TypeId, 
+    record::{
+        RecordFieldType, 
+        RecordType
+    }, 
+    LitType, 
+    LitTypeVariant
+};
 
 /// A type alias representing the result of parsing, which can either
 /// be an AST node on successful parsing or a ParseError indicating a
@@ -330,23 +338,24 @@ impl Parser {
 
         _ = self.token_match(TokenKind::T_LBRACE); // match '{'
 
-        // magic happens here
-        // parsing only one field for now
-        let field = self.parse_record_field_decl_stmt()?;
+        let mut rec_fields = vec![];
 
+        while self.current_token.kind != TokenKind::T_RBRACE {
+            rec_fields.push(self.parse_record_field_decl_stmt()?);
+        }
+        
         _ = self.token_match(TokenKind::T_RBRACE); // match '}'
 
         let record_entry = RecordType {
             name: id_token.lexeme.clone(),
             size: 0,
             __alignment: 0,
-            fields: vec![
+            fields: rec_fields.into_iter().map(|field| {
                 RecordFieldType {
                     name: field.name.clone(),
-                    offset: 0,
                     typ: field.typ
                 }
-            ]
+            }).collect::<Vec<RecordFieldType>>()
         };
 
         self.ctx.borrow_mut().create_record(record_entry);
@@ -354,12 +363,7 @@ impl Parser {
         Ok(
             AST::create_leaf(
                 ASTKind::StmtAST(
-                    Stmt::Record(
-                        RecordDeclStmt {
-                            name: id_token.lexeme.clone(),
-                            fields: vec![field]
-                        }
-                    )
+                    Stmt::Record(RecordDeclStmt { name: id_token.lexeme.clone() })
                 ), 
                 ASTOperation::AST_RECORD_DECL,
                 LitTypeVariant::Record,
@@ -611,7 +615,7 @@ impl Parser {
         let param_name: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
         let _ = self.token_match(TokenKind::T_COLON)?;
         let param_type: LitTypeVariant = self.parse_id_type()?;
-        let param_loc_off: i32 = self.gen_next_local_offset();
+        let param_loc_off: i32 = self.gen_next_local_offset() as i32;
         self.skip_to_next_token();
         Ok(FuncParam {
             lit_type: param_type,
@@ -659,7 +663,7 @@ impl Parser {
                 )
             );
         }
-        let return_expr: AST = self.parse_equality()?;
+        let return_expr: AST = self.parse_record_or_expr()?;
         Ok(AST::new(
             ASTKind::StmtAST(Stmt::Return(ReturnStmt {
                 func_id: self.current_function_id,
@@ -848,7 +852,7 @@ impl Parser {
         // at the time of declaration.
         if self.current_token.kind == TokenKind::T_EQUAL {
             _ = self.token_match(TokenKind::T_EQUAL)?; // match and ignore '=' sign
-            assignment_parse_res = Some(self.parse_equality());
+            assignment_parse_res = Some(self.parse_record_or_expr());
         }
 
         // Default value contains compile-time evaluated 
@@ -859,19 +863,8 @@ impl Parser {
         if let Some(Err(parse_err)) = assignment_parse_res {
             return Err(parse_err);
         } 
-        else if let Some(Ok(ref res)) = assignment_parse_res {
-            // if the variable being declared is a global variable and 
-            // has some value assigned to it, then that assigned value 
-            // can be evaluated at compile time as global expressions 
-            // cannot contain any non-constant values
-            if self.is_scope_global() {
-                if let ASTKind::ExprAST(expr) = &res.kind {
-                    if let Ok(evaluation_result) = expr.eval() {
-                        default_value = Some(evaluation_result);
-                    }
-                }
-            }
-            else if var_type == LitTypeVariant::Str {
+        else if let Some(Ok(_)) = assignment_parse_res {
+            if var_type == LitTypeVariant::Str {
                 let str_const_label: usize = self.shared_pctx.borrow_mut().next_str_label();
                 default_value = Some(LitType::I32(str_const_label as i32));
             }
@@ -890,7 +883,7 @@ impl Parser {
         
         // calculate offset here
         if inside_func {
-            sym.local_offset = self.gen_next_local_offset();
+            sym.local_offset = self.gen_next_local_offset() as i32;
             sym.func_id = Some(self.current_function_id);
         }
 
@@ -924,10 +917,10 @@ impl Parser {
         return_result
     }
 
-    fn gen_next_local_offset(&mut self) -> i32 {
+    fn gen_next_local_offset(&mut self) -> usize {
         let tmp_off: i32 = self.local_offset;
         self.local_offset += 1;
-        tmp_off
+        tmp_off as usize
     }
 
     // TODO: Write comments
@@ -982,7 +975,7 @@ impl Parser {
             SymbolType::Array, 
             array_size,
             self.ident_var_class(),
-            self.gen_next_local_offset(),
+            self.gen_next_local_offset() as i32,
             None,
             self.current_function_id
         );
@@ -1018,7 +1011,7 @@ impl Parser {
 
         if self.current_token.kind != TokenKind::T_RBRACKET {
             loop {
-                let argu: AST = self.parse_equality()?;
+                let argu: AST = self.parse_record_or_expr()?;
 
                 vals.push(argu.kind.expr().unwrap());
 
@@ -1090,7 +1083,7 @@ impl Parser {
     fn parse_assignment_stmt(&mut self, id_token: Token) -> ParseResult2 {
         _ = self.token_match(TokenKind::T_EQUAL)?;
 
-        let bin_expr_ast_node: AST = self.parse_equality()?;
+        let bin_expr_ast_node: AST = self.parse_record_or_expr()?;
 
         // _ = self.token_match(TokenKind::T_SEMICOLON)?;
 
@@ -1111,6 +1104,70 @@ impl Parser {
             Some(bin_expr_ast_node),
             LitTypeVariant::Void,
         ))
+    }
+
+    fn parse_record_or_expr(&mut self) -> ParseResult2 {
+        if self.current_token.kind == TokenKind::T_IDENTIFIER {
+            self.parse_record_creation()
+        }
+        else {
+            self.parse_equality()
+        }
+    }
+
+    fn parse_record_creation(&mut self) -> ParseResult2 {
+        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        _ = self.token_match(TokenKind::T_LBRACE);
+
+        let mut fields = vec![];
+
+        while self.current_token.kind != TokenKind::T_RBRACE  {
+            fields.push(self.parse_record_field_assignment()?);
+
+            if self.current_token.kind != TokenKind::T_RBRACE {
+                _ = self.token_match(TokenKind::T_COMMA)?; // match ','
+            }
+            else {
+                break;
+            }
+        }
+
+        _ = self.token_match(TokenKind::T_RBRACE);
+
+        Ok(
+            AST::create_leaf(
+                ASTKind::ExprAST(
+                    Expr::RecordCreation(
+                        RecordCreationExpr { 
+                            name: id_token.lexeme.clone(), 
+                            fields
+                        }
+                    )
+                ),
+                ASTOperation::AST_RECORD_CREATE, 
+                LitTypeVariant::Record, 
+                None, 
+                None
+            )
+        )
+    }
+
+    fn parse_record_field_assignment(&mut self) -> Result<RecordFieldAssignExpr, Box<BErr>> {
+        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        _ = self.token_match(TokenKind::T_EQUAL); // parse '='
+        let field_val = self.parse_record_or_expr()?;
+
+        if let ASTKind::ExprAST(expr) = field_val.kind {
+            return Ok(
+                RecordFieldAssignExpr { 
+                    name: id_token.lexeme.clone(), 
+                    value: Box::new(expr),
+                    offset: self.gen_next_local_offset()
+                }
+            );
+        }
+
+        panic!()
     }
 
     fn parse_equality(&mut self) -> ParseResult2 {
@@ -1141,17 +1198,12 @@ impl Parser {
         self.try_parsing_binary(left, vec![TokenKind::T_SLASH, TokenKind::T_STAR])
     }
 
-    fn try_parsing_binary(
-        &mut self,
-        left_side_tree: ParseResult2,
-        tokens: Vec<TokenKind>,
-    ) -> ParseResult2 {
-        let left: AST = left_side_tree.clone()?;
-
+    fn try_parsing_binary(&mut self, lhs: ParseResult2, tokens: Vec<TokenKind>) -> ParseResult2 {
+        let left: AST = lhs.clone()?;
         let current_token_kind: TokenKind = self.current_token.kind;
 
         if !tokens.contains(&current_token_kind) {
-            return left_side_tree;
+            return lhs;
         }
 
         self.skip_to_next_token(); // skip the operator
@@ -1161,7 +1213,6 @@ impl Parser {
         let right: AST = self.parse_equality()?;
 
         let left_expr: Expr = left.kind.expr().unwrap();
-
         let right_expr: Expr = right.kind.expr().unwrap();
 
         Ok(AST::create_leaf(
@@ -1271,7 +1322,7 @@ impl Parser {
             }
             TokenKind::T_LPAREN => {
                 // group expression: e.g: (a * (b + c)))
-                let group_expr: ParseResult2 = self.parse_equality();
+                let group_expr: ParseResult2 = self.parse_record_or_expr();
                 // Group expression terminates with ')'. Match and ignore ')'.
                 self.token_match(TokenKind::T_RPAREN)?;
                 Ok(group_expr.unwrap())
@@ -1366,7 +1417,7 @@ impl Parser {
             let mut arg_pos: usize = 0;
 
             loop {
-                let argu: AST = self.parse_equality()?;
+                let argu: AST = self.parse_record_or_expr()?;
                 func_args.push((arg_pos, argu.kind.expr().unwrap()));
 
                 let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;

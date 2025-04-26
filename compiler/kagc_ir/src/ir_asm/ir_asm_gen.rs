@@ -81,7 +81,7 @@ pub trait IRToASM {
 
                     IRInstr::Jump { label_id } => self.gen_ir_jump_asm(*label_id),
 
-                    IRInstr::Store { src, .. } => self.gen_asm_store(src, 0),
+                    IRInstr::Store { src, stack_off, .. } => self.gen_asm_store(src, stack_off.as_stack_off().unwrap()),
 
                     IRInstr::CallStart => self.start_func_call_proc(),
 

@@ -132,6 +132,9 @@ impl Aarch64IRToASM {
             if let IR::VarDecl(_) = ir {
                 stack_size += 8; // Each variable takes 8 bytes
             }
+            else if let IR::Instr(IRInstr::Store { .. }) = ir {
+                stack_size += 8;
+            }
         }
     
         Some(Aarch64IRToASM::align_to_16(stack_size))
@@ -345,6 +348,7 @@ impl IRToASM for Aarch64IRToASM {
     }
     
     fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &IRVarDecl) -> String {
+        println!("{vdecl_ir:#?}");
         let mut output_str: String = "".to_string();
 
         let stack_off: usize = vdecl_ir.offset.unwrap_or_else(|| panic!("Local variables must have stack offset!"));
@@ -365,7 +369,7 @@ impl IRToASM for Aarch64IRToASM {
             _ => todo!()
         };
 
-        // since we are parsing a local variable, then compile-time function props is not None
+        // since we are parsing a local variable, the compile-time function props cannot be None
         let fn_props: &ComptFnProps = self.compt_fn_props.as_ref().unwrap_or_else(|| panic!("Compile time information not available for the function!"));
         
         if !fn_props.is_leaf {
@@ -437,8 +441,24 @@ impl IRToASM for Aarch64IRToASM {
         }
     }
 
-    fn gen_asm_store(&mut self, src: &IRLitType, _stack_off: usize) -> String {
-        format!("STR {:?}", src.as_reg())
+    fn gen_asm_store(&mut self, src: &IRLitType, stack_off: usize) -> String {
+        let src_reg = self.resolve_register(src);
+
+        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
+            (func_props.stack_size, func_props.is_leaf)
+        }
+        else {
+            panic!("Trying to load value from the stack outside of a function!");
+        };
+
+        let soff: usize = (stack_off * 8) + 8;
+        
+        if is_leaf_fn {
+            format!("STR {}, [sp, #{}]", src_reg.1.name(), stack_size - soff)
+        }
+        else {
+            format!("STR {}, [x29, #-{}]", src_reg.1.name(), soff)
+        }
     }
 
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], _return_type: &Option<IRLitType>) -> String {

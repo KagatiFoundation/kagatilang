@@ -25,8 +25,6 @@ SOFTWARE.
 use kagc_symbol::*;
 use kagc_types::LitTypeVariant;
 
-use crate::record::RecordField;
-
 use super::Expr;
 
 #[derive(Clone, Debug)]
@@ -103,7 +101,6 @@ pub struct ImportStmt {
 #[derive(Debug, Clone)]
 pub struct RecordDeclStmt {
     pub name: String,
-    pub fields: Vec<RecordField>
 }
 
 #[derive(Debug, Clone)]

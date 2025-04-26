@@ -417,17 +417,40 @@ pub trait CodeGen {
     fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         match expr {
             Expr::LitVal(litexpr) => self.gen_lit_ir_expr(litexpr, fn_ctx),
-            
             Expr::Binary(binexpr) => self.gen_bin_ir_expr(binexpr, fn_ctx),
-
             Expr::Ident(identexpr) => self.gen_ident_ir_expr(identexpr, fn_ctx),
-
             Expr::FuncCall(funccallexpr) => self.gen_ir_fn_call_expr(funccallexpr, fn_ctx),
-
+            Expr::RecordCreation(ref mut recexpr) => self.lower_rec_creation_to_ir(recexpr, fn_ctx),
+            Expr::RecordFieldAssign(recfieldexpr) => self.lower_rec_field_assign_to_ir(recfieldexpr, fn_ctx),
             Expr::Null => self.lower_null_const_to_ir(fn_ctx),
-
             _ => todo!()
         }
+    }
+
+    fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let mut output = vec![];
+        let expr_res = self.__gen_expr(&mut rec_field.value, fn_ctx)?;
+        let expr_temp = expr_res.last().unwrap().clone();
+
+        let store = IRInstr::Store { 
+            src: expr_temp.dest().unwrap(), 
+            stack_off: IRLitType::StackOff(rec_field.offset)
+        };
+
+        output.extend(expr_res);
+        output.push(store);
+        Ok(output)
+    }
+
+    fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let mut output = vec![];
+
+        for field in &mut rec_creation.fields {
+            let field_output = self.lower_rec_field_assign_to_ir(field, fn_ctx)?;
+            output.extend(field_output);
+        }
+
+        Ok(output)
     }
 
     fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {

@@ -58,6 +58,8 @@ pub enum ASTOperation {
     // Record related operations
     AST_RECORD_DECL,
     AST_RECORD_FIELD_DECL,
+    AST_RECORD_CREATE,
+    // AST_RECORD_FIELD_ASSIGN,
 
     AST_WHILE,
     AST_LOOP,

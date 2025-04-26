@@ -156,6 +156,8 @@ impl SemanticAnalyzer {
             },
 
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr),
+
+            Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr),
             
             Expr::Null => Ok(LitTypeVariant::Null),
 
@@ -174,6 +176,10 @@ impl SemanticAnalyzer {
         )?;
 
         Ok(expr_type)
+    }
+
+    fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr) -> SAResult {
+        Ok(LitTypeVariant::Record)
     }
 
     fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr) -> SAResult {
@@ -238,11 +244,7 @@ impl SemanticAnalyzer {
     }
 
     /// Check if the function arguments match the parameter types
-    fn check_func_call_args(
-        &mut self,
-        args: &mut [(usize, Expr)],
-        param_types: &[LitTypeVariant],
-    ) -> SAResult {
+    fn check_func_call_args(&mut self, args: &mut [(usize, Expr)], param_types: &[LitTypeVariant]) -> SAResult {
         if args.len() != param_types.len() {
             return Err(
                 SAError::ArgLengthMismatch { 
