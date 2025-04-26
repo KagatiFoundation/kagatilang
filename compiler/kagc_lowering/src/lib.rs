@@ -422,6 +422,7 @@ pub trait CodeGen {
             Expr::FuncCall(funccallexpr) => self.gen_ir_fn_call_expr(funccallexpr, fn_ctx),
             Expr::RecordCreation(ref mut recexpr) => self.lower_rec_creation_to_ir(recexpr, fn_ctx),
             Expr::RecordFieldAssign(recfieldexpr) => self.lower_rec_field_assign_to_ir(recfieldexpr, fn_ctx),
+            Expr::RecordFieldAccess(recfieldexpr) => self.lower_rec_field_access_to_ir(recfieldexpr, fn_ctx),
             Expr::Null => self.lower_null_const_to_ir(fn_ctx),
             _ => todo!()
         }
@@ -572,6 +573,8 @@ pub trait CodeGen {
     fn lower_div_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
        IRInstr::Div { dest, op1, op2 }
     }
+
+    fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
     fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 

@@ -158,6 +158,8 @@ impl SemanticAnalyzer {
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr),
 
             Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr),
+
+            Expr::RecordFieldAccess(recfieldexpr) => self.analyze_record_field_access_expr(recfieldexpr),
             
             Expr::Null => Ok(LitTypeVariant::Null),
 
@@ -178,7 +180,18 @@ impl SemanticAnalyzer {
         Ok(expr_type)
     }
 
-    fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr) -> SAResult {
+    fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr) -> SAResult {
+        let ctx_borrow = self.ctx.borrow_mut();
+        if let Some(rec) = ctx_borrow.lookup_record("User") {
+            if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_name) {
+                field_access.rel_stack_off = field.rel_stack_off;
+                return Ok(LitTypeVariant::Str);
+            }
+        }
+        panic!()
+    }
+
+    fn analyze_rec_creation_expr(&mut self, _rec_expr: &mut RecordCreationExpr) -> SAResult {
         Ok(LitTypeVariant::Record)
     }
 

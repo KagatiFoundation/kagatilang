@@ -74,6 +74,19 @@ pub struct RecordCreationExpr {
     pub fields: Vec<RecordFieldAssignExpr>
 }
 
+#[derive(Debug, Clone)]
+pub struct RecordFieldAccessExpr {
+    pub rec_name: String,
+    pub rec_alias: String,
+    pub field_name: String,
+
+    /// Relative stack offset.
+    /// 
+    /// This feild is filled up by the pass `analyzer`.
+    /// This field is assigned the value 0(zero) while initializing.
+    pub rel_stack_off: usize 
+}
+
 #[derive(Clone, Debug)]
 pub enum Expr {
     Binary(BinExpr),
@@ -91,6 +104,8 @@ pub enum Expr {
     RecordCreation(RecordCreationExpr),
 
     RecordFieldAssign(RecordFieldAssignExpr),
+
+    RecordFieldAccess(RecordFieldAccessExpr),
 
     /// Null expression
     Null

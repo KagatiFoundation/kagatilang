@@ -985,6 +985,18 @@ impl CodeGen for Aarch64CodeGen {
         Ok(output)
     }
 
+    fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let lit_val_tmp: usize = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 1;
+
+        Ok(vec![
+            IRInstr::Load { 
+                dest: IRLitType::Temp(lit_val_tmp), 
+                stack_off: access.rel_stack_off + fn_ctx.stack_offset
+            }
+        ])
+    }
+
     fn lower_import_to_ir(&self) -> CGRes {
         Ok(vec![])   
     }

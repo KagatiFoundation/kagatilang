@@ -37,4 +37,5 @@ impl TypeSized for RecordType {
 pub struct RecordFieldType {
     pub name: String,
     pub typ: TypeId,
+    pub rel_stack_off: usize
 }

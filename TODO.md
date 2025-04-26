@@ -2,6 +2,7 @@
 [✅] Semantic analyzer not reporting an undefined symbol error when calling a non-existing function.
 [] Fix the instruction order after parameter parsing
 [✅] Fix "no symbol found" issues
+[] Fix registers not being freed after being used in record filling process
 
 # Features to implement:
 [✅] Allocate registers from x0-x7 only for function parameters.
@@ -26,3 +27,4 @@
 [] Change the type of symbol list to HashMap from Vec
 [] Constant Folding
 [] Module-level symbol table management
+[] Do not allow non-existing fields to be assigned in record

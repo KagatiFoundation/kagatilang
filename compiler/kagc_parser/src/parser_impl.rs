@@ -350,10 +350,11 @@ impl Parser {
             name: id_token.lexeme.clone(),
             size: 0,
             __alignment: 0,
-            fields: rec_fields.into_iter().map(|field| {
+            fields: rec_fields.into_iter().enumerate().map(|(idx, field)| {
                 RecordFieldType {
                     name: field.name.clone(),
-                    typ: field.typ
+                    typ: field.typ,
+                    rel_stack_off: idx
                 }
             }).collect::<Vec<RecordFieldType>>()
         };
@@ -1108,11 +1109,13 @@ impl Parser {
 
     fn parse_record_or_expr(&mut self) -> ParseResult2 {
         if self.current_token.kind == TokenKind::T_IDENTIFIER {
-            self.parse_record_creation()
+            if let Some(next) = self.tokens.get(self.current + 1) {
+                if next.kind == TokenKind::T_LBRACE {
+                    return self.parse_record_creation();
+                }
+            }
         }
-        else {
-            self.parse_equality()
-        }
+        self.parse_equality()
     }
 
     fn parse_record_creation(&mut self) -> ParseResult2 {
@@ -1305,6 +1308,9 @@ impl Parser {
                 if curr_tok_kind == TokenKind::T_LPAREN {
                     self.parse_func_call_expr(&symbol_name, &current_token)
                 } 
+                else if curr_tok_kind == TokenKind::T_DOT {
+                    self.parse_record_field_access_expr(&symbol_name)
+                }
                 else {
                     Ok(AST::create_leaf(
                         ASTKind::ExprAST(
@@ -1406,6 +1412,29 @@ impl Parser {
         ))
     }
 
+    fn parse_record_field_access_expr(&mut self, sym_name: &str) -> ParseResult2 {
+        _ = self.token_match(TokenKind::T_DOT); // match '.'
+        let access = self.token_match(TokenKind::T_IDENTIFIER)?;
+        Ok(
+            AST::create_leaf(
+                ASTKind::ExprAST(
+                    Expr::RecordFieldAccess(
+                        RecordFieldAccessExpr { 
+                            rec_name: "".to_string(),
+                            rec_alias: sym_name.to_string(), 
+                            field_name: access.lexeme.clone(),
+                            rel_stack_off: 0
+                        }
+                    )
+                ),
+                ASTOperation::AST_RECORD_FIELD_ACCESS, 
+                LitTypeVariant::None, 
+                None, 
+                None
+            )
+        )
+    }
+
     fn parse_func_call_expr(&mut self, called_symbol: &str, sym_token: &Token) -> ParseResult2 {
         let current_file: String = self.get_current_file_name();
         _ = self.token_match(TokenKind::T_LPAREN)?;
@@ -1480,7 +1509,7 @@ impl Parser {
 
     /// Adds the symbol to the current scope.
     fn add_symbol_local(&mut self, sym: Symbol) -> Option<usize> {
-        let insert_pos: Option<usize> = self.ctx.borrow_mut().declare(sym.clone());
+        let insert_pos = self.ctx.borrow_mut().declare(sym.clone());
         self.next_local_sym_pos += 1;
         insert_pos
     }

@@ -58,7 +58,7 @@ pub struct CompilerCtx {
 
     prev_scope: usize,
 
-    record_registery: RecordRegistery,
+    pub record_registery: RecordRegistery,
 
     user_created_types: HashSet<String>
 }

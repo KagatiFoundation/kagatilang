@@ -348,7 +348,6 @@ impl IRToASM for Aarch64IRToASM {
     }
     
     fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &IRVarDecl) -> String {
-        println!("{vdecl_ir:#?}");
         let mut output_str: String = "".to_string();
 
         let stack_off: usize = vdecl_ir.offset.unwrap_or_else(|| panic!("Local variables must have stack offset!"));
