@@ -31,7 +31,9 @@ use kagc_token::Token;
 use kagc_types::LitTypeVariant;
 
 use crate::{
-    errors::*, resolver, type_checker::TypeChecker, typedefs::SAResult
+    errors::*, 
+    type_checker::TypeChecker, 
+    typedefs::SAResult
 };
 
 pub struct SemanticAnalyzer {
@@ -53,7 +55,8 @@ impl SemanticAnalyzer {
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
             if let Err(analysis_err) = result {
-                analysis_err.dump();
+                println!("{analysis_err:#?}");
+                panic!()
             }
         }
     }
@@ -84,7 +87,6 @@ impl SemanticAnalyzer {
                 if let Some(right) = &mut node.right {
                     self.analyze_node(right)?;
                 }
-
                 Ok(LitTypeVariant::None)
             }
 

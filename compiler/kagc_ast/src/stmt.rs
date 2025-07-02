@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 use kagc_symbol::*;
-use kagc_types::{builtins::builtin::TypeId, LitTypeVariant};
+use kagc_types::{builtins::builtin::TypeId, LitType, LitTypeVariant};
 
 use super::Expr;
 
@@ -70,7 +70,9 @@ pub struct VarDeclStmt {
 
     pub func_id: usize,
 
-    pub symbol_type: SymbolType
+    pub symbol_type: SymbolType,
+
+    pub default_value: Option<LitType>
 }
 
 #[derive(Clone, Debug)]

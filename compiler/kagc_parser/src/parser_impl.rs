@@ -807,14 +807,6 @@ impl Parser {
         // Name of the variable.
         let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
 
-        // Create a symbol.
-        let mut sym: Symbol = Symbol::new(
-            id_token.lexeme.clone(),
-            var_type,
-            SymbolType::Variable,
-            var_class,
-        );
-
         // Parser may encounter a colon after the identifier name.
         // This means the type of this variable has been defined
         // by the user.
@@ -826,7 +818,6 @@ impl Parser {
             if var_type == LitTypeVariant::Record {
                 let record_name = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
                 sym_type = SymbolType::Record { name: record_name.lexeme };
-                sym.sym_type = sym_type.clone();
             }
             else {
                 self.skip_to_next_token();
@@ -858,26 +849,19 @@ impl Parser {
             }
         }
 
-        sym.default_value = default_value;
-        
-        // calculate offset here
-        if inside_func {
-            sym.local_offset = self.gen_next_local_offset() as i32;
-            sym.func_id = Some(self.current_function_id);
-        }
-
-        let symbol_add_pos: usize = self.add_symbol_local(sym.clone()).unwrap();
+        // let symbol_add_pos: usize = self.add_symbol_local(sym.clone()).unwrap();
 
         let return_result: ParseResult2 = if let Some(assign_ast_node_res) = assignment_parse_res {
             Ok(AST::new(
                 ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
-                    symtbl_pos: symbol_add_pos,
+                    symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
                     symbol_type: sym_type,
                     class: var_class,
                     sym_name: id_token.lexeme.clone(),
                     type_id: TypeId::from(var_type),
                     local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
-                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF }
+                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
+                    default_value
                 })),
                 ASTOperation::AST_VAR_DECL,
                 Some(assign_ast_node_res?),
@@ -888,13 +872,14 @@ impl Parser {
         else {
             Ok(AST::new(
                 ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
-                    symtbl_pos: symbol_add_pos,
+                    symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
                     class: var_class,
                     symbol_type: sym_type,
                     sym_name: id_token.lexeme.clone(),
                     type_id: TypeId::from(var_type),
                     local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
-                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF }
+                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
+                    default_value
                 })),
                 ASTOperation::AST_VAR_DECL,
                 None,

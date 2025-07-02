@@ -38,7 +38,17 @@ impl Resolver {
         match node.operation {
             ASTOperation::AST_FUNCTION => self.declare_func(node),
 
-            // ASTOperation::AST_VAR_DECL => self.declare_let_binding(node),
+            ASTOperation::AST_VAR_DECL => self.declare_let_binding(node),
+
+            ASTOperation::AST_GLUE => {
+                if let Some(left) = node.left.as_mut() {
+                    let _ = self.declare_symbol(left)?;
+                }
+                if let Some(right) = node.right.as_mut() {
+                    let _ = self.declare_symbol(right)?;
+                } 
+                Ok(0)
+            }
 
             _ => Ok(0)
         }
@@ -107,7 +117,7 @@ impl Resolver {
         panic!("Not a function declaration statement!");
     }
 
-    fn declare_let_binding(&mut self, node: &AST) -> ResolverResult {
+    fn declare_let_binding(&mut self, node: &mut AST) -> ResolverResult {
         let mut ctx_borrow = self.ctx.borrow_mut();
         if let ASTKind::StmtAST(Stmt::VarDecl(stmt)) = &node.kind {
             let sym = Symbol::create(
