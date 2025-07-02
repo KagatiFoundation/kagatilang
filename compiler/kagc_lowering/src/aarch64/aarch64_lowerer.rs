@@ -214,13 +214,6 @@ impl CodeGen for Aarch64CodeGen {
             );
 
         let stack_size: usize = 0; // compute_stack_size(&self.ctx.borrow(), ast, &func_name).ok().unwrap();
-        
-        if calls_fns {
-            self.emit_non_leaf_fn_prol(&func_name, stack_size);
-        } 
-        else {
-            self.emit_leaf_fn_prol(&func_name, stack_size);
-        }
 
         let mut leaf_fn_stack_off: i32 = stack_size as i32 - AARCH64_ALIGN_SIZE as i32;
 
@@ -248,17 +241,6 @@ impl CodeGen for Aarch64CodeGen {
         }
 
         self.current_function = None;
-        // self.ctx.borrow_mut().switch_to_global_scope();
-
-        if calls_fns {
-            self.emit_non_leaf_fn_epl(stack_size);
-        }
-        else if stack_size != 0 {
-            self.emit_leaf_fn_epl(stack_size);
-        }
-        else {
-            self.emit("ret\n");
-        }
 
         Ok(AllocedReg::no_reg())
     }
@@ -577,30 +559,6 @@ impl CodeGen for Aarch64CodeGen {
         )?;
         _ = self.gen_store_reg_value_into_id(expr_reg, &assign_stmt.sym_name)?;
         Ok(AllocedReg::no_reg())
-    }
-
-    fn emit_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) {
-        self.emit(&format!("\n.global _{fn_label}\n_{fn_label}:"));
-
-        if stack_size != 0 {
-            self.emit(&format!("sub sp, sp, #{stack_size}"));
-        }
-    }
-
-    fn emit_non_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) {
-        self.emit(&format!("\n.global _{fn_label}\n_{fn_label}:"));
-        self.emit(&format!("sub sp, sp, #{stack_size}"));
-        self.emit(&format!("stp x29, x30, [sp, #{}]", stack_size - 16));
-        self.emit(&format!("add x29, sp, #{}", stack_size - 16));
-    }
-
-    fn emit_leaf_fn_epl(&self, stack_size: usize) {
-        self.emit(&format!("add sp, sp, #{stack_size}\nret\n"));
-    }
-
-    fn emit_non_leaf_fn_epl(&self, stack_size: usize) {
-        self.emit(&format!("ldp x29, x30, [sp, #{}]", stack_size - 16));
-        self.emit(&format!("add sp, sp, #{}\nret\n", stack_size));
     }
 
     fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes {

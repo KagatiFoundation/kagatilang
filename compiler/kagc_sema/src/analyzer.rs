@@ -31,9 +31,7 @@ use kagc_token::Token;
 use kagc_types::LitTypeVariant;
 
 use crate::{
-    errors::*, 
-    type_checker::TypeChecker, 
-    typedefs::SAResult
+    errors::*, resolver, type_checker::TypeChecker, typedefs::SAResult
 };
 
 pub struct SemanticAnalyzer {
@@ -51,7 +49,7 @@ impl SemanticAnalyzer {
     /// 
     /// This starts an analysis process for the given list of nodes. 
     /// This function panics if it encounters any form of error.
-    pub fn start_analysis(&mut self, nodes: &mut Vec<AST>) {
+    pub fn start_analysis(&mut self, nodes: &mut [AST]) {
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
             if let Err(analysis_err) = result {
@@ -182,10 +180,15 @@ impl SemanticAnalyzer {
 
     fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr) -> SAResult {
         let ctx_borrow = self.ctx.borrow_mut();
-        if let Some(rec) = ctx_borrow.lookup_record("User") {
-            if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_name) {
-                field_access.rel_stack_off = field.rel_stack_off;
-                return Ok(LitTypeVariant::Str);
+
+        if let Some(rec_sym) = ctx_borrow.deep_lookup(&field_access.rec_alias) {
+            if let SymbolType::Record { name } = &rec_sym.sym_type {
+                if let Some(rec) = ctx_borrow.lookup_record(name) {
+                    if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_name) {
+                        field_access.rel_stack_off = field.rel_stack_off;
+                        return Ok(LitTypeVariant::Str);
+                    }
+                }
             }
         }
         panic!()
@@ -241,12 +244,9 @@ impl SemanticAnalyzer {
             );
         };
 
-        let func_param_types = ctx_borrow
-            .func_table
-            .get(&func_call.symbol_name)
-            .unwrap()
-            .param_types
-            .clone();
+        let func_detail = ctx_borrow.func_table.get(&func_call.symbol_name).unwrap();
+        func_call.id = func_detail.func_id;
+        let func_param_types = func_detail.param_types.clone();
 
         drop(ctx_borrow);
 

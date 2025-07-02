@@ -56,6 +56,8 @@ lazy_static! {
         _keys.insert("import", TokenKind::KW_IMPORT);
         _keys.insert("null", TokenKind::KW_NULL);
         _keys.insert("record", TokenKind::KW_RECORD);
+        _keys.insert("priv", TokenKind::KW_PRIV);
+        _keys.insert("pub", TokenKind::KW_PUB);
         _keys
     };
 }

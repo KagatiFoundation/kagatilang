@@ -23,7 +23,8 @@ pub enum TypeId {
     Bool,
     Record,
     Null,
-    Void
+    Void,
+    None
 }
 
 impl TypeId {
@@ -49,7 +50,7 @@ impl From<LitTypeVariant> for TypeId {
             LitTypeVariant::Str => Self::Str,
             LitTypeVariant::Array => todo!(),
             LitTypeVariant::Null => Self::Null,
-            LitTypeVariant::None => todo!(),
+            LitTypeVariant::None => Self::None,
             LitTypeVariant::Record => Self::Record,
         }
     }

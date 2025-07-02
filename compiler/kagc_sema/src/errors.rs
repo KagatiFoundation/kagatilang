@@ -73,6 +73,11 @@ pub enum SAError {
         found: usize 
     },
 
+    SymbolAlreadyDefined {
+        sym_name: String,
+        token: Token
+    },
+
     UndefinedSymbol { 
         sym_name: String, 
         token: Token
@@ -123,7 +128,11 @@ impl fmt::Display for SAError {
                 write!(f, "Array length mismatch: expected `{expected}`, found `{found}`.")
             },
             SAError::UndefinedSymbol{ sym_name, token} => {
+                panic!();
                 write!(f, "{}:{}: compile error: Undefined symbol '{sym_name}'", token.pos.line, token.pos.column)
+            },
+            SAError::SymbolAlreadyDefined{ sym_name, token} => {
+                write!(f, "{}:{}: compile error: Symbol already defined '{sym_name}'", token.pos.line, token.pos.column)
             },
             SAError::ArgLengthMismatch { expected, found } => {
                 write!(f, "compile error: Argument length mismatch: expected '{}' but found '{}'", expected, found)

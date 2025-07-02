@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use kagc_symbol::function::FunctionId;
 use kagc_types::*;
 use lazy_static::lazy_static;
 
@@ -55,6 +56,8 @@ pub type FuncArg = (ArgIdx, Expr);
 pub struct FuncCallExpr {
     /// Name of the called function
     pub symbol_name: String,
+
+    pub id: FunctionId,
 
     pub result_type: LitTypeVariant, // function return type
     // args

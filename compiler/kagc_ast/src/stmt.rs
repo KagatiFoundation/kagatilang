@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 use kagc_symbol::*;
-use kagc_types::LitTypeVariant;
+use kagc_types::{builtins::builtin::TypeId, LitTypeVariant};
 
 use super::Expr;
 
@@ -32,9 +32,19 @@ pub struct FuncDeclStmt {
     /// Function ID
     pub func_id: usize, 
 
+    pub stack_off: usize,
+
     pub name: String,
 
-    pub scope_id: usize
+    pub scope_id: usize,
+
+    pub return_type: TypeId,
+
+    pub storage_class: StorageClass,
+
+    pub locals: Symtable<Symbol>,
+
+    pub func_param_types: Vec<LitTypeVariant>
 }
 
 #[derive(Clone, Debug)]
@@ -52,7 +62,15 @@ pub struct VarDeclStmt {
     pub sym_name: String,
 
     /// Storage class of the symbol.
-    pub class: StorageClass
+    pub class: StorageClass,
+
+    pub type_id: TypeId,
+
+    pub local_offset: usize,
+
+    pub func_id: usize,
+
+    pub symbol_type: SymbolType
 }
 
 #[derive(Clone, Debug)]

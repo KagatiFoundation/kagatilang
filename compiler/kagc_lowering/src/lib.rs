@@ -622,14 +622,6 @@ pub trait CodeGen {
     fn gen_break_stmt(&mut self, break_label: usize) -> CodeGenResult;
     
     fn reg_manager(&self) -> RefMut<dyn RegManager2>;
-
-    fn emit_leaf_fn_prol(&self, fn_label: &str, stack_size: usize);
-
-    fn emit_non_leaf_fn_prol(&self, fn_label: &str, stack_size: usize);
-
-    fn emit_leaf_fn_epl(&self, stack_size: usize);
-
-    fn emit_non_leaf_fn_epl(&self, stack_size: usize);
  
     fn emit(&self, code: &str) {
         println!("{code}");

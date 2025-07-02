@@ -170,6 +170,7 @@ impl CompilerCtx {
             curr.declare(sym)
         }
         else {
+            eprintln!("Couldn't find current score");
             None
         }
     }

@@ -35,7 +35,7 @@ impl<KT: Eq + Hash> TempRegMap<KT> {
 /// Represents properties of a compiled function.
 /// 
 /// - `is_leaf`: Indicates whether the function is a leaf function 
-///             (i.e., it makes no function calls).
+///   (i.e., it makes no function calls).
 /// - `stack_size`: The amount of stack space allocated for this function.
 #[derive(Debug, Clone)]
 struct ComptFnProps {
@@ -48,13 +48,13 @@ struct ComptFnProps {
 /// AArch64 assembly.
 ///
 /// - `ctx`: A reference-counted, mutable context for the compiler, 
-///         which manages global state.
+///   which manages global state.
 /// 
 /// - `reg_manager`: A reference-counted, mutable register manager for 
-///                 AArch64, handling register allocation.
+///   AArch64, handling register allocation.
 /// 
 /// - `compt_fn_props`: Optional function properties, used for tracking 
-///                     whether a function is a leaf and its stack size.
+///   whether a function is a leaf and its stack size.
 pub struct Aarch64IRToASM {
     pub ctx: Rc<RefCell<CompilerCtx>>,
 

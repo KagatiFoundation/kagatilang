@@ -112,6 +112,8 @@ pub struct Parser {
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
+    next_fn_id: usize,
+
     /// Context in which the ```Parser``` is going to work on.
     ctx: Rc<RefCell<CompilerCtx>>,
 
@@ -133,6 +135,7 @@ impl Parser {
         Self {
             tokens: Rc::new(vec![]),
             current: 0,
+            next_fn_id: 0,
             current_token,
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
@@ -240,10 +243,6 @@ impl Parser {
                         )
                     )
                 );
-
-                if self.__panic_mode {
-                    panic!("{err:?}");
-                }
                 err
             }
         };
@@ -444,18 +443,17 @@ impl Parser {
             loop {
                 if let Ok(param) = self.parse_parameter() {
                     let sym: Symbol = Symbol::create(
-                            param.name.clone(), 
-                            param.lit_type, 
-                            SymbolType::Variable, 
-                            param.lit_type.size(), 
-                            StorageClass::PARAM, 
-                            param.offset,
-                            None,
-                            self.current_function_id,
+                        param.name.clone(), 
+                        param.lit_type, 
+                        SymbolType::Variable, 
+                        param.lit_type.size(), 
+                        StorageClass::PARAM, 
+                        param.offset,
+                        None,
+                        self.current_function_id,
                     );
 
                     func_param_types.push(sym.lit_type);
-
                     self.add_symbol_local(sym.clone());
                 } 
 
@@ -463,17 +461,17 @@ impl Parser {
                 let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
-                    let __err: Result<_, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
+                    let err: Result<_, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
                         current_file.clone(), 
                         vec![TokenKind::T_COMMA, TokenKind::T_RPAREN],
                         self.current_token.clone()
                     )));
 
                     if self.__panic_mode {
-                        panic!("{:?}", __err);
+                        panic!("{:?}", err);
                     }
 
-                    return __err;
+                    return err;
                 } 
                 else if is_tok_rparen {
                     break;
@@ -484,26 +482,10 @@ impl Parser {
             } 
         }
 
+        // function's return type
         self.token_match(TokenKind::T_RPAREN)?;
-
         let func_return_type: LitTypeVariant = self.parse_fn_ret_type()?;
-
         self.skip_to_next_token();
-
-        let function_id: Option<usize> = self.add_symbol_global(Symbol::new(
-            id_token.lexeme.clone(),
-            func_return_type,
-            SymbolType::Function,
-            func_storage_class,
-        ));
-
-        // in case the function symbol addition process fails
-        if function_id.is_none() {
-            return Err(Box::new(BErr::symbol_already_defined(
-                self.get_current_file_name(),
-                self.current_token.clone(),
-            )));
-        }
 
         // If this is not an extern function, ensure that the next token 
         // is a left brace ('{') before starting the function body. This 
@@ -513,29 +495,39 @@ impl Parser {
             _ = self.token_match_no_advance(TokenKind::T_LBRACE)?;
         }
 
-        let tmp_function_id: usize = function_id.unwrap();
-
-        // Parser has to know the function id if it is going into the 
-        // "local" state.
-        self.current_function_id = tmp_function_id;
-
         // And of course the function name as well :)
         self.current_function_name = Some(id_token.lexeme.clone());
 
         let mut function_body: Option<AST> = None;
+
         // create function body
         if func_storage_class != StorageClass::EXTERN {
             let function_body_res: ParseResult2 = self.parse_compound_stmt();
-            let __body: AST = match function_body_res {
+
+            let body: AST = match function_body_res {
                 Ok(ast) => ast,
                 Err(err) => return Err(err)
             };
-            function_body = Some(__body);
-        } else {
+
+            function_body = Some(body);
+        } 
+        else {
             _ = self.token_match(TokenKind::T_SEMICOLON)?;
         }
+
         let temp_func_id: usize = self.current_function_id;
         self.current_function_id = INVALID_FUNC_ID; 
+
+        // create a new FunctionInfo
+        self.ctx.borrow_mut().exit_scope();
+
+        // reset offset counter after parsing function
+        let tmp_off = self.local_offset;
+        self.local_offset = 0;
+
+        // reset temporary symbols holder after the function has been parsed
+        let tmp_syms = self.temp_local_syms.clone();
+        self.temp_local_syms = Symtable::default();
         
         /*
         Stack offset calculation:
@@ -544,37 +536,19 @@ impl Parser {
          Also the x0-x3 has to be preserved if they are used during function calls. 
          So, allocate extra 32 bytes for them as well.
          */
-        let stack_offset: i32 = (self.local_offset + 15 + 32) & !15;
-
-        let func_info: FunctionInfo = FunctionInfo::new(
-            id_token.lexeme.clone(),
-            function_id.unwrap(),
-            stack_offset,
-            func_return_type,
-            func_storage_class,
-            self.temp_local_syms.clone(),
-            func_param_types
-        );
-
-        // create a new FunctionInfo
-        let mut ctx_borrow = self.ctx.borrow_mut();
-        ctx_borrow.func_table.add(func_info);
-
-        // get out of scope
-        ctx_borrow.exit_scope();
-
-        // reset offset counter after parsing function
-        self.local_offset = 0;
-
-        // reset temporary symbols holder after the function has been parsed
-        self.temp_local_syms = Symtable::default();
+        let stack_offset: i32 = (tmp_off + 15 + 32) & !15;
 
         // Return AST for function declaration
         Ok(AST::new(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 func_id: temp_func_id,
+                stack_off: stack_offset as usize,
                 name: id_token.lexeme.clone(),
-                scope_id: func_scope_id
+                scope_id: func_scope_id,
+                return_type: TypeId::from(func_return_type),
+                storage_class: func_storage_class,
+                locals: tmp_syms,
+                func_param_types
             })),
             ASTOperation::AST_FUNCTION,
             function_body,
@@ -827,22 +801,36 @@ impl Parser {
         // Thus it is 'null' (or none) by default.
         let mut var_type: LitTypeVariant = LitTypeVariant::None;
 
+        // symbol's type
+        let mut sym_type = SymbolType::Variable;
+
         // Name of the variable.
         let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+
+        // Create a symbol.
+        let mut sym: Symbol = Symbol::new(
+            id_token.lexeme.clone(),
+            var_type,
+            SymbolType::Variable,
+            var_class,
+        );
 
         // Parser may encounter a colon after the identifier name.
         // This means the type of this variable has been defined
         // by the user.
         if self.current_token.kind == TokenKind::T_COLON {
             _ = self.token_match(TokenKind::T_COLON)?;
-
-            // '[' is for arrays
-            if self.current_token.kind == TokenKind::T_LBRACKET {
-                return self.parse_array_var_decl_stmt(&id_token);
-            }
-
             var_type = self.parse_id_type()?;
-            self.skip_to_next_token();
+
+            // if the declared variable is a record
+            if var_type == LitTypeVariant::Record {
+                let record_name = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+                sym_type = SymbolType::Record { name: record_name.lexeme };
+                sym.sym_type = sym_type.clone();
+            }
+            else {
+                self.skip_to_next_token();
+            }
         }
 
         // Stores the RHS value of this variable (if defined)
@@ -856,8 +844,7 @@ impl Parser {
             assignment_parse_res = Some(self.parse_record_or_expr());
         }
 
-        // Default value contains compile-time evaluated 
-        // expression's result.
+        // Default value contains compile-time evaluated expression's result.
         let mut default_value: Option<LitType> = None;
 
         // if there is some error during expression parsing
@@ -870,15 +857,6 @@ impl Parser {
                 default_value = Some(LitType::I32(str_const_label as i32));
             }
         }
-
-        // TODO:: CHECK IF THE VARIABLE EXISTS IN THE SAME SCOPE ALREADY!!!
-        // Create a symbol.
-        let mut sym: Symbol = Symbol::new(
-            id_token.lexeme.clone(),
-            var_type,
-            SymbolType::Variable,
-            var_class,
-        );
 
         sym.default_value = default_value;
         
@@ -894,20 +872,29 @@ impl Parser {
             Ok(AST::new(
                 ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
                     symtbl_pos: symbol_add_pos,
+                    symbol_type: sym_type,
                     class: var_class,
-                    sym_name: id_token.lexeme.clone()
+                    sym_name: id_token.lexeme.clone(),
+                    type_id: TypeId::from(var_type),
+                    local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
+                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF }
                 })),
                 ASTOperation::AST_VAR_DECL,
                 Some(assign_ast_node_res?),
                 None,
                 var_type,
             ))
-        } else {
+        } 
+        else {
             Ok(AST::new(
                 ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
                     symtbl_pos: symbol_add_pos,
                     class: var_class,
-                    sym_name: id_token.lexeme.clone()
+                    symbol_type: sym_type,
+                    sym_name: id_token.lexeme.clone(),
+                    type_id: TypeId::from(var_type),
+                    local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
+                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF }
                 })),
                 ASTOperation::AST_VAR_DECL,
                 None,
@@ -924,127 +911,6 @@ impl Parser {
         tmp_off as usize
     }
 
-    // TODO: Write comments
-    fn parse_array_var_decl_stmt(&mut self, id_token: &Token) -> ParseResult2 {
-        self.skip_to_next_token(); // skip '['
-        
-        // array type token
-        let array_type_token: Token = self.current_token.clone();
-
-        // extract type from the type token
-        let array_type: LitTypeVariant = self.parse_id_type()?;
-
-        // skip the type token
-        self.skip_to_next_token();
-
-        // semicolon before the array size
-        _ = self.token_match(TokenKind::T_SEMICOLON)?;
-
-        // array size
-        let array_size_token: Token = self.current_token.clone();
-
-        let mut array_size_type: TokenKind = TokenKind::T_NONE;
-        for t in [
-            TokenKind::T_INT_NUM,
-            TokenKind::T_CHAR,
-            TokenKind::T_LONG_NUM,
-        ] {
-            if array_size_token.kind == t {
-                array_size_type = t;
-            }
-        }
-        if array_size_type == TokenKind::T_NONE {
-            return Err(
-                Box::new(
-                    BErr::unexpected_token(
-                        self.get_current_file_name(), 
-                        vec![TokenKind::T_INT_NUM], 
-                        array_size_token
-                    )
-                )
-            );
-        }
-        let array_size: usize = array_size_token.lexeme.parse::<usize>().unwrap();
-
-        self.token_match(array_size_type)?;
-        self.token_match(TokenKind::T_RBRACKET)?;
-        self.token_match(TokenKind::T_EQUAL)?;
-
-        let sym: Symbol = Symbol::create(
-            id_token.lexeme.clone(), 
-            array_type, 
-            SymbolType::Array, 
-            array_size,
-            self.ident_var_class(),
-            self.gen_next_local_offset() as i32,
-            None,
-            self.current_function_id
-        );
-
-        self.local_offset += (array_size * array_type.size()) as i32 + 4; // allocate '4' extra bytes for size information
-
-        let symbol_add_pos: usize = self.add_symbol_local(sym.clone()).unwrap();
-
-        let array_values: Vec<Expr> = self.parse_array_assign_values()?;
-
-        let array_decl_ast: AST = AST::create_leaf(
-            ASTKind::StmtAST(Stmt::ArrVarDecl(ArrVarDeclStmt {
-                symtbl_pos: symbol_add_pos,
-                vals: array_values,
-                class: sym.class,
-                sym_name: id_token.lexeme.clone()
-            })),
-            ASTOperation::AST_ARR_VAR_DECL,
-            sym.lit_type,
-            Some(array_type_token),
-            None
-        );
-
-        // _ = self.token_match(TokenKind::T_SEMICOLON)?;
-        Ok(array_decl_ast )
-    }
-
-    // parsing array values
-    fn parse_array_assign_values(&mut self) -> Result<Vec<Expr>, Box<BErr>> {
-        _ = self.token_match(TokenKind::T_LBRACKET)?;
-
-        let mut vals: Vec<Expr> = vec![];
-
-        if self.current_token.kind != TokenKind::T_RBRACKET {
-            loop {
-                let argu: AST = self.parse_record_or_expr()?;
-
-                vals.push(argu.kind.expr().unwrap());
-
-                let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
-                let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RBRACKET;
-
-                if !is_tok_comma && !is_tok_rparen {
-                    let __err: Box<BErr> = Box::new(BErr::unexpected_token(
-                        self.get_current_file_name(), 
-                        vec![TokenKind::T_COMMA, TokenKind::T_RBRACKET],
-                        self.current_token.clone()
-                    ));
-
-                    if self.__panic_mode {
-                        panic!("{:?}", __err);
-                    }
-
-                    return Err(__err);
-                } 
-                else if is_tok_rparen {
-                    break;
-                } 
-                else {
-                    self.token_match(TokenKind::T_COMMA)?;
-                }
-            }
-        } 
-
-        _ = self.token_match(TokenKind::T_RBRACKET)?;
-        Ok(vals)
-    }
-
     /// Parses the current token as a literal type keyword and returns the 
     /// corresponding `LitTypeVariant`.
     ///
@@ -1058,6 +924,7 @@ impl Parser {
             TokenKind::KW_LONG => Ok(LitTypeVariant::I64),
             TokenKind::KW_VOID => Ok(LitTypeVariant::Void),
             TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
+            TokenKind::T_IDENTIFIER => Ok(LitTypeVariant::Record),
             _ => {
                 Err(Box::new(
                     BErr::unexpected_token(
@@ -1120,22 +987,30 @@ impl Parser {
 
     fn parse_record_creation(&mut self) -> ParseResult2 {
         let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-        _ = self.token_match(TokenKind::T_LBRACE);
+        _ = self.token_match(TokenKind::T_LBRACE)?;
 
         let mut fields = vec![];
 
-        while self.current_token.kind != TokenKind::T_RBRACE  {
+        while self.current_token.kind != TokenKind::T_RBRACE {
             fields.push(self.parse_record_field_assignment()?);
-
-            if self.current_token.kind != TokenKind::T_RBRACE {
-                _ = self.token_match(TokenKind::T_COMMA)?; // match ','
-            }
-            else {
-                break;
+        
+            match self.current_token.kind {
+                TokenKind::T_COMMA => {
+                    self.token_match(TokenKind::T_COMMA)?; // match ','
+                }
+                TokenKind::T_RBRACE => {
+                    self.token_match(TokenKind::T_RBRACE)?; // match '}'
+                    break;
+                }
+                _ => {
+                    return Err(Box::new(BErr::unexpected_token(
+                        self.get_current_file_name(),
+                        vec![TokenKind::T_COMMA, TokenKind::T_RBRACE],
+                        self.current_token.clone(),
+                    )));
+                }
             }
         }
-
-        _ = self.token_match(TokenKind::T_RBRACE);
 
         Ok(
             AST::create_leaf(
@@ -1289,6 +1164,7 @@ impl Parser {
             TokenKind::T_IDENTIFIER => {
                 // Identifiers in a global variable declaration expression are not allowed.
                 if self.is_scope_global() {
+                    println!("hehe: {current_token:#?}");
                     return Err(Box::new(
                         BErr::new(
                             BErrType::TypeError(
@@ -1330,7 +1206,7 @@ impl Parser {
                 // group expression: e.g: (a * (b + c)))
                 let group_expr: ParseResult2 = self.parse_record_or_expr();
                 // Group expression terminates with ')'. Match and ignore ')'.
-                self.token_match(TokenKind::T_RPAREN)?;
+                _ = self.token_match(TokenKind::T_RPAREN)?;
                 Ok(group_expr.unwrap())
             },
 
@@ -1378,19 +1254,16 @@ impl Parser {
         )
     }
 
-    fn _parse_array_index_expr(
-        &mut self,
-        indexed_symbol: &Symbol,
-        sym_index: usize,
-        sym_token: &Token,
-    ) -> ParseResult2 {
+    fn _parse_array_index_expr(&mut self, indexed_symbol: &Symbol, sym_index: usize, sym_token: &Token) -> ParseResult2 {
         _ = self.token_match(TokenKind::T_LBRACKET)?;
         let current_file: String = self.get_current_file_name();
         let array_access_expr_result: ParseResult2 = self.parse_equality();
+
         #[allow(clippy::question_mark)]
         if array_access_expr_result.is_err() {
             return array_access_expr_result;
         }
+
         let array_access_expr: AST = array_access_expr_result.ok().unwrap();
         if indexed_symbol.sym_type != SymbolType::Array {
             return Err(Box::new(BErr::nonsubsriptable_ident(
@@ -1398,6 +1271,7 @@ impl Parser {
                 sym_token.clone(),
             )));
         }
+
         _ = self.token_match(TokenKind::T_RBRACKET)?;
         Ok(AST::create_leaf(
             ASTKind::ExprAST(Expr::Subscript(SubscriptExpr {
@@ -1412,7 +1286,7 @@ impl Parser {
         ))
     }
 
-    fn parse_record_field_access_expr(&mut self, sym_name: &str) -> ParseResult2 {
+    fn parse_record_field_access_expr(&mut self, rec_alias: &str) -> ParseResult2 {
         _ = self.token_match(TokenKind::T_DOT); // match '.'
         let access = self.token_match(TokenKind::T_IDENTIFIER)?;
         Ok(
@@ -1421,7 +1295,7 @@ impl Parser {
                     Expr::RecordFieldAccess(
                         RecordFieldAccessExpr { 
                             rec_name: "".to_string(),
-                            rec_alias: sym_name.to_string(), 
+                            rec_alias: rec_alias.to_string(), 
                             field_name: access.lexeme.clone(),
                             rel_stack_off: 0
                         }
@@ -1453,44 +1327,40 @@ impl Parser {
                 let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
-                    let __err: Result<AST, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
-                        current_file.clone(), 
-                        vec![TokenKind::T_COMMA, TokenKind::T_RPAREN],
-                        self.current_token.clone()
-                    )));
-
-                    if self.__panic_mode {
-                        panic!("{:?}", __err);
-                    }
-
-                    return __err;
+                    let err: Result<AST, Box<BErr>> = Err(
+                        Box::new(
+                            BErr::unexpected_token(
+                                current_file.clone(), 
+                                vec![TokenKind::T_COMMA, TokenKind::T_RPAREN],
+                                self.current_token.clone()
+                            )
+                        )
+                    );
+                    return err;
                 } 
                 else if is_tok_rparen {
                     break;
                 } 
                 else {
-                    self.token_match(TokenKind::T_COMMA)?;
+                    _ = self.token_match(TokenKind::T_COMMA)?;
                 }
-
                 arg_pos += 1;
             }
         }
 
         _ = self.token_match(TokenKind::T_RPAREN)?;
 
-        // Allocating extra 16 bytes to store x29(Frame Pointer), and x30(Link Register).
-        // Storing and then loading them is collectively called a Frame Record.
-        // self.local_offset += 16;
         Ok(AST::create_leaf(
             ASTKind::ExprAST(
-                    Expr::FuncCall(
-                        FuncCallExpr {
-                            result_type: LitTypeVariant::None,
-                            symbol_name: called_symbol.to_string(),
-                            args: func_args
-                        }
-                    )
-                ),
+                Expr::FuncCall(
+                    FuncCallExpr {
+                        result_type: LitTypeVariant::None,
+                        symbol_name: called_symbol.to_string(),
+                        args: func_args,
+                        id: 0xFFFFFFFF // resolver sets this value
+                    }
+                )
+            ),
             ASTOperation::AST_FUNC_CALL,
             LitTypeVariant::None,
             Some(sym_token.clone()),
@@ -1502,11 +1372,6 @@ impl Parser {
         String::from("ok")
     }
 
-    fn add_symbol_global(&mut self, sym: Symbol) -> Option<usize> {
-        let insert_pos: Option<usize> = self.ctx.borrow_mut().root_scope_mut().declare(sym);
-        insert_pos
-    }
-
     /// Adds the symbol to the current scope.
     fn add_symbol_local(&mut self, sym: Symbol) -> Option<usize> {
         let insert_pos = self.ctx.borrow_mut().declare(sym.clone());
@@ -1515,15 +1380,7 @@ impl Parser {
     }
 
     fn is_scope_global(&self) -> bool {
-        self.current_function_id == INVALID_FUNC_ID
-    }
-
-    fn ident_var_class(&self) -> StorageClass {
-        if self.is_scope_global() {
-            StorageClass::GLOBAL
-        } else {
-            StorageClass::LOCAL
-        }
+        self.ctx.borrow().live_scope_id() == 0
     }
 
     fn token_match_no_advance(&mut self, kind: TokenKind) -> TokenMatch {

@@ -23,7 +23,7 @@
 
 # Improvements to make:
 [✅] Remove double insertion of function parameters in local params list and arguments list
-[] Remove every IR type expect IRInstr (IMPORTANT)
+[] Remove every IR type except IRInstr (IMPORTANT)
 [] Change the type of symbol list to HashMap from Vec
 [] Constant Folding
 [] Module-level symbol table management

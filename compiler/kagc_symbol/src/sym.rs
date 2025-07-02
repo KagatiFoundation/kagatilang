@@ -44,9 +44,12 @@ impl STableLookupKey for SymbolId {
 }
 
 /// The types of symbol names inside the symbol table
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SymbolType {
     Variable,
+    Record {
+        name: String
+    },
     Function,
     Array,
     Constant, // for now, this is used to represent only the string literals

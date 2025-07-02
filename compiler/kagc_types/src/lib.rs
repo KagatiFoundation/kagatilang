@@ -28,7 +28,7 @@ pub mod builtins;
 use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
-use builtins::{BoolType, Int32Type, StringType};
+use builtins::{builtin::TypeId, BoolType, Int32Type, StringType};
 use lazy_static::lazy_static;
 use record::RecordType;
 
@@ -198,11 +198,43 @@ impl LitTypeVariant {
         matches!(self, LitTypeVariant::I32 | LitTypeVariant::I16 | LitTypeVariant::I64 | LitTypeVariant::U8)
     }
 
+    pub fn type_id(&self) -> builtins::builtin::TypeId {
+        match self {
+            LitTypeVariant::I64 => todo!(),
+            LitTypeVariant::I32 => builtins::builtin::TypeId::Int32,
+            LitTypeVariant::I16 => todo!(),
+            LitTypeVariant::U8 => todo!(),
+            LitTypeVariant::F64 => todo!(),
+            LitTypeVariant::F32 => todo!(),
+            LitTypeVariant::Void => builtins::builtin::TypeId::Void,
+            LitTypeVariant::Str { .. } => builtins::builtin::TypeId::Str,
+            LitTypeVariant::Array => todo!(),
+            LitTypeVariant::Null => builtins::builtin::TypeId::Null,
+            LitTypeVariant::Record => builtins::builtin::TypeId::Record,
+            LitTypeVariant::None => todo!(),
+        }
+    }
+
     check_lit_type_var_fn_impl!(is_void, Void);
     check_lit_type_var_fn_impl!(is_none, None);
     check_lit_type_var_fn_impl!(is_str, Str);
     check_lit_type_var_fn_impl!(is_int32, I32);
     check_lit_type_var_fn_impl!(is_int8, U8);
+}
+
+impl From<TypeId> for LitTypeVariant {
+    fn from(value: TypeId) -> Self {
+        match value {
+            TypeId::Bool => LitTypeVariant::I32,
+            TypeId::Int32 => LitTypeVariant::I32,
+            TypeId::Int8 => LitTypeVariant::U8,
+            TypeId::Str => LitTypeVariant::Str,
+            TypeId::Null => LitTypeVariant::Null,
+            TypeId::Record => LitTypeVariant::Record,
+            TypeId::Void => LitTypeVariant::Void,
+            TypeId::None => LitTypeVariant::None,
+        }
+    }
 }
 
 impl PartialEq for LitType {
@@ -250,6 +282,7 @@ impl LitType {
     impl_ltype_unwrap!(unwrap_u8, U8, u8);
     impl_ltype_unwrap!(unwrap_f64, F64, f64);
     impl_ltype_unwrap!(unwrap_f32, F32, f32);
+
 
     pub fn unwrap_str(&self) -> Option<&String> {
         if let LitType::Str { value, .. } = self {

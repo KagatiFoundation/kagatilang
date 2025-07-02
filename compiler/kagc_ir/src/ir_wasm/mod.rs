@@ -1,0 +1,1 @@
+pub mod ir_wasm_gen;

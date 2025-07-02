@@ -15,7 +15,7 @@ use kagc_lowering::{
     CodeGen
 };
 use kagc_parser::{Parser, SharedParserCtx};
-use kagc_sema::SemanticAnalyzer;
+use kagc_sema::{resolver::Resolver, SemanticAnalyzer};
 use kagc_target::asm::aarch64::Aarch64RegManager2;
 
 #[derive(Debug, Clone)]
@@ -54,18 +54,26 @@ impl Compiler {
         self.units.insert(entry_file.to_string(), unit);
         self.compiler_order.push(entry_file.to_string());
 
+        // Semantic analyzer
         let mut analyzer = SemanticAnalyzer::new(self.ctx.clone());
 
+        // Symbol resolver
+        let mut resolv = Resolver::new(self.ctx.clone());
+
+        // Register manager for Aarch64
         let rm = Rc::new(RefCell::new(Aarch64RegManager2::new()));
 
+        // AST to IR generator
         let mut lowerer = Aarch64CodeGen::new(rm.clone(), self.ctx.clone());
 
+        // IR to Aarch64 ASM generator
         let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm.clone());
 
         let mut final_irs = vec![];
 
         for unit_file in &self.compiler_order {
             if let Some(unit) = self.units.get_mut(unit_file) {
+                resolv.resolve(&mut unit.asts);
                 analyzer.start_analysis(&mut unit.asts);
                 final_irs.extend(lowerer.gen_ir(&mut unit.asts));
             }

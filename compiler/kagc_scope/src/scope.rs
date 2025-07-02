@@ -19,12 +19,7 @@ impl Scope {
     }
 
     pub fn declare(&mut self, sym: Symbol) -> Option<usize> {
-        let sym_name = sym.name.clone();
-        let pos = self.table.declare(sym);
-        if pos.is_none() {
-            panic!("Symbol '{}' already defined!", sym_name);
-        }
-        pos
+        self.table.declare(sym)
     }
 
     pub fn lookup(&self, name: &str) -> Option<&Symbol> {

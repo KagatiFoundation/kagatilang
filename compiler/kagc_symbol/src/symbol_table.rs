@@ -86,6 +86,7 @@ impl<T: SymbolTrait + Clone> Symtable<T> {
     pub fn declare(&mut self, sym: T) -> Option<usize> {
         let act_pos: usize = self.next();
         if self.get_symbol_pos(&sym.name()).is_some() { 
+            eprintln!("Symbol already defined: '{:?}'", sym.name());
             return None;
         }
         self.syms.push(sym);

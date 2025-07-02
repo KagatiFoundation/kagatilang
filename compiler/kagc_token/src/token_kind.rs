@@ -123,6 +123,8 @@ pub enum TokenKind {
     KW_MACRO,
     KW_FROM,
     KW_RECORD,
+    KW_PUB,
+    KW_PRIV,
     _KW_END_, // keywords end here
 
     // other tokens
@@ -187,6 +189,8 @@ impl TokenKind {
             Self::T_LBRACE => "{",
             Self::T_RBRACE => "}",
             Self::T_DOT => ".",
+            Self::T_COLON => ":",
+            Self::T_COMMA => ",",
             Self::T_LBRACKET => "[",
             Self::T_RBRACKET => "]",
             Self::T_EXPR => "expression",
