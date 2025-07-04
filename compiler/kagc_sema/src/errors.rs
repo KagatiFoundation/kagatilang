@@ -65,6 +65,27 @@ pub enum SATypeError {
 }
 
 #[derive(Debug)]
+pub enum SARecordError {
+    UndefinedRecord {
+        record_name: String
+    },
+
+    UnknownRecordField {
+        field_name: String,
+        record_name: String
+    },
+
+    MissingRecordField {
+        field_name: String,
+        record_name: String
+    },
+
+    DuplicateRecord {
+        record_name: String
+    }
+}
+
+#[derive(Debug)]
 pub enum SAInternalError {
     SymbolDeclarationFailed
 }
@@ -88,19 +109,12 @@ pub enum SAError {
         token: Token
     },
 
-    UndefinedRecord {
-        record_name: String
-    },
-
-    UnknownRecordField {
-        field_name: String,
-        record_name: String
-    },
-
     ArgLengthMismatch {
         expected: usize,
         found: usize
     },
+
+    RecordError(SARecordError),
 
     Internal(SAInternalError),
 }
@@ -144,24 +158,36 @@ impl fmt::Display for SAError {
             },
             
             SAError::UndefinedSymbol{ sym_name, token} => {
-                write!(f, "{}:{}: compile error: Undefined symbol '{sym_name}'", token.pos.line, token.pos.column)
+                write!(f, "{}:{}: compile error: undefined symbol '{sym_name}'", token.pos.line, token.pos.column)
             },
             
             SAError::SymbolAlreadyDefined{ sym_name, token} => {
-                write!(f, "{}:{}: compile error: Symbol already defined '{sym_name}'", token.pos.line, token.pos.column)
+                write!(f, "{}:{}: compile error: symbol '{sym_name}' already defined", token.pos.line, token.pos.column)
             },
 
             SAError::ArgLengthMismatch { expected, found } => {
-                write!(f, "compile error: Argument length mismatch: expected '{}' but found '{}'", expected, found)
+                write!(f, "compile error: argument length mismatch: expected '{}' but found '{}'", expected, found)
             },
 
-            SAError::UndefinedRecord { record_name } => {
-                write!(f, "compile error: record not found `{record_name}`")
-            },
+            SAError::RecordError(record_err) => {
+                match record_err {
+                    SARecordError::UndefinedRecord { record_name } => {
+                        write!(f, "compile error: record not found `{record_name}`")
+                    },
 
-            SAError::UnknownRecordField { field_name, record_name } => {
-                write!(f, "compile error: unknown record field `{field_name}` in '{record_name}'")
-            }
+                    SARecordError::UnknownRecordField { field_name, record_name } => {
+                        write!(f, "compile error: unknown record field `{field_name}` in '{record_name}'")
+                    },
+
+                    SARecordError::MissingRecordField { field_name, record_name } => {
+                        write!(f, "compile error: missing record field `{field_name}` in '{record_name}'")
+                    },
+
+                    SARecordError::DuplicateRecord { record_name } => {
+                        write!(f, "compile error: record with name `{record_name}` already exists")
+                    }
+                }
+            },
 
             SAError::Internal(err) => {
                 match err {

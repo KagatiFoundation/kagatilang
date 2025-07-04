@@ -37,8 +37,13 @@ impl Registry<RecordType> for RecordRegistery {
     }
 
     fn declare(&mut self, entry: RecordType) -> Option<usize> {
-        self.registery.insert(entry.name.clone(), entry);
-        Some(0)
+        if self.registery.contains_key(&entry.name) {
+            None
+        }
+        else {
+            self.registery.insert(entry.name.clone(), entry);
+            Some(0)
+        }
     }
 
     fn count(&self) -> usize {

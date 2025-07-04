@@ -91,6 +91,9 @@ pub trait CodeGen {
             }
             return self.gen_ir_return(node, fn_ctx);
         }
+        else if node.operation == ASTOperation::AST_NONE {
+            return Ok(vec![]);
+        }
         else {
             panic!("{:#?} not supported right now!", node);
         }

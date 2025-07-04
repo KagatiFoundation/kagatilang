@@ -33,11 +33,14 @@ impl Resolver {
     }
 
     pub fn resolve(&mut self, nodes: &mut Vec<AST>) {
+        let mut errors = vec![];
         for node in nodes {
             if let Err(e) = self.declare_symbol(node) {
-                e.dump();
+                errors.push(e);
             }
         }
+
+        errors.iter().for_each(|err| err.dump());
     }
 
     fn declare_symbol(&mut self, node: &mut AST) -> ResolverResult  {
@@ -137,19 +140,35 @@ impl Resolver {
         // If it's a record type, validate fields
         if let SymbolType::Record { name: rec_name } = &stmt.symbol_type {
             let rec = ctx_borrow.lookup_record(rec_name).ok_or_else(|| {
-                SAError::UndefinedRecord {
-                    record_name: rec_name.clone(),
-                }
+                SAError::RecordError(
+                    SARecordError::UndefinedRecord {
+                        record_name: rec_name.clone(),
+                    }
+                )
             })?;
 
             if let ASTKind::ExprAST(Expr::RecordCreation(rec_create)) = &value_node.kind {
                 for field in &rec_create.fields {
                     let found = rec.fields.iter().find(|ac_field| ac_field.name == field.name);
                     if found.is_none() {
-                        return Err(SAError::UnknownRecordField {
-                            field_name: field.name.clone(),
-                            record_name: rec_name.clone(),
-                        });
+                        return Err(SAError::RecordError(
+                            SARecordError::UnknownRecordField {
+                                field_name: field.name.clone(),
+                                record_name: rec_name.clone(),
+                            }
+                        ));
+                    }
+                }
+
+                for field in &rec.fields {
+                    let found = rec_create.fields.iter().find(|ac_field| ac_field.name == field.name);
+                    if found.is_none() {
+                        return Err(SAError::RecordError(
+                            SARecordError::MissingRecordField {
+                                field_name: field.name.clone(),
+                                record_name: rec_name.clone(),
+                            }
+                        ));
                     }
                 }
             }
@@ -167,7 +186,7 @@ impl Resolver {
         );
 
         let id = ctx_borrow.declare(sym).ok_or({
-            SAError::Internal(SAInternalError::SymbolDeclarationFailed)
+            SAError::SymbolAlreadyDefined { sym_name: stmt.sym_name.clone(), token: Token::none() }
         })?;
 
         Ok(id)
@@ -187,7 +206,15 @@ impl Resolver {
                     }
                 }).collect::<Vec<RecordFieldType>>()
             };
-            self.ctx.borrow_mut().create_record(record_entry);
+            if self.ctx.borrow_mut().create_record(record_entry).is_none() {
+                return Err(
+                    SAError::RecordError(
+                        SARecordError::DuplicateRecord { 
+                            record_name: stmt.name.clone() 
+                        }
+                    )
+                );
+            }
             return Ok(0);
         }
         panic!("Cannot create record!!!")

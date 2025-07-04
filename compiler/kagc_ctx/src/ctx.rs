@@ -81,9 +81,15 @@ impl CompilerCtx {
         }
     }
 
-    pub fn create_record(&mut self, record_entry: RecordType) {
-        self.user_created_types.insert(record_entry.name.clone());
-        self.record_registery.declare(record_entry);
+    /// If the record is created successfully, this function returns 
+    /// the name of the record that was created. Otherwise, it returns `None`.
+    pub fn create_record(&mut self, record_entry: RecordType) -> Option<String> {
+        let rec_name = record_entry.name.clone();
+        if self.record_registery.declare(record_entry).is_some() {
+            self.user_created_types.insert(rec_name.clone());
+            Some(rec_name)
+        }
+        else { None }
     }
 
     pub fn lookup_record(&self, rec_name: &str) -> Option<&RecordType> {

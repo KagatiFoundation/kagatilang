@@ -672,7 +672,6 @@ impl Parser {
 
     fn parse_break_stmt(&mut self) -> ParseResult2 {
         _ = self.token_match(TokenKind::KW_BREAK)?; // match and ignore 'break'
-        _ = self.token_match(TokenKind::T_SEMICOLON)?; // match and ignore ';'
         Ok(AST::new(
             ASTKind::StmtAST(Stmt::Break),
             ASTOperation::AST_BREAK,

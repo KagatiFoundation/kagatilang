@@ -52,13 +52,15 @@ impl SemanticAnalyzer {
     /// This starts an analysis process for the given list of nodes. 
     /// This function panics if it encounters any form of error.
     pub fn start_analysis(&mut self, nodes: &mut [AST]) {
+        let mut errors = vec![];
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
             if let Err(analysis_err) = result {
-                println!("{analysis_err:#?}");
-                panic!()
+                errors.push(analysis_err);
             }
         }
+
+        errors.iter().for_each(|err| err.dump());
     }
 
     fn analyze_node(&mut self, node: &mut AST) -> SAResult {
@@ -88,7 +90,10 @@ impl SemanticAnalyzer {
                     self.analyze_node(right)?;
                 }
                 Ok(LitTypeVariant::None)
-            }
+            },
+
+            ASTOperation::AST_NONE
+            | ASTOperation::AST_BREAK => Ok(LitTypeVariant::None),
 
             _ => panic!("'{:?}' is not supported ASTOperation for 'analyze_node' yet!", node.operation)
         }
@@ -184,11 +189,11 @@ impl SemanticAnalyzer {
         let ctx_borrow = self.ctx.borrow_mut();
 
         if let Some(rec_sym) = ctx_borrow.deep_lookup(&field_access.rec_alias) {
-            if let SymbolType::Record { name } = &rec_sym.sym_type {
-                if let Some(rec) = ctx_borrow.lookup_record(name) {
+            if let SymbolType::Record { name: rec_name } = &rec_sym.sym_type {
+                if let Some(rec) = ctx_borrow.lookup_record(rec_name) {
                     if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_name) {
                         field_access.rel_stack_off = field.rel_stack_off;
-                        return Ok(LitTypeVariant::Str);
+                        return Ok(LitTypeVariant::from(field.typ));
                     }
                 }
             }
@@ -263,8 +268,8 @@ impl SemanticAnalyzer {
         if args.len() != param_types.len() {
             return Err(
                 SAError::ArgLengthMismatch { 
-                    expected: args.len(), 
-                    found: param_types.len() 
+                    expected: param_types.len(),
+                    found: args.len()
                 }
             );
         }
