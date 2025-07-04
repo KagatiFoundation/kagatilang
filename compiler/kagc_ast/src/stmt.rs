@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 use kagc_symbol::*;
-use kagc_types::{builtins::builtin::TypeId, LitType, LitTypeVariant};
+use kagc_types::{builtins::obj::TypeId, record::RecordFieldType, LitType, LitTypeVariant};
 
 use super::Expr;
 
@@ -64,7 +64,7 @@ pub struct VarDeclStmt {
     /// Storage class of the symbol.
     pub class: StorageClass,
 
-    pub type_id: TypeId,
+    pub value_type: TypeId,
 
     pub local_offset: usize,
 
@@ -72,7 +72,7 @@ pub struct VarDeclStmt {
 
     pub symbol_type: SymbolType,
 
-    pub default_value: Option<LitType>
+    pub default_value: Option<LitType>,
 }
 
 #[derive(Clone, Debug)]
@@ -121,6 +121,9 @@ pub struct ImportStmt {
 #[derive(Debug, Clone)]
 pub struct RecordDeclStmt {
     pub name: String,
+    pub size: usize,
+    pub alignment: usize,
+    pub fields: Vec<RecordFieldType>
 }
 
 #[derive(Debug, Clone)]

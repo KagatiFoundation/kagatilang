@@ -1,4 +1,4 @@
-use kagc_types::builtins::builtin::TypeId;
+use kagc_types::builtins::obj::TypeId;
 
 use crate::Expr;
 

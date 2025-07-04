@@ -28,9 +28,16 @@ pub mod builtins;
 use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
-use builtins::{builtin::TypeId, BoolType, Int32Type, StringType};
+use builtins::{
+    obj::TypeId, 
+    BoolType, 
+    Int32Type, 
+    StringType
+};
 use lazy_static::lazy_static;
 use record::RecordType;
+
+use crate::builtins::obj::{RecordObj, StringObj};
 
 /// Trait for types that can be compared based on their variant and equality.
 pub trait BTypeComparable {
@@ -99,13 +106,7 @@ pub enum LitType {
     Void,
 
     /// Represents a string literal paired with a unique label identifier.
-    Str {
-        /// The actual string value.
-        value: String,
-
-        /// The unique label ID associated with the string.
-        label_id: usize,
-    },
+    Str(StringObj),
 
     /// Represents an array literal.
     ///
@@ -116,7 +117,7 @@ pub enum LitType {
     /// Represents a null value (e.g., for optional pointers or uninitialized references).
     Null,
 
-    Record,
+    Record(RecordObj),
 
     /// Placeholder value, typically used during intermediate stages of compilation.
     None,
@@ -198,19 +199,19 @@ impl LitTypeVariant {
         matches!(self, LitTypeVariant::I32 | LitTypeVariant::I16 | LitTypeVariant::I64 | LitTypeVariant::U8)
     }
 
-    pub fn type_id(&self) -> builtins::builtin::TypeId {
+    pub fn type_id(&self) -> builtins::obj::TypeId {
         match self {
             LitTypeVariant::I64 => todo!(),
-            LitTypeVariant::I32 => builtins::builtin::TypeId::Int32,
+            LitTypeVariant::I32 => builtins::obj::TypeId::Int32,
             LitTypeVariant::I16 => todo!(),
             LitTypeVariant::U8 => todo!(),
             LitTypeVariant::F64 => todo!(),
             LitTypeVariant::F32 => todo!(),
-            LitTypeVariant::Void => builtins::builtin::TypeId::Void,
-            LitTypeVariant::Str { .. } => builtins::builtin::TypeId::Str,
+            LitTypeVariant::Void => builtins::obj::TypeId::Void,
+            LitTypeVariant::Str { .. } => builtins::obj::TypeId::Str,
             LitTypeVariant::Array => todo!(),
-            LitTypeVariant::Null => builtins::builtin::TypeId::Null,
-            LitTypeVariant::Record => builtins::builtin::TypeId::Record,
+            LitTypeVariant::Null => builtins::obj::TypeId::Null,
+            LitTypeVariant::Record => builtins::obj::TypeId::Record,
             LitTypeVariant::None => todo!(),
         }
     }
@@ -285,8 +286,8 @@ impl LitType {
 
 
     pub fn unwrap_str(&self) -> Option<&String> {
-        if let LitType::Str { value, .. } = self {
-            Some(value)
+        if let LitType::Str(obj) = self {
+            Some(&obj.__value)
         }
         else {
             None
@@ -356,7 +357,7 @@ impl Display for LitType {
         let result = match self {
             LitType::I32(value) => format!("{}", *value),
             LitType::U8(value) => format!("{}", *value),
-            LitType::Str { value, .. } => value.clone(),
+            LitType::Str(obj) => obj.__value.clone(),
             _ => panic!()
         };
         _ = writeln!(f, "{}", result);

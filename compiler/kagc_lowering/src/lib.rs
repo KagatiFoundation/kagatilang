@@ -462,8 +462,8 @@ pub trait CodeGen {
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        if let LitType::Str { label_id, .. } = &lit_expr.value  {
-            return self.gen_ir_load_str(*label_id, fn_ctx);
+        if let LitType::Str(obj) = &lit_expr.value  {
+            return self.gen_ir_load_str(obj.label, fn_ctx);
         }
 
         let ir_lit: IRLitVal = match lit_expr.result_type {

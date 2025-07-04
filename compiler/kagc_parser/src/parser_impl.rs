@@ -33,7 +33,7 @@ use kagc_errors::*;
 use kagc_symbol::{function::*, *};
 use kagc_token::*;
 use kagc_types::{
-    builtins::builtin::TypeId, 
+    builtins::obj::{StringObj, TypeId}, 
     record::{
         RecordFieldType, 
         RecordType
@@ -112,8 +112,6 @@ pub struct Parser {
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
-    next_fn_id: usize,
-
     /// Context in which the ```Parser``` is going to work on.
     ctx: Rc<RefCell<CompilerCtx>>,
 
@@ -135,7 +133,6 @@ impl Parser {
         Self {
             tokens: Rc::new(vec![]),
             current: 0,
-            next_fn_id: 0,
             current_token,
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
@@ -170,7 +167,8 @@ impl Parser {
             let stmt_parse_result: ParseResult2 = self.parse_single_stmt();
             if let Ok(stmt) = stmt_parse_result {
                 nodes.push(stmt);
-            } else if let Some(parse_error) = stmt_parse_result.err() {
+            } 
+            else if let Some(parse_error) = stmt_parse_result.err() {
                 if !parse_error.is_ignorable() {
                     parse_error.fatal();
                     self.__pctx.toggle_error_flag();
@@ -345,25 +343,23 @@ impl Parser {
         
         _ = self.token_match(TokenKind::T_RBRACE); // match '}'
 
-        let record_entry = RecordType {
-            name: id_token.lexeme.clone(),
-            size: 0,
-            __alignment: 0,
-            fields: rec_fields.into_iter().enumerate().map(|(idx, field)| {
-                RecordFieldType {
-                    name: field.name.clone(),
-                    typ: field.typ,
-                    rel_stack_off: idx
-                }
-            }).collect::<Vec<RecordFieldType>>()
-        };
-
-        self.ctx.borrow_mut().create_record(record_entry);
-
         Ok(
             AST::create_leaf(
                 ASTKind::StmtAST(
-                    Stmt::Record(RecordDeclStmt { name: id_token.lexeme.clone() })
+                    Stmt::Record(
+                        RecordDeclStmt { 
+                            name: id_token.lexeme.clone(),
+                            size: 0,
+                            alignment: 0,
+                            fields: rec_fields.into_iter().enumerate().map(|(idx, field)| {
+                                    RecordFieldType {
+                                        name: field.name.clone(),
+                                        typ: field.typ,
+                                        rel_stack_off: idx
+                                    }
+                                }).collect::<Vec<RecordFieldType>>() 
+                        }
+                    )
                 ), 
                 ASTOperation::AST_RECORD_DECL,
                 LitTypeVariant::Record,
@@ -842,7 +838,11 @@ impl Parser {
         if let Some(Err(parse_err)) = assignment_parse_res {
             return Err(parse_err);
         } 
-        else if let Some(Ok(_)) = assignment_parse_res {
+        else if let Some(Ok(expr_ast)) = &assignment_parse_res {
+            if let ASTKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.kind {
+                sym_type = SymbolType::Record { name: record_create.name.clone() };
+            }
+
             if var_type == LitTypeVariant::Str {
                 let str_const_label: usize = self.shared_pctx.borrow_mut().next_str_label();
                 default_value = Some(LitType::I32(str_const_label as i32));
@@ -858,7 +858,7 @@ impl Parser {
                     symbol_type: sym_type,
                     class: var_class,
                     sym_name: id_token.lexeme.clone(),
-                    type_id: TypeId::from(var_type),
+                    value_type: TypeId::from(var_type),
                     local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
                     func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
                     default_value
@@ -876,7 +876,7 @@ impl Parser {
                     class: var_class,
                     symbol_type: sym_type,
                     sym_name: id_token.lexeme.clone(),
-                    type_id: TypeId::from(var_type),
+                    value_type: TypeId::from(var_type),
                     local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
                     func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
                     default_value
@@ -909,7 +909,6 @@ impl Parser {
             TokenKind::KW_LONG => Ok(LitTypeVariant::I64),
             TokenKind::KW_VOID => Ok(LitTypeVariant::Void),
             TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
-            TokenKind::T_IDENTIFIER => Ok(LitTypeVariant::Record),
             _ => {
                 Err(Box::new(
                     BErr::unexpected_token(
@@ -1126,16 +1125,22 @@ impl Parser {
                 );
 
                 // keep strings at the global scope
-                self.ctx.borrow_mut().root_scope_mut().declare(str_const_symbol);
+                self
+                .ctx
+                .borrow_mut()
+                .root_scope_mut()
+                .declare(str_const_symbol);
                 
                 Ok(AST::create_leaf(
                     ASTKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
-                                value: LitType::Str { 
-                                    value: current_token.lexeme.clone(), 
-                                    label_id: str_label
-                                },
+                                value: LitType::Str(
+                                    StringObj::new(
+                                        current_token.lexeme.clone(), 
+                                        str_label
+                                    )
+                                ),
                                 result_type: LitTypeVariant::Str,
                             }
                         )

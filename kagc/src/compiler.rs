@@ -81,7 +81,6 @@ impl Compiler {
 
         let code = cg.gen_asm(&mut final_irs);
         println!("{code}");
-
         Ok(())
     }
 

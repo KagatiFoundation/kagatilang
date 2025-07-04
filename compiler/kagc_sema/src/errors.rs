@@ -65,6 +65,11 @@ pub enum SATypeError {
 }
 
 #[derive(Debug)]
+pub enum SAInternalError {
+    SymbolDeclarationFailed
+}
+
+#[derive(Debug)]
 pub enum SAError {
     TypeError(SATypeError),
 
@@ -83,12 +88,21 @@ pub enum SAError {
         token: Token
     },
 
+    UndefinedRecord {
+        record_name: String
+    },
+
+    UnknownRecordField {
+        field_name: String,
+        record_name: String
+    },
+
     ArgLengthMismatch {
         expected: usize,
         found: usize
     },
 
-    None
+    Internal(SAInternalError),
 }
 
 impl fmt::Display for SATypeError {
@@ -124,20 +138,38 @@ impl fmt::Display for SAError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SAError::TypeError(type_error) => write!(f, "Type Error: {type_error}"),
+            
             SAError::ArrayLengthError { expected, found } => {
-                write!(f, "Array length mismatch: expected `{expected}`, found `{found}`.")
+                write!(f, "compile error: array length mismatch: expected `{expected}`, found `{found}`.")
             },
+            
             SAError::UndefinedSymbol{ sym_name, token} => {
-                panic!();
                 write!(f, "{}:{}: compile error: Undefined symbol '{sym_name}'", token.pos.line, token.pos.column)
             },
+            
             SAError::SymbolAlreadyDefined{ sym_name, token} => {
                 write!(f, "{}:{}: compile error: Symbol already defined '{sym_name}'", token.pos.line, token.pos.column)
             },
+
             SAError::ArgLengthMismatch { expected, found } => {
                 write!(f, "compile error: Argument length mismatch: expected '{}' but found '{}'", expected, found)
             },
-            SAError::None => write!(f, "No error."),
+
+            SAError::UndefinedRecord { record_name } => {
+                write!(f, "compile error: record not found `{record_name}`")
+            },
+
+            SAError::UnknownRecordField { field_name, record_name } => {
+                write!(f, "compile error: unknown record field `{field_name}` in '{record_name}'")
+            }
+
+            SAError::Internal(err) => {
+                match err {
+                    SAInternalError::SymbolDeclarationFailed => {
+                        write!(f, "internal error: cannot insert a new symbol!")
+                    }
+                }
+            }
         }
     }
 }

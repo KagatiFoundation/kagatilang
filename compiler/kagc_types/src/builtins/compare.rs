@@ -1,4 +1,4 @@
-use super::builtin::TypeId;
+use super::obj::TypeId;
 
 /// Trait for types that can be compared based on their variant and equality.
 pub trait BuiltinTypeComparable {

@@ -25,7 +25,7 @@ SOFTWARE.
 #![allow(non_camel_case_types)]
 use std::str::FromStr;
 
-use kagc_types::{LitType, LitTypeVariant};
+use kagc_types::{builtins::obj::StringObj, LitType, LitTypeVariant};
 
 /// Every keyword and token supported by the C standard is listed below.
 #[derive(Copy, Clone, PartialEq, Hash, Eq, Debug)]
@@ -225,7 +225,7 @@ impl FromTokenKind<LitType> for LitType {
             TokenKind::T_CHAR => Some(LitType::U8(0)),
             TokenKind::T_DOUBLE_NUM => Some(LitType::F64(0.0)),
             TokenKind::T_LONG_NUM => Some(LitType::I64(0)),
-            TokenKind::T_STRING => Some(LitType::Str { value: "".to_string(), label_id: 0}),
+            TokenKind::T_STRING => Some(LitType::Str(StringObj::new("".to_string(), 0))),
             TokenKind::KW_VOID => Some(LitType::Void),
             _ => None,
         }

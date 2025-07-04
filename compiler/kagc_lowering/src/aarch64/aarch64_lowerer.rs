@@ -1010,7 +1010,7 @@ impl Aarch64CodeGen {
     fn dump_gid_address_load_code_from_label_id(&self, reg_name: &str, id: &LitType) {
         let symbol_label_id: usize = match id {
             LitType::I32(_idx) => *_idx as usize,
-            LitType::Str { label_id, .. } => *label_id,
+            LitType::Str(obj) => obj.label,
             _ => panic!("Can't index symtable with this type: {:?}", id),
         };
         println!("adrp {}, _L{}@PAGE", reg_name, symbol_label_id);

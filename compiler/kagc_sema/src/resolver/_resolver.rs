@@ -6,7 +6,13 @@ use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::{function::*, *};
 use kagc_token::Token;
-use kagc_types::LitTypeVariant;
+use kagc_types::{
+    record::{
+        RecordFieldType, 
+        RecordType
+    }, 
+    LitTypeVariant
+};
 
 use crate::errors::*;
 
@@ -39,6 +45,8 @@ impl Resolver {
             ASTOperation::AST_FUNCTION => self.declare_func(node),
 
             ASTOperation::AST_VAR_DECL => self.declare_let_binding(node),
+            
+            ASTOperation::AST_RECORD_DECL => self.declare_record(node),
 
             ASTOperation::AST_GLUE => {
                 if let Some(left) = node.left.as_mut() {
@@ -119,24 +127,69 @@ impl Resolver {
 
     fn declare_let_binding(&mut self, node: &mut AST) -> ResolverResult {
         let mut ctx_borrow = self.ctx.borrow_mut();
-        if let ASTKind::StmtAST(Stmt::VarDecl(stmt)) = &node.kind {
-            let sym = Symbol::create(
-                stmt.sym_name.clone(),
-                LitTypeVariant::from(stmt.type_id),
-                stmt.symbol_type.clone(),
-                0,
-                stmt.class,
-                stmt.local_offset.try_into().unwrap(),
-                None,
-                stmt.func_id
-            );
-            if let Some(id) = ctx_borrow.declare(sym) {
-                return Ok(id);
-            }
-            else {
-                panic!("Cannot create symbol!");
+        let value_node = node.left.as_ref().unwrap().clone();
+
+        let stmt = match &node.kind {
+            ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
+            _ => panic!("Invalid node"),
+        };
+
+        // If it's a record type, validate fields
+        if let SymbolType::Record { name: rec_name } = &stmt.symbol_type {
+            let rec = ctx_borrow.lookup_record(rec_name).ok_or_else(|| {
+                SAError::UndefinedRecord {
+                    record_name: rec_name.clone(),
+                }
+            })?;
+
+            if let ASTKind::ExprAST(Expr::RecordCreation(rec_create)) = &value_node.kind {
+                for field in &rec_create.fields {
+                    let found = rec.fields.iter().find(|ac_field| ac_field.name == field.name);
+                    if found.is_none() {
+                        return Err(SAError::UnknownRecordField {
+                            field_name: field.name.clone(),
+                            record_name: rec_name.clone(),
+                        });
+                    }
+                }
             }
         }
-        panic!("Cannot create symbol!");
+
+        let sym = Symbol::create(
+            stmt.sym_name.clone(),
+            LitTypeVariant::from(stmt.value_type),
+            stmt.symbol_type.clone(),
+            0,
+            stmt.class,
+            stmt.local_offset.try_into().unwrap(),
+            None,
+            stmt.func_id,
+        );
+
+        let id = ctx_borrow.declare(sym).ok_or({
+            SAError::Internal(SAInternalError::SymbolDeclarationFailed)
+        })?;
+
+        Ok(id)
+    }
+
+    fn declare_record(&mut self, node: &mut AST) -> ResolverResult {
+        if let ASTKind::StmtAST(Stmt::Record(stmt)) = &node.kind {
+            let record_entry = RecordType {
+                name: stmt.name.clone(),
+                size: 0,
+                __alignment: 0,
+                fields: stmt.fields.iter().enumerate().map(|(idx, field)| {
+                    RecordFieldType {
+                        name: field.name.clone(),
+                        typ: field.typ,
+                        rel_stack_off: idx
+                    }
+                }).collect::<Vec<RecordFieldType>>()
+            };
+            self.ctx.borrow_mut().create_record(record_entry);
+            return Ok(0);
+        }
+        panic!("Cannot create record!!!")
     }
 }

@@ -1,5 +1,5 @@
-use super::builtin::{BuiltinType, TypeId};
+use super::obj::{KagatiObj, TypeId};
 
 pub trait CastTo {
-    fn cast_to(&self, target: TypeId) -> Option<Box<dyn BuiltinType>>;
+    fn cast_to(&self, target: TypeId) -> Option<Box<dyn KagatiObj>>;
 }

@@ -1,6 +1,6 @@
 use super::{
-    builtin::{
-        BuiltinType, 
+    obj::{
+        KagatiObj, 
         TypeId
     }, 
     cast::CastTo, 
@@ -15,7 +15,7 @@ pub struct Int32Type {
     pub(crate) __value :i32
 }
 
-impl BuiltinType for Int32Type {
+impl KagatiObj for Int32Type {
     fn size(&self) -> usize {
         4
     }
@@ -34,7 +34,7 @@ impl IntegerType for Int32Type {
 }
 
 impl CastTo for Int32Type {
-    fn cast_to(&self, target: TypeId) -> Option<Box<dyn BuiltinType>> {
+    fn cast_to(&self, target: TypeId) -> Option<Box<dyn KagatiObj>> {
         match target {
             TypeId::Bool => {
                 let bool_val = BoolType {
@@ -53,7 +53,7 @@ pub struct Int8Type {
     pub(crate) __value: u8
 }
 
-impl BuiltinType for Int8Type {
+impl KagatiObj for Int8Type {
     fn size(&self) -> usize {
         1
     }
@@ -72,7 +72,7 @@ impl IntegerType for Int8Type {
 }
 
 impl CastTo for Int8Type {
-    fn cast_to(&self, target: TypeId) -> Option<Box<dyn BuiltinType>> {
+    fn cast_to(&self, target: TypeId) -> Option<Box<dyn KagatiObj>> {
         match target {
             TypeId::Int8 => Some(Box::new(*self)),
             TypeId::Bool => {

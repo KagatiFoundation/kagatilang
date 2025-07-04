@@ -1,6 +1,6 @@
 use super::{
-    builtin::{
-        BuiltinType, 
+    obj::{
+        KagatiObj, 
         TypeId
     }, cast::CastTo, 
     Int32Type, 
@@ -12,7 +12,7 @@ pub struct BoolType {
     pub(crate) __value: bool
 }
 
-impl BuiltinType for BoolType {
+impl KagatiObj for BoolType {
     fn name(&self) -> String {
         "boolean".to_string()
     }
@@ -27,7 +27,7 @@ impl BuiltinType for BoolType {
 }
 
 impl CastTo for BoolType {
-    fn cast_to(&self, target: TypeId) -> Option<Box<dyn BuiltinType>> {
+    fn cast_to(&self, target: TypeId) -> Option<Box<dyn KagatiObj>> {
         match target {
             TypeId::Bool => Some(Box::new(*self)),
             TypeId::Int32 => {

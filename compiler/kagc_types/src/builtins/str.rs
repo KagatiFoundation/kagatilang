@@ -1,4 +1,4 @@
-use super::{builtin::{BuiltinType, TypeId}, cast::CastTo};
+use super::{obj::{KagatiObj, TypeId}, cast::CastTo};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StringType {
@@ -7,7 +7,7 @@ pub struct StringType {
     pub label: usize
 }
 
-impl BuiltinType for StringType {
+impl KagatiObj for StringType {
     fn name(&self) -> String {
         "string".to_string()
     }
@@ -22,7 +22,7 @@ impl BuiltinType for StringType {
 }
     
 impl CastTo for StringType {
-    fn cast_to(&self, target: TypeId) -> Option<Box<dyn BuiltinType>> {
+    fn cast_to(&self, target: TypeId) -> Option<Box<dyn KagatiObj>> {
         match target {
             TypeId::Str => Some(Box::new(self.clone())),
             _ => None
