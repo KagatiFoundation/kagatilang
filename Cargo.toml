@@ -15,5 +15,6 @@ members = [
     "compiler/kagc_ir",
     "compiler/kagc_scope",
     "compiler/kagc_comp_unit",
+    "compiler/kagc_const",
     "kagc"
 ]

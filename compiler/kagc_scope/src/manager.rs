@@ -53,6 +53,21 @@ impl ScopeManager {
         None
     }
 
+    /// Returns true if the scope or any of its parents has the specified ScopeType.
+    pub fn is_inside_scope_type(&self, mut scope_id: ScopeId, target: ScopeType) -> bool {
+        while let Some(scope) = self.get(scope_id) {
+            if scope.typ == target {
+                return true;
+            }
+            if let Some(parent) = scope.parent_scope {
+                scope_id = parent;
+            } else {
+                break;
+            }
+        }
+        false
+    }
+
     pub fn contains_scope(&self, scope_id: ScopeId) -> bool {
         self.scopes.contains_key(&scope_id)
     }

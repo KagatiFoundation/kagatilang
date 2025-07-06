@@ -129,9 +129,6 @@ impl Resolver {
     }
 
     fn declare_let_binding(&mut self, node: &mut AST) -> ResolverResult {
-        let mut ctx_borrow = self.ctx.borrow_mut();
-        let value_node = node.left.as_ref().unwrap().clone();
-
         let stmt = match &node.kind {
             ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => panic!("Invalid node"),
@@ -139,39 +136,8 @@ impl Resolver {
 
         // If it's a record type, validate fields
         if let SymbolType::Record { name: rec_name } = &stmt.symbol_type {
-            let rec = ctx_borrow.lookup_record(rec_name).ok_or_else(|| {
-                SAError::RecordError(
-                    SARecordError::UndefinedRecord {
-                        record_name: rec_name.clone(),
-                    }
-                )
-            })?;
-
-            if let ASTKind::ExprAST(Expr::RecordCreation(rec_create)) = &value_node.kind {
-                for field in &rec_create.fields {
-                    let found = rec.fields.iter().find(|ac_field| ac_field.name == field.name);
-                    if found.is_none() {
-                        return Err(SAError::RecordError(
-                            SARecordError::UnknownRecordField {
-                                field_name: field.name.clone(),
-                                record_name: rec_name.clone(),
-                            }
-                        ));
-                    }
-                }
-
-                for field in &rec.fields {
-                    let found = rec_create.fields.iter().find(|ac_field| ac_field.name == field.name);
-                    if found.is_none() {
-                        return Err(SAError::RecordError(
-                            SARecordError::MissingRecordField {
-                                field_name: field.name.clone(),
-                                record_name: rec_name.clone(),
-                            }
-                        ));
-                    }
-                }
-            }
+            let value_node = node.left.as_ref().unwrap().clone();
+            _ = self.validate_record_let_binding(rec_name, &value_node)?;
         }
 
         let sym = Symbol::create(
@@ -185,11 +151,49 @@ impl Resolver {
             stmt.func_id,
         );
 
-        let id = ctx_borrow.declare(sym).ok_or({
+        let id = self.ctx.borrow_mut().declare(sym).ok_or({
             SAError::SymbolAlreadyDefined { sym_name: stmt.sym_name.clone(), token: Token::none() }
         })?;
 
         Ok(id)
+    }
+
+    fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {
+        let ctx_borrow = self.ctx.borrow_mut();
+        let rec = ctx_borrow.lookup_record(rec_name).ok_or_else(|| {
+            SAError::RecordError(
+                SARecordError::UndefinedRecord {
+                    record_name: rec_name.to_string(),
+                }
+            )
+        })?;
+
+        if let ASTKind::ExprAST(Expr::RecordCreation(rec_create)) = &value_node.kind {
+            for field in &rec_create.fields {
+                let found = rec.fields.iter().find(|ac_field| ac_field.name == field.name);
+                if found.is_none() {
+                    return Err(SAError::RecordError(
+                        SARecordError::UnknownRecordField {
+                            field_name: field.name.clone(),
+                            record_name: rec_name.to_string(),
+                        }
+                    ));
+                }
+            }
+
+            for field in &rec.fields {
+                let found = rec_create.fields.iter().find(|ac_field| ac_field.name == field.name);
+                if found.is_none() {
+                    return Err(SAError::RecordError(
+                        SARecordError::MissingRecordField {
+                            field_name: field.name.clone(),
+                            record_name: rec_name.to_string(),
+                        }
+                    ));
+                }
+            }
+        }
+        Ok(0)
     }
 
     fn declare_record(&mut self, node: &mut AST) -> ResolverResult {

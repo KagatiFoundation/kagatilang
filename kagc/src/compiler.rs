@@ -110,9 +110,7 @@ impl Compiler {
                 self.compiler_order.push(import.path.clone());
             }
         }
-
         unit.imports = imports;
-
         Ok(Some(unit))
     }
 }

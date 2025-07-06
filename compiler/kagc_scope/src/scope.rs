@@ -3,18 +3,31 @@ use kagc_symbol::{Symbol, Symtable};
 /// Scope ID
 pub(crate) type ScopeId = usize;
 
+#[derive(Debug, Default, Eq, PartialEq)]
+pub enum ScopeType {
+    #[default] Function,
+    Loop,
+    If,
+
+    /// Default scope
+    Root
+}
+
 #[derive(Debug, Default)]
 pub struct Scope {
     pub table: Symtable<Symbol>,
 
-    pub parent_scope: Option<ScopeId>
+    pub parent_scope: Option<ScopeId>,
+
+    pub typ: ScopeType
 }
 
 impl Scope {
-    pub fn new(parent_scope: ScopeId) -> Self {
+    pub fn new(parent_scope: ScopeId, typ: ScopeType) -> Self {
         Self {
             table: Symtable::default(),
-            parent_scope: Some(parent_scope)
+            parent_scope: Some(parent_scope),
+            typ
         }
     }
 

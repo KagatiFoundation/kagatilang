@@ -28,14 +28,8 @@ pub mod builtins;
 use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
-use builtins::{
-    obj::TypeId, 
-    BoolType, 
-    Int32Type, 
-    StringType
-};
+use builtins::obj::TypeId;
 use lazy_static::lazy_static;
-use record::RecordType;
 
 use crate::builtins::obj::{RecordObj, StringObj};
 
@@ -66,20 +60,6 @@ pub trait TypeSized {
     fn type_size(&self) -> usize;
 }
 
-pub enum BaseType {
-    Integer32(Int32Type),
-
-    String(StringType),
-
-    Boolean(BoolType),
-
-    Record(RecordType),
-
-    Null,
-
-    Void
-}
-
 /// Represents literal value types used in the language.
 #[derive(Debug, Clone)]
 pub enum LitType {
@@ -106,7 +86,7 @@ pub enum LitType {
     Void,
 
     /// Represents a string literal paired with a unique label identifier.
-    Str(StringObj),
+    PoolStr(usize),
 
     /// Represents an array literal.
     ///
@@ -149,6 +129,7 @@ pub enum LitTypeVariant {
     F32,
     Void,
     Str,
+    PoolStr,
     Array,
     Null,
     None, // placeholder
@@ -208,7 +189,8 @@ impl LitTypeVariant {
             LitTypeVariant::F64 => todo!(),
             LitTypeVariant::F32 => todo!(),
             LitTypeVariant::Void => builtins::obj::TypeId::Void,
-            LitTypeVariant::Str { .. } => builtins::obj::TypeId::Str,
+            LitTypeVariant::Str => builtins::obj::TypeId::Str,
+            LitTypeVariant::PoolStr => builtins::obj::TypeId::Str,
             LitTypeVariant::Array => todo!(),
             LitTypeVariant::Null => builtins::obj::TypeId::Null,
             LitTypeVariant::Record => builtins::obj::TypeId::Record,
@@ -229,7 +211,7 @@ impl From<TypeId> for LitTypeVariant {
             TypeId::Bool => LitTypeVariant::I32,
             TypeId::Int32 => LitTypeVariant::I32,
             TypeId::Int8 => LitTypeVariant::U8,
-            TypeId::Str => LitTypeVariant::Str,
+            TypeId::Str => LitTypeVariant::PoolStr,
             TypeId::Null => LitTypeVariant::Null,
             TypeId::Record => LitTypeVariant::Record,
             TypeId::Void => LitTypeVariant::Void,
@@ -285,14 +267,14 @@ impl LitType {
     impl_ltype_unwrap!(unwrap_f32, F32, f32);
 
 
-    pub fn unwrap_str(&self) -> Option<&String> {
-        if let LitType::Str(obj) = self {
-            Some(&obj.__value)
-        }
-        else {
-            None
-        }
-    }
+    // pub fn unwrap_str(&self) -> Option<&String> {
+        // if let LitType::Str(obj) = self {
+            // Some(&obj.__value)
+        // }
+        // else {
+            // None
+        // }
+    // }
 
     pub fn variant(&self) -> LitTypeVariant {
         match self {
@@ -302,7 +284,7 @@ impl LitType {
             Self::U8(_) => LitTypeVariant::U8,
             Self::F64(_) => LitTypeVariant::F64,
             Self::F32(_) => LitTypeVariant::F32,
-            Self::Str { .. } => LitTypeVariant::Str,
+            Self::PoolStr(_) => LitTypeVariant::PoolStr,
             Self::Void => LitTypeVariant::Void,
             Self::Array(_) => LitTypeVariant::Array,
             _ => panic!("not a valid type to calculate variant of!"),
@@ -357,7 +339,7 @@ impl Display for LitType {
         let result = match self {
             LitType::I32(value) => format!("{}", *value),
             LitType::U8(value) => format!("{}", *value),
-            LitType::Str(obj) => obj.__value.clone(),
+            LitType::PoolStr(pos) => format!("__G_{pos}"),
             _ => panic!()
         };
         _ = writeln!(f, "{}", result);

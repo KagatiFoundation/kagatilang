@@ -1,7 +1,8 @@
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
+use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{StorageClass, Symbol, SymbolType};
+use kagc_symbol::{StorageClass, Symbol};
 use kagc_target::{asm::aarch64::*, reg::*};
 use kagc_types::{LitType, LitTypeVariant};
 
@@ -91,6 +92,7 @@ impl Aarch64IRToASM {
         // return String::new();
 
         let mut output: Vec<String> = vec![];
+        output.push(".data".to_string());
         output.push(self.dump_global_strings());
         output.push(String::from(".text"));
 
@@ -176,7 +178,6 @@ impl Aarch64IRToASM {
 
     fn drop_temp(&mut self, temp: usize) {
         let freed_reg: Option<AllocedReg> = self.temp_reg_map.drop(&temp);
-        // println!("Attempting to free: {} --> {:#?}", temp, freed_reg);
 
         if let Some(reg) = freed_reg {
             self.reg_manager.borrow_mut().free_register(reg.idx);
@@ -201,49 +202,17 @@ impl Aarch64IRToASM {
     }
 
     fn dump_global_strings(&self) -> String {
-        let ctx_borrow = self.ctx.borrow();
-        let global_scope = ctx_borrow.root_scope();
-
-        // output
         let mut output_str: String = String::new();
-
-        println!(".data");
-        for symbol in global_scope.table.iter() {
-            // ignore non-global constants
-            if (symbol.lit_type == LitTypeVariant::None) || symbol.sym_type == SymbolType::Function || symbol.class != StorageClass::GLOBAL {
-                continue;
-            }
-
-            if symbol.lit_type == LitTypeVariant::Str && symbol.sym_type == SymbolType::Constant {
-                let str_const_name_and_val: Vec<&str> = symbol.name.split("---").collect::<Vec<&str>>();
-                let str_const_name: String = String::from(str_const_name_and_val[0]);
-                
-                output_str.push_str(&format!(".global {str_const_name}\n"));
-                output_str.push_str(&format!("{str_const_name}:\n\t.asciz \"{}\"\n", str_const_name_and_val[1]));
-
-                continue;
-            }
-
-            output_str.push_str(&format!(".global {}", symbol.name));
-            
-            if symbol.sym_type == SymbolType::Variable {
-                output_str.push_str(&Self::dump_global_with_alignment(symbol));
-            } 
-            else if symbol.sym_type == SymbolType::Array {
-                let array_data_size: usize = symbol.lit_type.size();
-                
-                output_str.push_str(&format!("{}:", symbol.name));
-
-                for _ in 0..symbol.size {
-                    output_str.push_str(&Self::alloc_data_space(array_data_size));
-                }
+        for (index, c_item) in self.ctx.borrow().const_pool.iter_enumerated() {
+            if let KagcConst::Str(str_value) = c_item {
+                output_str.push_str(&format!(".global __G_{}\n", index));
+                output_str.push_str(&format!("__G_{}:\n\t.asciz \"{}\"\n", index, str_value));
             }
         }
-
         output_str
     }
 
-    fn dump_global_with_alignment(symbol: &Symbol) -> String {
+    fn _dump_global_with_alignment(symbol: &Symbol) -> String {
         let def_val: String = if let Some(dv) = &symbol.default_value {
             dv.to_string()
         } 
@@ -276,7 +245,7 @@ impl Aarch64IRToASM {
         }
     }
     
-    fn alloc_data_space(size: usize) -> String {
+    fn _alloc_data_space(size: usize) -> String {
         match size {
             1 => ".byte 0".to_string(),
             4 => ".word 0".to_string(),
@@ -326,7 +295,6 @@ impl IRToASM for Aarch64IRToASM {
 
             // maybe I should increment the IP here???
             self.advance_ip();
-
             output_str.push_str(&format!("{}\n", body_asm.trim()));
         }
 
@@ -339,7 +307,6 @@ impl IRToASM for Aarch64IRToASM {
         else {
             output_str.push_str(&self.gen_non_leaf_fn_epl(stack_size));
         }
-
         output_str
     }
 
@@ -529,13 +496,13 @@ impl IRToASM for Aarch64IRToASM {
         format!(".LB_{}:", ir_label.0)
     }
 
-    fn gen_load_global_asm(&mut self, var_name: &str, dest: &IRLitType) -> String {
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRLitType) -> String {
         let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
         let dest_reg_name: &str = &dest_reg.1.name_64();
 
         let mut output_str: String = String::new();
-        output_str.push_str(&format!("ADRP {dest_reg_name}, {var_name}@PAGE\n"));
-        output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, {var_name}@PAGEOFF"));
+        output_str.push_str(&format!("ADRP {dest_reg_name}, __G_{pool_idx}@PAGE\n"));
+        output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, __G_{pool_idx}@PAGEOFF"));
 
         output_str
     }

@@ -717,7 +717,7 @@ impl CodeGen for Aarch64CodeGen {
             }
         }
 
-        // FIND A BETTER SOLUTIN THAN JUST PANICKING
+        // FIND A BETTER SOLUTION THAN JUST PANICKING
         panic!()
     }
 
@@ -740,7 +740,6 @@ impl CodeGen for Aarch64CodeGen {
         let forced_reg: Option<usize> = fn_ctx.reg_counter;
 
         let mut param_instrs: Vec<IRInstr> = vec![];
-
         let mut actual_params: Vec<(usize, IRLitType)> = vec![];
 
         let num_args: usize = func_call_expr.args.len();
@@ -748,9 +747,7 @@ impl CodeGen for Aarch64CodeGen {
 
         for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
             let param_reg_idx = num_args - 1 - rev_idx;
-
             let current_tmp: usize = fn_ctx.temp_counter;
-
             let p_instr: Vec<IRInstr> = self.__gen_expr(param_expr, fn_ctx)?;
             
             let last_instr: IRInstr = p_instr.last().unwrap().clone();
@@ -760,7 +757,6 @@ impl CodeGen for Aarch64CodeGen {
             let tmp_reg_loc: usize = current_tmp + (new_temp - current_tmp) - 1;
 
             param_instrs.extend(p_instr);
-
             actual_params.push((param_reg_idx, IRLitType::Temp(tmp_reg_loc)));
         }
 
@@ -1010,7 +1006,7 @@ impl Aarch64CodeGen {
     fn dump_gid_address_load_code_from_label_id(&self, reg_name: &str, id: &LitType) {
         let symbol_label_id: usize = match id {
             LitType::I32(_idx) => *_idx as usize,
-            LitType::Str(obj) => obj.label,
+            LitType::PoolStr(pos) => *pos,
             _ => panic!("Can't index symtable with this type: {:?}", id),
         };
         println!("adrp {}, _L{}@PAGE", reg_name, symbol_label_id);

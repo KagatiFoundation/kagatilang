@@ -465,8 +465,8 @@ pub trait CodeGen {
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        if let LitType::Str(obj) = &lit_expr.value  {
-            return self.gen_ir_load_str(obj.label, fn_ctx);
+        if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
+            return self.gen_ir_load_str(*pool_idx, fn_ctx);
         }
 
         let ir_lit: IRLitVal = match lit_expr.result_type {
@@ -481,18 +481,18 @@ pub trait CodeGen {
         Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit))])
     }
 
-    fn gen_ir_load_str(&mut self, label_id: LabelId, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        self.gen_ir_load_global_var(&format!("_STR_{label_id}"), fn_ctx)
+    fn gen_ir_load_str(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        self.gen_ir_load_global_var(idx, fn_ctx)
     }
 
-    fn gen_ir_load_global_var(&mut self, id_name: &str, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let lit_val_tmp: usize = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 1;
 
         Ok(
             vec![
                 IRInstr::LoadGlobal { 
-                    name: String::from(id_name), 
+                    pool_idx: idx, 
                     dest: IRLitType::Temp(lit_val_tmp) 
                 }
             ]

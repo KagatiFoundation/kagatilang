@@ -67,7 +67,7 @@ pub trait IRToASM {
                 match irinstr {
                     IRInstr::Load { dest, stack_off } => self.gen_asm_load(dest, *stack_off),
 
-                    IRInstr::LoadGlobal { name, dest } => self.gen_load_global_asm(name, dest),
+                    IRInstr::LoadGlobal { pool_idx, dest } => self.gen_load_global_asm(*pool_idx, dest),
                     
                     IRInstr::Mov(irlit_type, irlit_type1) => self.gen_ir_mov_asm(irlit_type, irlit_type1),
                     
@@ -93,7 +93,7 @@ pub trait IRToASM {
         }
     }
 
-    fn gen_load_global_asm(&mut self, name: &str, dest: &IRLitType) -> String;
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRLitType) -> String;
 
     fn gen_cond_jmp_asm(&mut self, op1: &IRLitType, op2: &IRLitType, operation: IRCondOp, label_id: LabelId) -> String;
 

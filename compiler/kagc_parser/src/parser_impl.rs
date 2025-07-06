@@ -28,16 +28,15 @@ use std::rc::Rc;
 
 use kagc_ast::{record::*, *};
 use kagc_comp_unit::CompilationUnit;
+use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::*;
+use kagc_scope::scope::ScopeType;
 use kagc_symbol::{function::*, *};
 use kagc_token::*;
 use kagc_types::{
     builtins::obj::{StringObj, TypeId}, 
-    record::{
-        RecordFieldType, 
-        RecordType
-    }, 
+    record::RecordFieldType, 
     LitType, 
     LitTypeVariant
 };
@@ -411,7 +410,7 @@ impl Parser {
         self.local_offset = 0;
 
         // Creating a new scope for function declaration
-        let func_scope_id: usize = self.ctx.borrow_mut().enter_new_scope();
+        let func_scope_id: usize = self.ctx.borrow_mut().enter_new_scope(ScopeType::Function);
 
         // match and ignore function declaration keyword 'def'
         _ = self.token_match(TokenKind::KW_DEF)?;
@@ -725,7 +724,7 @@ impl Parser {
     fn parse_if_stmt(&mut self) -> ParseResult2 {
         let cond_ast: AST = self.parse_conditional_stmt(TokenKind::KW_IF)?;
 
-        let if_scope = self.ctx.borrow_mut().enter_new_scope();
+        let if_scope = self.ctx.borrow_mut().enter_new_scope(ScopeType::If);
 
         let if_true_ast: AST = self.parse_single_stmt()?;
 
@@ -779,9 +778,7 @@ impl Parser {
         _ = self.token_match(TokenKind::KW_LET)?;
 
         // Being "inside" a function means that we are currently parsing a function's body.
-        //
-        // INVALID_FUNC_ID equals 0xFFFFFFFF if we are not parsing a function currently.
-        let inside_func: bool = self.current_function_id != INVALID_FUNC_ID;
+        let inside_func: bool = self.ctx.borrow().live_scope_id() != 0;
 
         // Track the storage class for this variable.
         let mut var_class: StorageClass = StorageClass::GLOBAL;
@@ -848,8 +845,6 @@ impl Parser {
             }
         }
 
-        // let symbol_add_pos: usize = self.add_symbol_local(sym.clone()).unwrap();
-
         let return_result: ParseResult2 = if let Some(assign_ast_node_res) = assignment_parse_res {
             Ok(AST::new(
                 ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
@@ -904,7 +899,7 @@ impl Parser {
         match current_tok {
             TokenKind::KW_INT => Ok(LitTypeVariant::I32),
             TokenKind::KW_CHAR => Ok(LitTypeVariant::U8),
-            TokenKind::KW_STR => Ok(LitTypeVariant::Str),
+            TokenKind::KW_STR => Ok(LitTypeVariant::PoolStr),
             TokenKind::KW_LONG => Ok(LitTypeVariant::I64),
             TokenKind::KW_VOID => Ok(LitTypeVariant::Void),
             TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
@@ -1114,38 +1109,18 @@ impl Parser {
                 ASTOperation::AST_INTLIT,
             )),
             TokenKind::T_STRING => {
-                let str_label = self.shared_pctx.borrow_mut().next_str_label();
-
-                let str_const_symbol: Symbol = Symbol::new(
-                    format!("_STR_{}---{}", str_label, current_token.lexeme.clone()),
-                    LitTypeVariant::Str,
-                    SymbolType::Constant,
-                    StorageClass::GLOBAL,
-                );
-
-                // keep strings at the global scope
-                self
-                .ctx
-                .borrow_mut()
-                .root_scope_mut()
-                .declare(str_const_symbol);
-                
+                let pool_idx = self.ctx.borrow_mut().const_pool.insert(KagcConst::Str(current_token.lexeme.clone()));
                 Ok(AST::create_leaf(
                     ASTKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
-                                value: LitType::Str(
-                                    StringObj::new(
-                                        current_token.lexeme.clone(), 
-                                        str_label
-                                    )
-                                ),
-                                result_type: LitTypeVariant::Str,
+                                value: LitType::PoolStr(pool_idx),
+                                result_type: LitTypeVariant::PoolStr,
                             }
                         )
                     ),
                     ASTOperation::AST_STRLIT,
-                    LitTypeVariant::Str,
+                    LitTypeVariant::PoolStr,
                     None,
                     None
                 ))

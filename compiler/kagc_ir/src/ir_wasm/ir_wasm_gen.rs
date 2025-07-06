@@ -5,7 +5,7 @@ pub struct IRToWASM {
 }
 
 impl IRToASM for IRToWASM {
-    fn gen_load_global_asm(&mut self, name: &str, dest: &crate::ir_types::IRLitType) -> String {
+    fn gen_load_global_asm(&mut self, idx: usize, dest: &crate::ir_types::IRLitType) -> String {
         todo!()
     }
 

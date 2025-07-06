@@ -26,9 +26,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::SymbolType;
+use kagc_symbol::{Symbol, SymbolType};
 use kagc_token::Token;
-use kagc_types::LitTypeVariant;
+use kagc_types::{is_type_coalescing_possible, LitTypeVariant};
 
 use crate::{
     errors::*, 
@@ -52,11 +52,12 @@ impl SemanticAnalyzer {
     /// This starts an analysis process for the given list of nodes. 
     /// This function panics if it encounters any form of error.
     pub fn start_analysis(&mut self, nodes: &mut [AST]) {
-        let mut errors = vec![];
+        let mut errors: Vec<SAError> = vec![];
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
-            if let Err(analysis_err) = result {
-                errors.push(analysis_err);
+            if let Err(err) = result {
+                panic!("{err:#?}");
+                // errors.push(err);
             }
         }
 
@@ -156,9 +157,7 @@ impl SemanticAnalyzer {
             
             Expr::Binary(binexpr) => self.analyze_bin_expr(binexpr),
 
-            Expr::Ident(identexpr) => {
-                self.analyze_ident_expr(identexpr)
-            },
+            Expr::Ident(identexpr) => self.analyze_ident_expr(identexpr),
 
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr),
 
@@ -314,7 +313,6 @@ impl SemanticAnalyzer {
 
         if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt() {
             let ctx_borrow = self.ctx.borrow();
-            // println!("{:#?}", ctx_borrow.lookup_fn(ret_stmt.func_id));
             
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
@@ -411,7 +409,7 @@ impl SemanticAnalyzer {
             let mut ctx_borrow = self.ctx.borrow_mut();
 
             if let Some(var_sym) = ctx_borrow.deep_lookup_mut(&var_decl.sym_name) {
-                return TypeChecker::type_check_var_decl_stmt(var_sym, var_value_type);
+                return Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type);
             }
             return Err(
                 SAError::UndefinedSymbol { 
@@ -420,8 +418,47 @@ impl SemanticAnalyzer {
                 }
             );
         }
-
         panic!("Not a var declaration statement");
+    }
+
+    /// Performs type checking for variable declaration statements.
+    /// 
+    /// This function infers the type of an expression assigned to a variable,
+    /// updates the variable's symbol if it was declared without an explicit 
+    /// type, and ensures the assigned expression's type matches the declared or 
+    /// inferred type. If there's a type mismatch that cannot be reconciled, an 
+    /// error is returned.
+    pub fn check_and_mutate_var_decl_stmt(var_decl_sym: &mut Symbol, expr_type: LitTypeVariant) -> SAResult {
+        if var_decl_sym.lit_type == LitTypeVariant::None {
+            match expr_type {
+                // implicitly convert no-type-annotated byte-type into an integer
+                LitTypeVariant::U8 => {
+                    var_decl_sym.lit_type = LitTypeVariant::I32;
+                    return Ok(LitTypeVariant::I32);
+                },
+
+                LitTypeVariant::PoolStr => {
+                    var_decl_sym.lit_type = LitTypeVariant::PoolStr;
+                    return Ok(LitTypeVariant::PoolStr);
+                },
+                
+                _ => {
+                    return Ok(expr_type);
+                }
+            }
+        }
+        if 
+            var_decl_sym.lit_type != expr_type 
+            && !is_type_coalescing_possible(expr_type, var_decl_sym.lit_type) 
+        {
+            return Err(SAError::TypeError(
+                SATypeError::AssignmentTypeMismatch { 
+                    expected: var_decl_sym.lit_type, 
+                    found: expr_type
+                }
+            ));
+        }
+        Ok(expr_type)
     }
 
     fn analyze_if_stmt(&mut self, node: &mut AST) -> SAResult {

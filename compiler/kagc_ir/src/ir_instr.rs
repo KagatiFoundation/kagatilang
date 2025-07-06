@@ -45,6 +45,9 @@ pub enum IRInstr {
         return_type: Option<IRLitType>
     },
 
+    /**
+     * Stack operations
+     */
     Store {
         /// Value to be stored. `src` is always a register type.
         src: IRLitType,
@@ -62,10 +65,14 @@ pub enum IRInstr {
         stack_off: usize
     },
 
+    /**
+     * Stack operations end here
+    */
+
     /// Load global variable
     LoadGlobal {
         /// Variable's name
-        name: String,
+        pool_idx: usize,
 
         /// Destination to load to
         dest: IRLitType

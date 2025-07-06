@@ -25,6 +25,7 @@ SOFTWARE.
 use std::collections::HashSet;
 
 use itertools::Itertools;
+use kagc_const::pool::ConstPool;
 use kagc_scope::{manager::*, scope::*};
 use kagc_symbol::{
     function::{
@@ -37,10 +38,10 @@ use kagc_symbol::{
 };
 use kagc_types::record::RecordType;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum CompilerScope {
-    GLOBAL,
-    FUNCTION
+#[derive(Debug)]
+struct __CompilerScope {
+    typ: ScopeType,
+    id: usize,
 }
 
 #[derive(Debug)]
@@ -54,13 +55,15 @@ pub struct CompilerCtx {
     
     scope_id: usize,
 
-    current_scope: usize,
+    current_scope: __CompilerScope,
 
     prev_scope: usize,
 
     pub record_registery: RecordRegistery,
 
-    user_created_types: HashSet<String>
+    user_created_types: HashSet<String>,
+
+    pub const_pool: ConstPool
 }
 
 impl CompilerCtx {
@@ -73,11 +76,15 @@ impl CompilerCtx {
             func_table: FunctionInfoTable::new(),
             current_function: INVALID_FUNC_ID,
             scope_id: 1, // next scope ID
-            current_scope: 0,
+            current_scope: __CompilerScope { 
+                typ: ScopeType::Root, 
+                id: 0 
+            },
             prev_scope: 0,
             scope_mgr,
             record_registery: RecordRegistery::default(),
-            user_created_types: HashSet::new()
+            user_created_types: HashSet::new(),
+            const_pool: ConstPool::default()
         }
     }
 
@@ -105,7 +112,7 @@ impl CompilerCtx {
     }
 
     pub fn live_scope_id(&self) -> usize {
-        self.current_scope
+        self.current_scope.id
     }
 
     pub fn live_scope(&self) -> Option<&Scope> {
@@ -113,7 +120,7 @@ impl CompilerCtx {
             None
         }
         else {
-            self.scope_mgr.get(self.current_scope)
+            self.scope_mgr.get(self.current_scope.id)
         }
     }
 
@@ -122,7 +129,7 @@ impl CompilerCtx {
             None
         }
         else {
-            self.scope_mgr.get_mut(self.current_scope)
+            self.scope_mgr.get_mut(self.current_scope.id)
         }
     }
 
@@ -136,47 +143,47 @@ impl CompilerCtx {
 
     pub fn enter_scope(&mut self, scope_id: usize) -> Option<usize> {
         if self.scope_mgr.contains_scope(scope_id) {
-            self.prev_scope = self.current_scope;
-            self.current_scope = scope_id;
-            Some(self.current_scope)
+            self.prev_scope = self.current_scope.id;
+            self.current_scope.id = scope_id;
+            Some(self.current_scope.id)
         }
         else {
             None
         }
     }
 
-    pub fn enter_new_scope(&mut self) -> usize {
+    pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> usize {
         let new_scope_id: usize = self.scope_id;
-        self.scope_mgr.push((new_scope_id, Scope::new(self.current_scope)));
+        self.scope_mgr.push((new_scope_id, Scope::new(self.current_scope.id, scope_type)));
         self.scope_id += 1;
 
         // set scope id
-        self.prev_scope = self.current_scope;
-        self.current_scope = new_scope_id;
-        self.current_scope
+        self.prev_scope = self.current_scope.id;
+        self.current_scope.id = new_scope_id;
+        self.current_scope.id
     }
 
     /// Returns the ID of the exited scope.
     pub fn exit_scope(&mut self) -> usize {
-        let ret: usize = self.current_scope;
-        self.current_scope = self.prev_scope;
+        let ret: usize = self.current_scope.id;
+        self.current_scope.id = self.prev_scope;
         ret
     }
 
     pub fn deep_lookup(&self, name: &str) -> Option<&Symbol> {
-        self.scope_mgr.deep_lookup(self.current_scope, name)
+        self.scope_mgr.deep_lookup(self.current_scope.id, name)
     }
 
     pub fn deep_lookup_mut(&mut self, name: &str) -> Option<&mut Symbol> {
-        self.scope_mgr.deep_lookup_mut(self.current_scope, name)
+        self.scope_mgr.deep_lookup_mut(self.current_scope.id, name)
     }
 
     pub fn declare(&mut self, sym: Symbol) -> Option<usize> {
-        if let Some(curr) = self.scope_mgr.get_mut(self.current_scope) {
+        if let Some(curr) = self.scope_mgr.get_mut(self.current_scope.id) {
             curr.declare(sym)
         }
         else {
-            eprintln!("Couldn't find current score");
+            eprintln!("Couldn't find current scope");
             None
         }
     }
@@ -192,5 +199,32 @@ impl CompilerCtx {
         else {
             vec![]
         }
+    }
+
+    pub fn inside_function(&self) -> bool {
+        if self.current_scope.typ == ScopeType::Function {
+            return true;
+        }
+        self.scope_mgr.is_inside_scope_type(self.current_scope.id, ScopeType::Function)
+    }
+
+    pub fn inside_loop(&self) -> bool {
+        if self.current_scope.typ == ScopeType::Loop {
+            return true;
+        }
+        else if self.prev_scope == 0 {
+            return false;
+        }
+        self.scope_mgr.is_inside_scope_type(self.current_scope.id, ScopeType::Loop)
+    }
+
+    pub fn inside_if(&self) -> bool {
+        if self.current_scope.typ == ScopeType::If {
+            return true;
+        }
+        else if self.prev_scope == 0 {
+            return false;
+        }
+        self.scope_mgr.is_inside_scope_type(self.current_scope.id, ScopeType::If)
     }
 }

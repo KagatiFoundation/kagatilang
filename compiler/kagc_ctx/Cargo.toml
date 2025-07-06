@@ -12,3 +12,4 @@ kagc_symbol = { path = "../kagc_symbol" }
 kagc_types = { path = "../kagc_types" }
 kagc_scope = { path = "../kagc_scope" }
 kagc_comp_unit = { path = "../kagc_comp_unit" }
+kagc_const = { path = "../kagc_const" }
