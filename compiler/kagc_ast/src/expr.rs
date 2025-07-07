@@ -81,7 +81,9 @@ pub struct RecordCreationExpr {
 pub struct RecordFieldAccessExpr {
     pub rec_name: String,
     pub rec_alias: String,
-    pub field_name: String,
+    // pub field_name: String,
+
+    pub field_chain: Vec<String>,
 
     /// Relative stack offset.
     /// 

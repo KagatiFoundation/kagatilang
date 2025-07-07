@@ -432,12 +432,24 @@ pub trait CodeGen {
     }
 
     fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        println!("{rec_field:#?}");
         let mut output = vec![];
         let expr_res = self.__gen_expr(&mut rec_field.value, fn_ctx)?;
         let expr_temp = expr_res.last().unwrap().clone();
+        let mut store_src = expr_temp.dest().clone();
+
+        if let Some(IRLitType::StackOff(off)) = store_src {
+            let tmp_id: usize = fn_ctx.temp_counter;
+            fn_ctx.temp_counter += 1;
+            output.push(IRInstr::Load { 
+                dest: IRLitType::Temp(tmp_id), 
+                stack_off: off 
+            });
+            store_src = Some(IRLitType::Temp(tmp_id));
+        }
 
         let store = IRInstr::Store { 
-            src: expr_temp.dest().unwrap(), 
+            src: store_src.unwrap(),
             stack_off: IRLitType::StackOff(rec_field.offset)
         };
 

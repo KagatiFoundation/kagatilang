@@ -899,10 +899,11 @@ impl Parser {
         match current_tok {
             TokenKind::KW_INT => Ok(LitTypeVariant::I32),
             TokenKind::KW_CHAR => Ok(LitTypeVariant::U8),
-            TokenKind::KW_STR => Ok(LitTypeVariant::PoolStr),
+            TokenKind::KW_STR => Ok(LitTypeVariant::RawStr),
             TokenKind::KW_LONG => Ok(LitTypeVariant::I64),
             TokenKind::KW_VOID => Ok(LitTypeVariant::Void),
             TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
+            TokenKind::T_IDENTIFIER => Ok(LitTypeVariant::Record),
             _ => {
                 Err(Box::new(
                     BErr::unexpected_token(
@@ -1109,18 +1110,17 @@ impl Parser {
                 ASTOperation::AST_INTLIT,
             )),
             TokenKind::T_STRING => {
-                let pool_idx = self.ctx.borrow_mut().const_pool.insert(KagcConst::Str(current_token.lexeme.clone()));
                 Ok(AST::create_leaf(
                     ASTKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
-                                value: LitType::PoolStr(pool_idx),
-                                result_type: LitTypeVariant::PoolStr,
+                                value: LitType::RawStr(current_token.lexeme.clone()),
+                                result_type: LitTypeVariant::RawStr,
                             }
                         )
                     ),
                     ASTOperation::AST_STRLIT,
-                    LitTypeVariant::PoolStr,
+                    LitTypeVariant::RawStr,
                     None,
                     None
                 ))
@@ -1128,7 +1128,6 @@ impl Parser {
             TokenKind::T_IDENTIFIER => {
                 // Identifiers in a global variable declaration expression are not allowed.
                 if self.is_scope_global() {
-                    println!("hehe: {current_token:#?}");
                     return Err(Box::new(
                         BErr::new(
                             BErrType::TypeError(
@@ -1251,8 +1250,14 @@ impl Parser {
     }
 
     fn parse_record_field_access_expr(&mut self, rec_alias: &str) -> ParseResult2 {
-        _ = self.token_match(TokenKind::T_DOT); // match '.'
-        let access = self.token_match(TokenKind::T_IDENTIFIER)?;
+        let mut field_chain = vec![];
+
+        while self.current_token.kind == TokenKind::T_DOT {
+            _ = self.token_match(TokenKind::T_DOT); // match '.'
+            let access = self.token_match(TokenKind::T_IDENTIFIER)?;
+            field_chain.push(access.lexeme.clone());
+        }
+
         Ok(
             AST::create_leaf(
                 ASTKind::ExprAST(
@@ -1260,7 +1265,8 @@ impl Parser {
                         RecordFieldAccessExpr { 
                             rec_name: "".to_string(),
                             rec_alias: rec_alias.to_string(), 
-                            field_name: access.lexeme.clone(),
+                            // field_name: access.lexeme.clone(),
+                            field_chain,
                             rel_stack_off: 0
                         }
                     )

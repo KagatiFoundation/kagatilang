@@ -373,8 +373,6 @@ impl CodeGen for Aarch64CodeGen {
         } else {
             reg = self.__allocate_reg(id.variant().size()); // self.reg_manager.borrow_mut().allocate();
         }
-        let str_addr_name: String = self.reg_manager.borrow().name(reg.idx, reg.size);
-        self.dump_gid_address_load_code_from_label_id(&str_addr_name, id);
         Ok(reg)
     }
 
@@ -994,23 +992,6 @@ impl Aarch64CodeGen {
         let lbl = self.label_id;
         self.label_id += 1;
         lbl
-    }
-
-    // ADRP loads the address of the page of given variables. In other words, 
-    // ADRP loads the address of the page where the given global identifier lies 
-    // on. Doing this alone doesn't give us the address of the global identifier. 
-    // We need to add the offset of the global into the page address. 
-    // For example, if the page address is 40 and our global's address is 44, 
-    // we first load the page address (40) into the register and add the global's 
-    // offset (4) into it, creating an PC relative address.
-    fn dump_gid_address_load_code_from_label_id(&self, reg_name: &str, id: &LitType) {
-        let symbol_label_id: usize = match id {
-            LitType::I32(_idx) => *_idx as usize,
-            LitType::PoolStr(pos) => *pos,
-            _ => panic!("Can't index symtable with this type: {:?}", id),
-        };
-        println!("adrp {}, _L{}@PAGE", reg_name, symbol_label_id);
-        println!("add {}, {}, _L{}@PAGEOFF", reg_name, reg_name, symbol_label_id);
     }
 
     fn dump_gid_address_load_code_from_name(&mut self, reg_name: &str, symbol: &Symbol) {

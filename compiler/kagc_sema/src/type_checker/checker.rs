@@ -154,6 +154,8 @@ impl TypeChecker {
             LitTypeVariant::U8 => matches!(dest, LitTypeVariant::U8 | LitTypeVariant::I16 | LitTypeVariant::I32 | LitTypeVariant::I64),
             LitTypeVariant::I16 => matches!(dest, LitTypeVariant::I16 | LitTypeVariant::I32 | LitTypeVariant::I64),
             LitTypeVariant::I32 => matches!(dest, LitTypeVariant::I32 | LitTypeVariant::I64),
+            LitTypeVariant::RawStr => matches!(dest, LitTypeVariant::PoolStr),
+            LitTypeVariant::PoolStr => matches!(dest, LitTypeVariant::RawStr),
             _ => false
         }
     }

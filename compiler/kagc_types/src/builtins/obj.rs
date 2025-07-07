@@ -129,7 +129,8 @@ impl From<LitTypeVariant> for TypeId {
             LitTypeVariant::Null => Self::Null,
             LitTypeVariant::None => Self::None,
             LitTypeVariant::Record => Self::Record,
-            LitTypeVariant::PoolStr => Self::Str
+            LitTypeVariant::PoolStr => Self::Str,
+            LitTypeVariant::RawStr => Self::Str
         }
     }
 }

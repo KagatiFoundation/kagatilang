@@ -31,7 +31,7 @@ use std::{collections::HashMap, fmt::Display};
 use builtins::obj::TypeId;
 use lazy_static::lazy_static;
 
-use crate::builtins::obj::{RecordObj, StringObj};
+use crate::builtins::obj::RecordObj;
 
 /// Trait for types that can be compared based on their variant and equality.
 pub trait BTypeComparable {
@@ -85,6 +85,8 @@ pub enum LitType {
     /// Represents a `void` type, typically used for functions with no return value.
     Void,
 
+    RawStr(String),
+
     /// Represents a string literal paired with a unique label identifier.
     PoolStr(usize),
 
@@ -130,6 +132,7 @@ pub enum LitTypeVariant {
     Void,
     Str,
     PoolStr,
+    RawStr,
     Array,
     Null,
     None, // placeholder
@@ -191,6 +194,7 @@ impl LitTypeVariant {
             LitTypeVariant::Void => builtins::obj::TypeId::Void,
             LitTypeVariant::Str => builtins::obj::TypeId::Str,
             LitTypeVariant::PoolStr => builtins::obj::TypeId::Str,
+            LitTypeVariant::RawStr => TypeId::Str,
             LitTypeVariant::Array => todo!(),
             LitTypeVariant::Null => builtins::obj::TypeId::Null,
             LitTypeVariant::Record => builtins::obj::TypeId::Record,

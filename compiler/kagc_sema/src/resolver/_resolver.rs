@@ -3,15 +3,15 @@ use std::{
     rc::Rc
 };
 use kagc_ast::*;
+use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::{function::*, *};
 use kagc_token::Token;
 use kagc_types::{
-    record::{
+    builtins::obj::TypeId, record::{
         RecordFieldType, 
         RecordType
-    }, 
-    LitTypeVariant
+    }, LitType, LitTypeVariant
 };
 
 use crate::errors::*;
@@ -129,7 +129,7 @@ impl Resolver {
     }
 
     fn declare_let_binding(&mut self, node: &mut AST) -> ResolverResult {
-        let stmt = match &node.kind {
+        let stmt = match &mut node.kind {
             ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => panic!("Invalid node"),
         };
@@ -138,6 +138,10 @@ impl Resolver {
         if let SymbolType::Record { name: rec_name } = &stmt.symbol_type {
             let value_node = node.left.as_ref().unwrap().clone();
             _ = self.validate_record_let_binding(rec_name, &value_node)?;
+        }
+
+        if let Some(left) = &mut node.left {
+            let _ = self.validate_and_process_expr(left)?;
         }
 
         let sym = Symbol::create(
@@ -156,6 +160,47 @@ impl Resolver {
         })?;
 
         Ok(id)
+    }
+
+    fn validate_and_process_expr(&mut self, ast: &mut AST) -> ResolverResult {
+        if !ast.kind.is_expr() {
+            panic!("Needed an Expr--but found {:#?}", ast);
+        }
+
+        if let ASTKind::ExprAST(expr) = &mut ast.kind {
+            return self.resolve_literal_constant(expr);
+        }
+
+        panic!()
+    }
+
+    fn resolve_literal_constant(&mut self, expr: &mut Expr) -> ResolverResult {
+        if let Expr::LitVal(lit_expr) = expr {
+            match lit_expr.result_type {
+                LitTypeVariant::RawStr => {
+                    let raw_value = if let LitType::RawStr(ref s) = lit_expr.value {
+                        s.clone()
+                    } else {
+                        panic!("Expected RawStr variant but found something else");
+                    };
+
+                    let pool_idx = self.ctx.borrow_mut().const_pool.insert(KagcConst::Str(raw_value));
+
+                    lit_expr.value = LitType::PoolStr(pool_idx);
+                    lit_expr.result_type = LitTypeVariant::PoolStr;
+
+                    return Ok(pool_idx);
+                },
+                _ => return Ok(0)
+            }
+        }
+        else if let Expr::RecordCreation(rec_create) = expr {
+            for field in &mut rec_create.fields {
+                _ = self.resolve_literal_constant(&mut field.value);
+            }
+            return Ok(0);
+        }
+        panic!()
     }
 
     fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {

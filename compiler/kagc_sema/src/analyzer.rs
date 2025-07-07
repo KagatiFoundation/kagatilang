@@ -190,7 +190,10 @@ impl SemanticAnalyzer {
         if let Some(rec_sym) = ctx_borrow.deep_lookup(&field_access.rec_alias) {
             if let SymbolType::Record { name: rec_name } = &rec_sym.sym_type {
                 if let Some(rec) = ctx_borrow.lookup_record(rec_name) {
-                    if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_name) {
+                    for chain_item in &field_access.field_chain {
+
+                    }
+                    if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_chain[0]) {
                         field_access.rel_stack_off = field.rel_stack_off;
                         return Ok(LitTypeVariant::from(field.typ));
                     }
@@ -437,14 +440,17 @@ impl SemanticAnalyzer {
                     return Ok(LitTypeVariant::I32);
                 },
 
+                LitTypeVariant::RawStr => {
+                    var_decl_sym.lit_type = LitTypeVariant::RawStr;
+                    return Ok(LitTypeVariant::RawStr);
+                },
+
                 LitTypeVariant::PoolStr => {
                     var_decl_sym.lit_type = LitTypeVariant::PoolStr;
                     return Ok(LitTypeVariant::PoolStr);
-                },
-                
-                _ => {
-                    return Ok(expr_type);
                 }
+                
+                _ => return Ok(expr_type)
             }
         }
         if 

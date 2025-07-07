@@ -576,7 +576,9 @@ impl Aarch64IRToASM {
             
             IRLitType::Reg(idx) => (0, AllocedReg { size: 64, idx: *idx, status: RegStatus::Alloced }),
             
-            _ => todo!(),
+            _ => {
+                todo!()
+            },
         }
     }
     
