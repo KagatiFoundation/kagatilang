@@ -21,7 +21,7 @@ impl __RegisLK for __RegisIdx {
 }
 
 pub trait RegisteryEntry {
-    fn name() -> String;
+    fn name(&self) -> String;
 }
 
 pub trait Registry<T: RegisteryEntry> {

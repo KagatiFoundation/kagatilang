@@ -26,11 +26,49 @@ SOFTWARE.
 
 use std::collections::HashMap;
 
+use crate::registery::Registry;
+
 use super::FunctionInfo;
 
 #[derive(Debug)]
 pub struct FunctionInfoTable {
     functions: HashMap<String, FunctionInfo>,
+}
+
+impl Registry<FunctionInfo> for FunctionInfoTable {
+    fn lookup<Key: crate::registery::__RegisLK>(&self, key: &Key) -> Option<&FunctionInfo> {
+        if let Some(name) = key.key_as_str() {
+            return self.functions.get(name);
+        }
+        else if key.key_as_int().is_some() {
+            panic!("Lookup using integer is not supported by FunctionInfoTable");
+        }
+        None
+    }
+
+    fn lookup_mut<Key: crate::registery::__RegisLK>(&mut self, key: &Key) -> Option<&mut FunctionInfo> {
+        if let Some(name) = key.key_as_str() {
+            return self.functions.get_mut(name);
+        }
+        else if key.key_as_int().is_some() {
+            panic!("Lookup using integer is not supported by RecordRegistery");
+        }
+        None
+    }
+
+    fn declare(&mut self, entry: FunctionInfo) -> Option<usize> {
+        if self.functions.contains_key(&entry.name) {
+            None
+        }
+        else {
+            self.functions.insert(entry.name.clone(), entry);
+            Some(0)
+        }
+    }
+
+    fn count(&self) -> usize {
+        self.functions.len()
+    }
 }
 
 impl FunctionInfoTable {
@@ -39,20 +77,8 @@ impl FunctionInfoTable {
             functions: HashMap::new()
         }
     }
-    
-    pub fn add(&mut self, func_info: FunctionInfo) {
-        self.functions.insert(func_info.name.clone(), func_info);
-    }
 
-    pub fn get(&self, name: &str) -> Option<&FunctionInfo> {
-        self.functions.get(name)
-    }
-
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut FunctionInfo> {
-        self.functions.get_mut(name)
-    }
-
-    pub fn get_by_id(&self, id: usize) -> Option<&FunctionInfo> {
+    pub fn lookup_by_id(&self, id: usize) -> Option<&FunctionInfo> {
         let func_info = self.functions.iter().find(|func| func.1.func_id == id);
         if let Some(func) = func_info {
             Some(func.1)

@@ -1,24 +1,36 @@
 use std::{
     cell::RefCell, 
+    collections::BTreeMap, 
     rc::Rc
 };
 use kagc_ast::*;
-use kagc_const::pool::KagcConst;
+use kagc_const::pool::{
+    KagcConst, 
+    PoolIdx, 
+    RecordConst
+};
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{function::*, *};
+use kagc_symbol::{
+    function::*, 
+    registery::Registry, 
+    *
+};
 use kagc_token::Token;
 use kagc_types::{
-    builtins::obj::TypeId, record::{
+    record::{
         RecordFieldType, 
         RecordType
-    }, LitType, LitTypeVariant
+    }, 
+    LitType, 
+    LitTypeVariant
 };
 
 use crate::errors::*;
 
 pub struct Resolver {
     pub ctx: Rc<RefCell<CompilerCtx>>,
-    pub local_offset: usize
+    pub local_offset: usize,
+    curr_func_id: Option<usize>
 }
 
 /// Ok(usize) = Symbol's symbol table position
@@ -28,7 +40,8 @@ impl Resolver {
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
             ctx,
-            local_offset: 0
+            local_offset: 0,
+            curr_func_id: None
         }
     }
 
@@ -97,6 +110,7 @@ impl Resolver {
             };
 
             let function_id = function_id.unwrap();
+            self.curr_func_id = Some(function_id);
 
             // making sure the subsequent users of this FuncDeclStmt AST know 
             // what the function ID is
@@ -113,7 +127,7 @@ impl Resolver {
             );
 
             // create a new FunctionInfo
-            ctx_borrow.func_table.add(func_info);
+            ctx_borrow.func_table.declare(func_info);
             // drop context borrow
             drop(ctx_borrow);
 
@@ -141,7 +155,7 @@ impl Resolver {
         }
 
         if let Some(left) = &mut node.left {
-            let _ = self.validate_and_process_expr(left)?;
+            let _ = self.validate_and_process_expr(left, &stmt.sym_name)?;
         }
 
         let sym = Symbol::create(
@@ -162,19 +176,19 @@ impl Resolver {
         Ok(id)
     }
 
-    fn validate_and_process_expr(&mut self, ast: &mut AST) -> ResolverResult {
+    fn validate_and_process_expr(&mut self, ast: &mut AST, symbol_name: &str) -> ResolverResult {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {:#?}", ast);
         }
 
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
-            return self.resolve_literal_constant(expr);
+            return self.resolve_literal_constant(expr, false, symbol_name);
         }
 
         panic!()
     }
 
-    fn resolve_literal_constant(&mut self, expr: &mut Expr) -> ResolverResult {
+    fn resolve_literal_constant(&mut self, expr: &mut Expr, parent_is_record: bool, symbol_name: &str) -> ResolverResult {
         if let Expr::LitVal(lit_expr) = expr {
             match lit_expr.result_type {
                 LitTypeVariant::RawStr => {
@@ -184,10 +198,38 @@ impl Resolver {
                         panic!("Expected RawStr variant but found something else");
                     };
 
-                    let pool_idx = self.ctx.borrow_mut().const_pool.insert(KagcConst::Str(raw_value));
+                    let pool_idx = self.ctx.borrow_mut().const_pool.insert(
+                        KagcConst::Str(raw_value), 
+                        self.curr_func_id
+                    );
 
                     lit_expr.value = LitType::PoolStr(pool_idx);
                     lit_expr.result_type = LitTypeVariant::PoolStr;
+
+                    return Ok(pool_idx);
+                },
+                LitTypeVariant::I32
+                | LitTypeVariant::U8 => {
+                    if !parent_is_record {
+                        return Ok(0xFFFFFFFF);
+                    }
+
+                    let raw_value = match lit_expr.value {
+                        LitType::I32(value) => {
+                            lit_expr.result_type = LitTypeVariant::I32;
+                            value
+                        }
+                        LitType::U8(value) => {
+                            lit_expr.result_type = LitTypeVariant::U8;
+                            value as i32
+                        }
+                        _ => panic!("Expected RawStr variant but found something else")
+                    };
+
+                    let pool_idx = self.ctx.borrow_mut().const_pool.insert(
+                        KagcConst::Int(raw_value as i64), 
+                        self.curr_func_id
+                    );
 
                     return Ok(pool_idx);
                 },
@@ -195,12 +237,37 @@ impl Resolver {
             }
         }
         else if let Expr::RecordCreation(rec_create) = expr {
-            for field in &mut rec_create.fields {
-                _ = self.resolve_literal_constant(&mut field.value);
+            let record_const = self.build_record_const(rec_create, symbol_name)?;
+            
+            if parent_is_record {
+                // keep the indices of this record const in its parent
             }
-            return Ok(0);
+
+            if !parent_is_record {
+                let record_idx = self.ctx.borrow_mut().const_pool.insert(
+                    KagcConst::Record(record_const),
+                    self.curr_func_id,
+                );
+                return Ok(record_idx);
+            } else {
+                return Ok(0xFFFFFFFF);
+            }
         }
         panic!()
+    }
+
+    fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str) -> Result<RecordConst, SAError> {
+        let mut indices = vec![];
+        for field in &mut rec_create.fields {
+            let pool_idx = self.resolve_literal_constant(&mut field.value, true, symbol_name)?;
+            indices.push((field.name.clone(), pool_idx));
+        }
+
+        Ok(RecordConst {
+            type_name: rec_create.name.clone(),
+            alias: symbol_name.to_string(),
+            fields: indices.into_iter().collect::<BTreeMap<String, PoolIdx>>(),
+        })
     }
 
     fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {

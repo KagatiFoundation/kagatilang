@@ -432,7 +432,6 @@ pub trait CodeGen {
     }
 
     fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        println!("{rec_field:#?}");
         let mut output = vec![];
         let expr_res = self.__gen_expr(&mut rec_field.value, fn_ctx)?;
         let expr_temp = expr_res.last().unwrap().clone();

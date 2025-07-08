@@ -5,8 +5,8 @@ use kagc_types::record::RecordType;
 use crate::registery::*;
 
 impl RegisteryEntry for RecordType {
-    fn name() -> String {
-        todo!()
+    fn name(&self) -> String {
+        self.name.clone()
     }
 }
 

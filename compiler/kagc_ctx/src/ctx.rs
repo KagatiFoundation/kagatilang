@@ -189,7 +189,7 @@ impl CompilerCtx {
     }
 
     pub fn lookup_fn(&self, func_id: usize) -> Option<&FunctionInfo> {
-        self.func_table.get_by_id(func_id)
+        self.func_table.lookup_by_id(func_id)
     }
 
     pub fn collect_params(&self, scope_id: usize) -> Vec<&Symbol> {

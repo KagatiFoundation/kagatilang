@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
-use kagc_const::pool::KagcConst;
+use kagc_const::pool::{ConstEntry, KagcConst};
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::{StorageClass, Symbol};
 use kagc_target::{asm::aarch64::*, reg::*};
@@ -92,14 +92,14 @@ impl Aarch64IRToASM {
         // return String::new();
 
         let mut output: Vec<String> = vec![];
-        output.push(".data".to_string());
-        output.push(self.dump_global_strings());
+        // output.push(".data".to_string());
         output.push(String::from(".text"));
 
         for ir in irs {
             let output_str: String = self.gen_asm_from_ir_node(ir);
             output.push(output_str);
         }
+        output.push(self.dump_globals());
         output.join("\n")
     }
 
@@ -201,12 +201,35 @@ impl Aarch64IRToASM {
         }
     }
 
-    fn dump_global_strings(&self) -> String {
+    fn dump_globals(&self) -> String {
         let mut output_str: String = String::new();
         for (index, c_item) in self.ctx.borrow().const_pool.iter_enumerated() {
-            if let KagcConst::Str(str_value) = c_item {
-                output_str.push_str(&format!(".global __G_{}\n", index));
-                output_str.push_str(&format!("__G_{}:\n\t.asciz \"{}\"\n", index, str_value));
+            output_str.push_str(&self.dump_const(index, c_item, false));
+        }
+        output_str
+    }
+
+    fn dump_const(&self, c_item_index: usize, c_item: &ConstEntry, parent_is_record: bool) -> String {
+        let mut output_str = String::new();
+        if let KagcConst::Str(str_value) = &c_item.value {
+            if parent_is_record {
+                output_str.push_str(&format!("\t.xword .L.str.{c_item_index}\n"));
+            }
+            else {
+                output_str.push_str(&format!(".L.str.{}:\n\t.asciz \"{}\"\n", c_item_index, str_value));
+            }
+        }
+        else if let KagcConst::Int(int_value) = &c_item.value {
+            if parent_is_record {
+                output_str.push_str(&format!("\t.word {int_value}\n"));
+            }
+        }
+        else if let KagcConst::Record(rec) = &c_item.value {
+            output_str.push_str(&format!(".L__const.{}.{}\n", c_item.origin_func.unwrap(), rec.alias.clone()));
+            for rec_field in &rec.fields {
+                if let Some(rec_pool_item) = self.ctx.borrow().const_pool.get(*rec_field.1) {
+                    output_str.push_str(&self.dump_const(*rec_field.1, rec_pool_item, true));
+                }
             }
         }
         output_str
@@ -501,8 +524,8 @@ impl IRToASM for Aarch64IRToASM {
         let dest_reg_name: &str = &dest_reg.1.name_64();
 
         let mut output_str: String = String::new();
-        output_str.push_str(&format!("ADRP {dest_reg_name}, __G_{pool_idx}@PAGE\n"));
-        output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, __G_{pool_idx}@PAGEOFF"));
+        output_str.push_str(&format!("ADRP {dest_reg_name}, .L.str.{pool_idx}@PAGE\n"));
+        output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, .L.str.{pool_idx}@PAGEOFF"));
 
         output_str
     }

@@ -27,7 +27,14 @@ SOFTWARE.
 use itertools::Itertools;
 use kagc_types::LitTypeVariant;
 
-use crate::{sym::{StorageClass, Symbol}, symbol_table::Symtable};
+use crate::{
+    registery::RegisteryEntry, 
+    sym::{
+        StorageClass, 
+        Symbol
+    }, 
+    symbol_table::Symtable
+};
 
 /// Inavlid function ID.
 pub const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
@@ -109,5 +116,11 @@ impl FunctionInfo {
 
     pub fn collect_params(&self) -> Vec<&Symbol> {
         self.local_syms.iter().filter(|&sym| sym.class == StorageClass::PARAM).collect_vec()
+    }
+}
+
+impl RegisteryEntry for FunctionInfo {
+    fn name(&self) -> String {
+        self.name.clone()
     }
 }

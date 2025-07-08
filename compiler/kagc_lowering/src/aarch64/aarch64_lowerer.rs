@@ -35,6 +35,7 @@ use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
+use kagc_symbol::registery::Registry;
 use kagc_symbol::*;
 use kagc_target::reg::*;
 use kagc_target::asm::aarch64::Aarch64RegManager2;
@@ -190,7 +191,7 @@ impl CodeGen for Aarch64CodeGen {
 
         let func_name: String = self.get_func_name(index).expect("Function name error!");
 
-        if let Some(finfo) = self.ctx.borrow().func_table.get(&func_name) {
+        if let Some(finfo) = self.ctx.borrow().func_table.lookup(&func_name.as_str()) {
             self.current_function = Some(finfo.clone());
         }
 
@@ -528,7 +529,7 @@ impl CodeGen for Aarch64CodeGen {
     fn gen_func_call_expr(&mut self, func_call_expr: &FuncCallExpr) -> CodeGenResult {
         let ctx_borrow = self.ctx.borrow_mut();
         let func_info = if let Some(symbol) = ctx_borrow.deep_lookup(&func_call_expr.symbol_name) {
-            ctx_borrow.func_table.get(&symbol.name).unwrap()
+            ctx_borrow.func_table.lookup(&symbol.name.as_str()).unwrap()
         } else {
             return Err(CodeGenErr::UndefinedSymbol);
         };
@@ -571,7 +572,7 @@ impl CodeGen for Aarch64CodeGen {
 
         let func_name: String = self.get_func_name(func_id).expect("Function name error!");
 
-        if let Some(finfo) = self.ctx.borrow().func_table.get(&func_name) {
+        if let Some(finfo) = self.ctx.borrow().func_table.lookup(&func_name.as_str()) {
             self.current_function = Some(finfo.clone());
         }
 

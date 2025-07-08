@@ -26,7 +26,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{Symbol, SymbolType};
+use kagc_symbol::{registery::Registry, Symbol, SymbolType};
 use kagc_token::Token;
 use kagc_types::{is_type_coalescing_possible, LitTypeVariant};
 
@@ -253,7 +253,7 @@ impl SemanticAnalyzer {
             );
         };
 
-        let func_detail = ctx_borrow.func_table.get(&func_call.symbol_name).unwrap();
+        let func_detail = ctx_borrow.func_table.lookup(&func_call.symbol_name.as_str()).unwrap();
         func_call.id = func_detail.func_id;
         let func_param_types = func_detail.param_types.clone();
 
