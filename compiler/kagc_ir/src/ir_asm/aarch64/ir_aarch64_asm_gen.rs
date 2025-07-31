@@ -1,4 +1,33 @@
-use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
+/*
+MIT License
+
+Copyright (c) 2023 Kagati Foundation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+use std::{
+    cell::RefCell, 
+    collections::HashMap, 
+    hash::Hash, 
+    rc::Rc
+};
 
 use kagc_const::pool::{ConstEntry, KagcConst};
 use kagc_ctx::CompilerCtx;
@@ -68,7 +97,7 @@ pub struct Aarch64IRToASM {
     /// Instruction Pointer:
     /// IP is used to track the execution of instructions inside 
     /// a function.
-    ip: usize,
+    func_ip: usize,
 
     /// Code generators state
     state: IRToASMState,
@@ -82,7 +111,7 @@ impl Aarch64IRToASM {
             reg_manager: rm,
             compt_fn_props: None,
             temp_reg_map: TempRegMap { reg_map: HashMap::new() },
-            ip: 0,
+            func_ip: 0,
             state: IRToASMState::Global
         }
     }
@@ -164,13 +193,13 @@ impl Aarch64IRToASM {
 
     #[inline]
     fn advance_ip(&mut self) {
-        self.ip += 1;
+        self.func_ip += 1;
     }
 
     #[inline]
     fn reset(&mut self) {
         // reset IP before moving into into another function
-        self.ip = 0;
+        self.func_ip = 0;
 
         // stay on the global scope; no function available
         self.switch_to_global_scope();
@@ -182,27 +211,40 @@ impl Aarch64IRToASM {
         if let Some(reg) = freed_reg {
             self.reg_manager.borrow_mut().free_register(reg.idx);
         }
-        else {
-            panic!("Problem while freeing temporary {}!", temp);
-        }
     }
 
-    fn try_dropping_temp(&mut self, temp: usize) {
+    fn try_dropping_temp(&mut self, temp: usize) -> bool {
         if let Some(compt_fn_info) = &self.compt_fn_props {
             if let Some((start, end)) = compt_fn_info.liveness_info.get(&temp) {
                 // temporary's life is over
-                if (*start + *end) <= self.ip {
+                if (*start + *end) <= self.func_ip {
                     self.drop_temp(temp);
+                    return true;
                 }
             }
         }
         else {
-            panic!("Compile time information not avaailable for function!");
+            panic!("Compile time information not available for function!");
         }
+        false
+    }
+
+    fn try_dropping_all_temps(&mut self) -> bool {
+        {
+            let mut temps = vec![];
+            for (temp, _) in self.temp_reg_map.reg_map.iter() {
+                temps.push(*temp);
+            }
+            temps
+        }.iter().for_each(|temp| {
+            _ = self.try_dropping_temp(*temp);
+        });
+        true
     }
 
     fn dump_globals(&self) -> String {
         let mut output_str: String = String::new();
+        output_str.push_str(".data\n.align 3\n");
         for (index, c_item) in self.ctx.borrow().const_pool.iter_enumerated() {
             output_str.push_str(&self.dump_const(index, c_item, false));
         }
@@ -221,11 +263,18 @@ impl Aarch64IRToASM {
         }
         else if let KagcConst::Int(int_value) = &c_item.value {
             if parent_is_record {
-                output_str.push_str(&format!("\t.word {int_value}\n"));
+                output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
             }
         }
         else if let KagcConst::Record(rec) = &c_item.value {
-            output_str.push_str(&format!(".L__const.{}.{}\n", c_item.origin_func.unwrap(), rec.alias.clone()));
+            output_str.push_str(
+                &format!(
+                    ".align {}\n.L__const.{}.{}:\n", 
+                    rec.alignment, 
+                    c_item.origin_func.unwrap(), 
+                    rec.alias.clone()
+                )
+            );
             for rec_field in &rec.fields {
                 if let Some(rec_pool_item) = self.ctx.borrow().const_pool.get(*rec_field.1) {
                     output_str.push_str(&self.dump_const(*rec_field.1, rec_pool_item, true));
@@ -281,12 +330,11 @@ impl Aarch64IRToASM {
 impl IRToASM for Aarch64IRToASM {
     fn gen_ir_fn_asm(&mut self, fn_ir: &mut IRFunc) -> String {
         if fn_ir.class == StorageClass::EXTERN {
+            // self.advance_ip();
             return format!(".extern _{}\n", fn_ir.name);
         }
 
         let mut output_str: String = "".to_string();
-
-        // SpillCompilerPass::analyze_fn_for_spills(fn_ir);
 
         // Temporary liveness information of this function
         let temp_liveness: HashMap<usize, LiveRange> = LivenessAnalyzer::analyze_fn_temps(fn_ir);
@@ -315,8 +363,7 @@ impl IRToASM for Aarch64IRToASM {
 
         for body_ir in &mut fn_ir.body {
             let body_asm: String = self.gen_asm_from_ir_node(body_ir);
-
-            // maybe I should increment the IP here???
+            self.try_dropping_all_temps();
             self.advance_ip();
             output_str.push_str(&format!("{}\n", body_asm.trim()));
         }
@@ -345,14 +392,11 @@ impl IRToASM for Aarch64IRToASM {
         let value_reg: AllocedReg = match &vdecl_ir.value {
             IRLitType::Temp(temp_value) => {
                 let temp_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
-                self.try_dropping_temp(*temp_value);
                 temp_reg
             },
 
             IRLitType::AllocReg { temp, reg } => {
-                let temp_reg = self.get_or_allocate_specific_register(*reg, *temp);
-                self.try_dropping_temp(*temp);
-                temp_reg
+                self.get_or_allocate_specific_register(*reg, *temp)
             },
             
             _ => todo!()
@@ -392,73 +436,74 @@ impl IRToASM for Aarch64IRToASM {
 
     fn gen_non_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String {
         let mut output_str: String = "".to_string();
-        
         output_str.push_str(&format!("\n.global _{fn_label}\n_{fn_label}:\n"));
-        output_str.push_str(&format!("sub sp, sp, #{stack_size}\n"));
-        output_str.push_str(&format!("stp x29, x30, [sp, #{}]\n", stack_size - 16));
-        output_str.push_str(&format!("add x29, sp, #{}", stack_size - 16));
-
+        output_str.push_str(&format!("SUB SP, SP, #{stack_size}\n"));
+        output_str.push_str(&format!("STP x29, x30, [SP, #{}]\n", stack_size - 16));
+        output_str.push_str(&format!("ADD x29, SP, #{}", stack_size - 16));
         output_str
     }
     
     fn gen_non_leaf_fn_epl(&self, stack_size: usize) -> String {
         let mut output_str: String = "".to_string();
-
-        output_str.push_str(&format!("ldp x29, x30, [sp, #{}]\n", stack_size - 16));
-        output_str.push_str(&format!("add sp, sp, #{}\nret\n", stack_size));
-
+        output_str.push_str(&format!("LDP x29, x30, [SP, #{}]\n", stack_size - 16));
+        output_str.push_str(&format!("ADD SP, SP, #{}\nRET\n", stack_size));
         output_str
     }
     
-    fn gen_asm_load(&mut self, dest: &IRLitType, stack_off: usize) -> String {
+    fn gen_asm_load(&mut self, dest: &IRLitType, addr: &IRAddr) -> String {
+        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
+            (func_props.stack_size, func_props.is_leaf)
+        }
+        else {
+            panic!("Trying to load value from the stack outside of a function!");
+        };
+
         let dest_reg = self.resolve_register(dest);
-        
-        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
-            (func_props.stack_size, func_props.is_leaf)
-        }
-        else {
-            panic!("Trying to load value from the stack outside of a function!");
-        };
-
-        let soff: usize = (stack_off * 8) + 8;
-        
-        if is_leaf_fn {
-            format!("LDR {}, [sp, #{}]", dest_reg.1.name(), stack_size - soff)
-        }
-        else {
-            format!("LDR {}, [x29, #-{}]", dest_reg.1.name(), soff)
-        }
-    }
-
-    fn gen_asm_store(&mut self, src: &IRLitType, stack_off: usize) -> String {
-        let src_reg = self.resolve_register(src);
-
-        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
-            (func_props.stack_size, func_props.is_leaf)
-        }
-        else {
-            panic!("Trying to load value from the stack outside of a function!");
-        };
-
-        let soff: usize = (stack_off * 8) + 8;
-        
-        if is_leaf_fn {
-            format!("STR {}, [sp, #{}]", src_reg.1.name(), stack_size - soff)
-        }
-        else {
-            format!("STR {}, [x29, #-{}]", src_reg.1.name(), soff)
-        }
-    }
-
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], _return_type: &Option<IRLitType>) -> String {
-        let mut output_str: String = String::new();
-
-        for (_, param) in params{
-            if let IRLitType::Temp(temp) = param {
-                self.try_dropping_temp(*temp);
+        match addr {
+            IRAddr::StackOff(stack_off) => {
+                let soff: usize = stack_off * 8;
+                if is_leaf_fn {
+                    format!("LDR {}, [SP, #{}]", dest_reg.1.name(), stack_size - soff)
+                }
+                else {
+                    format!("LDR {}, [x29, #-{}]", dest_reg.1.name(), soff + 8)
+                }
+            },
+            IRAddr::BaseOff(base, off) => {
+                let src_reg = self.resolve_register(base);
+                format!("LDR {}, [{}, {}]", dest_reg.1.name(), src_reg.1.name(), format_args!("#{}", *off * 8))
             }
         }
+    }
 
+    fn gen_asm_store(&mut self, src: &IRLitType, addr: &IRAddr) -> String {
+        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
+            (func_props.stack_size, func_props.is_leaf)
+        }
+        else {
+            panic!("Trying to load value from the stack outside of a function!");
+        };
+
+        let src_reg = self.resolve_register(src);
+        match addr {
+            IRAddr::StackOff(stack_off) => {
+                let soff: usize = (stack_off * 8) + 8;
+                if is_leaf_fn {
+                    format!("STR {}, [SP, #{}]", src_reg.1.name(), stack_size - soff)
+                }
+                else {
+                    format!("STR {}, [x29, #-{}]", src_reg.1.name(), soff)
+                }
+            },
+            IRAddr::BaseOff(base, off) => {
+                let dest_reg = self.resolve_register(base);
+                format!("STR {}, [{}, {}]", src_reg.1.name(), dest_reg.1.name(), format_args!("#-{}", off * 8))
+            }
+        }
+    }
+
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, _: &[(usize, IRLitType)], _return_type: &Option<IRLitType>) -> String {
+        let mut output_str: String = String::new();
         output_str.push_str(&format!("BL _{fn_name}"));
         output_str
     }
@@ -521,11 +566,34 @@ impl IRToASM for Aarch64IRToASM {
 
     fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRLitType) -> String {
         let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
-        let dest_reg_name: &str = &dest_reg.1.name_64();
+        let dest_reg_name: &str = &dest_reg.1.name();
 
         let mut output_str: String = String::new();
-        output_str.push_str(&format!("ADRP {dest_reg_name}, .L.str.{pool_idx}@PAGE\n"));
-        output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, .L.str.{pool_idx}@PAGEOFF"));
+        if let Some(c_item) = self.ctx.borrow().const_pool.get(pool_idx) {
+            match &c_item.value {
+                KagcConst::Str(_) => {
+                    output_str.push_str(&format!("ADRP {dest_reg_name}, .L.str.{pool_idx}@PAGE\n"));
+                    output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, .L.str.{pool_idx}@PAGEOFF"));
+                },
+                KagcConst::Record(rec_value) => {
+                    output_str.push_str(
+                        &format!(
+                            "ADRP {dest_reg_name}, .L__const.{}.{}@PAGE\n", 
+                            c_item.origin_func.unwrap(), 
+                            rec_value.alias.clone()
+                        )
+                    );
+                    output_str.push_str(
+                        &format!(
+                            "ADD {dest_reg_name}, {dest_reg_name}, .L__const.{}.{}@PAGEOFF\n", 
+                            c_item.origin_func.unwrap(), 
+                            rec_value.alias.clone()
+                        )
+                    );
+                }
+                _ => panic!()
+            }
+        }
 
         output_str
     }
@@ -581,7 +649,7 @@ impl Aarch64IRToASM {
             
             IRLitType::Temp(temp_value) => {
                 let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
-                self.try_dropping_temp(*temp_value);
+                // self.try_dropping_temp(*temp_value);
                 src_reg.name()
             },
 
@@ -597,7 +665,12 @@ impl Aarch64IRToASM {
 
             IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp)),
             
-            IRLitType::Reg(idx) => (0, AllocedReg { size: 64, idx: *idx, status: RegStatus::Alloced }),
+            IRLitType::Reg(idx) => (0, AllocedReg { 
+                size: 64, 
+                idx: *idx, 
+                width: RegWidth::QWORD,
+                status: RegStatus::Alloced 
+            }),
             
             _ => {
                 todo!()
@@ -613,7 +686,6 @@ impl Aarch64IRToASM {
             .unwrap_or_else(|| {
                 let alloced_reg: AllocedReg = self.allocate_register();
                 self.temp_reg_map.reg_map.insert(temp_value, alloced_reg.clone());
-                self.try_dropping_temp(temp_value);
                 alloced_reg
             })
     }
@@ -626,7 +698,6 @@ impl Aarch64IRToASM {
             .unwrap_or_else(|| {
                 let alloced_reg: AllocedReg = self.allocate_specific_register(reg);
                 self.temp_reg_map.reg_map.insert(temp, alloced_reg.clone());
-                self.try_dropping_temp(temp);
                 alloced_reg
             })
     }

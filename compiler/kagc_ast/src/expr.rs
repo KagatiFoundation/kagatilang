@@ -74,7 +74,8 @@ pub struct RecordFieldAssignExpr {
 #[derive(Clone, Debug)]
 pub struct RecordCreationExpr {
     pub name: String,
-    pub fields: Vec<RecordFieldAssignExpr>
+    pub fields: Vec<RecordFieldAssignExpr>,
+    pub pool_idx: usize
 }
 
 #[derive(Debug, Clone)]

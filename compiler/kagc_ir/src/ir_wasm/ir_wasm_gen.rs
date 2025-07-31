@@ -1,7 +1,24 @@
-use crate::ir_asm::ir_asm_gen::IRToASM;
+use crate::{ir_asm::ir_asm_gen::IRToASM, ir_instr::{IRAddr, IR}};
 
 pub struct IRToWASM {
 
+}
+
+impl IRToWASM {
+    pub fn gen_wasm(&mut self, irs: &mut [IR]) -> String {
+        // println!("{:#?}", irs);
+        // return String::new();
+
+        let mut output: Vec<String> = vec![];
+        // output.push(".data".to_string());
+        output.push(String::from(".text"));
+
+        for ir in irs {
+            let output_str: String = self.gen_asm_from_ir_node(ir);
+            output.push(output_str);
+        }
+        output.join("\n")
+    }
 }
 
 impl IRToASM for IRToWASM {
@@ -46,7 +63,7 @@ impl IRToASM for IRToWASM {
     }
 
     fn gen_ir_fn_asm(&mut self, fn_ir: &mut crate::ir_instr::IRFunc) -> String {
-        todo!()
+        format!("(fn ${}) (result i32)", fn_ir.name)
     }
 
     fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &crate::ir_instr::IRVarDecl) -> String {
@@ -69,11 +86,11 @@ impl IRToASM for IRToWASM {
         todo!()
     }
 
-    fn gen_asm_load(&mut self, dest: &crate::ir_types::IRLitType, stack_off: usize) -> String {
+    fn gen_asm_load(&mut self, dest: &crate::ir_types::IRLitType, addr: &IRAddr) -> String {
         todo!()
     }
 
-    fn gen_asm_store(&mut self, src: &crate::ir_types::IRLitType, stack_off: usize) -> String {
+    fn gen_asm_store(&mut self, src: &crate::ir_types::IRLitType, addr: &IRAddr) -> String {
         todo!()
     }
 

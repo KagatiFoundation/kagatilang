@@ -23,19 +23,18 @@ SOFTWARE.
 */
 
 use core::panic;
-use std::cell::RefCell;
+use std::{cell::RefCell, collections::HashMap};
 use std::rc::Rc;
 
 use kagc_ast::{record::*, *};
 use kagc_comp_unit::CompilationUnit;
-use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::*;
 use kagc_scope::scope::ScopeType;
 use kagc_symbol::{function::*, *};
 use kagc_token::*;
 use kagc_types::{
-    builtins::obj::{StringObj, TypeId}, 
+    builtins::obj::TypeId, 
     record::RecordFieldType, 
     LitType, 
     LitTypeVariant
@@ -119,15 +118,15 @@ pub struct Parser {
 
     shared_pctx: Rc<RefCell<SharedParserCtx>>,
 
-    __panic_mode: bool,
-
     /// Label generator that is going to be used by string literals only.
-    _str_label_: usize
+    _str_label_: usize,
+
+    var_offsets: HashMap<String, usize>
 }
 
 impl Parser {
     #[allow(clippy::new_without_default)]
-    pub fn new(panic_mode: bool, ctx: Rc<RefCell<CompilerCtx>>, shared_pctx: Rc<RefCell<SharedParserCtx>>) -> Self {
+    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, shared_pctx: Rc<RefCell<SharedParserCtx>>) -> Self {
         let current_token: Token = Token::none();
         Self {
             tokens: Rc::new(vec![]),
@@ -143,8 +142,8 @@ impl Parser {
                 is_erronous_parse: false,
             },
             shared_pctx,
-            __panic_mode: panic_mode,
-            _str_label_: 0
+            _str_label_: 0,
+            var_offsets: HashMap::new()
         }
     }
 
@@ -175,7 +174,6 @@ impl Parser {
                 }
             }
         }
-
         nodes
     }
 
@@ -249,6 +247,7 @@ impl Parser {
             | TokenKind::KW_RETURN
             | TokenKind::KW_BREAK
             | TokenKind::T_IDENTIFIER => {
+                println!("error from here: {curr_tok_kind:#?}");
                 _ = self.token_match(TokenKind::T_SEMICOLON)?;
             },
             _ => ()
@@ -293,15 +292,15 @@ impl Parser {
         if let Some(node) = left {
             Ok(node)
         } else {
-            let __err: Result<AST, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
-                self.get_current_file_name(),
-                vec![],
-                self.current_token.clone(),
-            )));
-            if self.__panic_mode {
-                panic!("{:?}", __err);
-            }
-            __err
+            Err(
+                Box::new(
+                    BErr::unexpected_token(
+                        self.get_current_file_name(),
+                        vec![],
+                        self.current_token.clone(),
+                    )
+                )
+            )
         }
     }
 
@@ -456,17 +455,15 @@ impl Parser {
                 let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
-                    let err: Result<_, Box<BErr>> = Err(Box::new(BErr::unexpected_token(
-                        current_file.clone(), 
-                        vec![TokenKind::T_COMMA, TokenKind::T_RPAREN],
-                        self.current_token.clone()
-                    )));
-
-                    if self.__panic_mode {
-                        panic!("{:?}", err);
-                    }
-
-                    return err;
+                    return Err(
+                        Box::new(
+                            BErr::unexpected_token(
+                                current_file.clone(), 
+                                vec![TokenKind::T_COMMA, TokenKind::T_RPAREN],
+                                self.current_token.clone()
+                            )
+                        )
+                    );
                 } 
                 else if is_tok_rparen {
                     break;
@@ -517,7 +514,7 @@ impl Parser {
         self.ctx.borrow_mut().exit_scope();
 
         // reset offset counter after parsing function
-        let tmp_off = self.local_offset;
+        let local_offset = self.local_offset;
         self.local_offset = 0;
 
         // reset temporary symbols holder after the function has been parsed
@@ -531,7 +528,7 @@ impl Parser {
          Also the x0-x3 has to be preserved if they are used during function calls. 
          So, allocate extra 32 bytes for them as well.
          */
-        let stack_offset: i32 = (tmp_off + 15 + 32) & !15;
+        let stack_offset: i32 = (local_offset + 15 + 32) & !15;
 
         // Return AST for function declaration
         Ok(AST::new(
@@ -597,7 +594,7 @@ impl Parser {
     fn parse_return_stmt(&mut self) -> ParseResult2 {
         // check whether parser's parsing a function or not
         if self.current_function_id == INVALID_FUNC_ID {
-            let __err: Result<_, Box<BErr>> = Err(
+            return Err(
                 Box::new(
                     BErr::unexpected_token(
                         self.get_current_file_name(), 
@@ -606,12 +603,6 @@ impl Parser {
                     )
                 )
             );
-
-            if self.__panic_mode {
-                panic!("{:?}", __err);
-            }
-
-            return __err;
         }
 
         _ = self.token_match(TokenKind::KW_RETURN)?;
@@ -799,6 +790,8 @@ impl Parser {
         // Name of the variable.
         let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
 
+        self.var_offsets.insert(id_token.lexeme.clone(), self.local_offset as usize);
+
         // Parser may encounter a colon after the identifier name.
         // This means the type of this variable has been defined
         // by the user.
@@ -845,7 +838,19 @@ impl Parser {
             }
         }
 
-        let return_result: ParseResult2 = if let Some(assign_ast_node_res) = assignment_parse_res {
+        let local_off = if inside_func {
+            if let SymbolType::Record { .. } = sym_type {
+                0
+            } 
+            else {
+                self.gen_next_local_offset()
+            }
+        } 
+        else {
+            0
+        };
+
+        if let Some(assign_ast_node_res) = assignment_parse_res {
             Ok(AST::new(
                 ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
                     symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
@@ -853,7 +858,7 @@ impl Parser {
                     class: var_class,
                     sym_name: id_token.lexeme.clone(),
                     value_type: TypeId::from(var_type),
-                    local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
+                    local_offset: local_off,
                     func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
                     default_value
                 })),
@@ -864,24 +869,8 @@ impl Parser {
             ))
         } 
         else {
-            Ok(AST::new(
-                ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
-                    symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
-                    class: var_class,
-                    symbol_type: sym_type,
-                    sym_name: id_token.lexeme.clone(),
-                    value_type: TypeId::from(var_type),
-                    local_offset: if inside_func { self.gen_next_local_offset() } else { 0 },
-                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
-                    default_value
-                })),
-                ASTOperation::AST_VAR_DECL,
-                None,
-                None,
-                var_type,
-            ))
-        };
-        return_result
+            panic!("Variable declared without any assignment!")
+        }
     }
 
     fn gen_next_local_offset(&mut self) -> usize {
@@ -997,7 +986,8 @@ impl Parser {
                     Expr::RecordCreation(
                         RecordCreationExpr { 
                             name: id_token.lexeme.clone(), 
-                            fields
+                            fields,
+                            pool_idx: 0xFFFFFFFF // this value will be set by the Resolver
                         }
                     )
                 ),
@@ -1187,7 +1177,7 @@ impl Parser {
             },
 
             _ => {
-                let __e: Result<AST, Box<BErr>> = Err(
+                Err(
                     Box::new(
                         BErr::unexpected_token(
                         current_file.clone(),
@@ -1195,11 +1185,7 @@ impl Parser {
                         current_token.clone(),
                         )
                     )
-                );
-                if self.__panic_mode {
-                    panic!("{:?}", __e);
-                }
-                __e
+                )
             }
         }
     }
@@ -1258,6 +1244,13 @@ impl Parser {
             field_chain.push(access.lexeme.clone());
         }
 
+        let field_off = if let Some(rec_base_off) = self.var_offsets.get(rec_alias) {
+            *rec_base_off
+        }
+        else {
+            0
+        };
+
         Ok(
             AST::create_leaf(
                 ASTKind::ExprAST(
@@ -1267,7 +1260,7 @@ impl Parser {
                             rec_alias: rec_alias.to_string(), 
                             // field_name: access.lexeme.clone(),
                             field_chain,
-                            rel_stack_off: 0
+                            rel_stack_off: field_off
                         }
                     )
                 ),
@@ -1374,7 +1367,7 @@ impl Parser {
         let current: Token = self.current_token.clone();
 
         if kind != current.kind {
-            let err = Err(
+            return Err(
                 Box::new(
                     BErr::unexpected_token(
                         self.get_current_file_name(), 
@@ -1383,12 +1376,6 @@ impl Parser {
                     )
                 )
             );
-
-            if self.__panic_mode {
-                panic!("{:?}", err);
-            }
-
-            return err;
         }
 
         self.skip_to_next_token();

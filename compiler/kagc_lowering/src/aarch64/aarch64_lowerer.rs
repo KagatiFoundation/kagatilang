@@ -94,13 +94,8 @@ impl CodeGen for Aarch64CodeGen {
             }
             println!(".data\n.global {}", symbol.name);
             if symbol.sym_type == SymbolType::Variable {
-                Aarch64CodeGen::dump_global_with_alignment(symbol);
             } else if symbol.sym_type == SymbolType::Array {
-                let array_data_size: usize = symbol.lit_type.size();
                 println!("{}:", symbol.name);
-                for _ in 0..symbol.size {
-                    Aarch64CodeGen::alloc_data_space(array_data_size);
-                }
             }
         }
     }
@@ -310,7 +305,6 @@ impl CodeGen for Aarch64CodeGen {
         if symbol.class == StorageClass::GLOBAL {
             let value_reg: AllocedReg = self.__allocate_reg(val_type.size()); // self.reg_manager.borrow_mut().allocate();
             let reg_name: String = value_reg.name();
-            self.dump_gid_address_load_code_from_name(&reg_name, &symbol);
             println!("ldr {}, [{}]", value_reg_name, reg_name);
             self.reg_manager.borrow_mut().free_register(value_reg.idx);
         } else {
@@ -336,7 +330,6 @@ impl CodeGen for Aarch64CodeGen {
         let addr_reg: AllocedReg = if symbol.class == StorageClass::GLOBAL {
             let ar: AllocedReg = self.__allocate_reg(symbol.lit_type.size());
             let addr_reg_name: String = ar.name();
-            self.dump_gid_address_load_code_from_name(&addr_reg_name, &symbol);
             println!("str {}, [{}]", reg_name, addr_reg_name);
             ar
         } else {
@@ -446,8 +439,6 @@ impl CodeGen for Aarch64CodeGen {
 
         let off_addr_reg: AllocedReg = self.__allocate_reg(64); // self.reg_manager.borrow_mut().allocate();
         let off_addr_reg_name: String = self.reg_manager.borrow().name(off_addr_reg.idx, off_addr_reg.size);
-
-        self.dump_gid_address_load_code_from_name(&addr_reg_name, &symbol);
 
         println!(
             "ldr {}, [{}, {}, lsl {}]",
@@ -729,7 +720,8 @@ impl CodeGen for Aarch64CodeGen {
         Ok(vec![
             IRInstr::Load {
                 dest: IRLitType::Temp(lit_val_tmp),
-                stack_off: sym.local_offset as usize
+                addr: IRAddr::StackOff(sym.local_offset as usize)
+                // stack_off: sym.local_offset as usize
             }
         ])
     }
@@ -768,28 +760,28 @@ impl CodeGen for Aarch64CodeGen {
 
         for (rev_idx, last_instr) in last_instrs.iter().rev().enumerate() {
             param_instrs.push(
-                IRInstr::Mov(
-                    IRLitType::Reg(rev_idx), 
-                    last_instr.dest().unwrap()
-                )
+                IRInstr::Mov {
+                    dest: IRLitType::Reg(rev_idx), 
+                    src: last_instr.dest().unwrap()
+                }
             );
         }
 
         let preserve_ret_val_instr: Option<IRInstr> = 
         if !func_call_expr.result_type.is_void() && !func_call_expr.result_type.is_none() {
             if use_reg {
-                Some(IRInstr::Mov(
-                    IRLitType::Reg(forced_reg.unwrap()),
-                    IRLitType::Reg(0)
-                ))
+                Some(IRInstr::Mov {
+                    dest: IRLitType::Reg(forced_reg.unwrap()),
+                    src: IRLitType::Reg(0)
+                })
             }
             else {
                 let call_tmp: usize = fn_ctx.temp_counter;
                 fn_ctx.temp_counter += 1;
-                Some(IRInstr::Mov(
-                    IRLitType::Temp(call_tmp),
-                    IRLitType::Reg(0)
-                ))
+                Some(IRInstr::Mov {
+                    dest: IRLitType::Temp(call_tmp),
+                    src: IRLitType::Reg(0)
+                })
             }
         }
         else {
@@ -826,10 +818,10 @@ impl CodeGen for Aarch64CodeGen {
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
                     ret_instrs.push(
                         IR::Instr(
-                            IRInstr::Mov(
-                                IRLitType::Reg(0),
-                                last_instr.dest().unwrap()
-                            )
+                            IRInstr::Mov {
+                                dest: IRLitType::Reg(0),
+                                src: last_instr.dest().unwrap()
+                            }
                         )
                     );
                 }
@@ -945,7 +937,7 @@ impl CodeGen for Aarch64CodeGen {
         Ok(vec![
             IRInstr::Load { 
                 dest: IRLitType::Temp(lit_val_tmp), 
-                stack_off: access.rel_stack_off + fn_ctx.stack_offset
+                addr: IRAddr::StackOff(access.rel_stack_off)
             }
         ])
     }
@@ -993,48 +985,6 @@ impl Aarch64CodeGen {
         let lbl = self.label_id;
         self.label_id += 1;
         lbl
-    }
-
-    fn dump_gid_address_load_code_from_name(&mut self, reg_name: &str, symbol: &Symbol) {
-        if symbol.class == StorageClass::GLOBAL {
-            let sym_name: &str = &symbol.name;
-            println!("adrp {}, {}@PAGE", reg_name, sym_name);
-            println!("add {}, {}, {}@PAGEOFF", reg_name, reg_name, sym_name);
-        }
-    }
-
-    fn alloc_data_space(size: usize) {
-        match size {
-            1 => println!(".byte 0"),
-            4 => println!(".word 0"),
-            8 => println!(".quad 0"),
-            _ => panic!("Not possible to generate space for size: {}", size),
-        }
-    }
-
-    fn dump_global_with_alignment(symbol: &Symbol) {
-        let def_val: String = if let Some(dv) = &symbol.default_value {
-            dv.to_string()
-        } 
-        else { 
-            "0".to_string() 
-        };
-        match symbol.lit_type {
-            LitTypeVariant::I32 => println!("{}: .align 4\n\t.word {}", symbol.name, def_val),
-            LitTypeVariant::U8 => println!("{}:\t.byte {}", symbol.name, def_val),
-            LitTypeVariant::Str => {
-                let label_id: i32 = if let Some(lit_val) = &symbol.default_value {
-                    match lit_val {
-                        LitType::I32(__id) => *__id,
-                        _ => panic!("Not a valid label id for string literal '{}'", symbol.default_value.as_ref().unwrap())
-                    }
-                } else {
-                    panic!("No label id provided for string literal");
-                };
-                println!("{}:\t.quad ._L{:?}", symbol.name, label_id);
-            }
-            _ => panic!("Symbol's size is not supported right now: '{:?}'", symbol),
-        }
     }
 
     fn gen_int_value_load_code(value: &LitType, reg_name: &str) -> Result<String, ()> {

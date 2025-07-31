@@ -3,11 +3,10 @@ use std::{
     collections::BTreeMap, 
     rc::Rc
 };
+use indexmap::IndexMap;
 use kagc_ast::*;
 use kagc_const::pool::{
-    KagcConst, 
-    PoolIdx, 
-    RecordConst
+    KagcConst, OrderedMap, PoolIdx, RecordConst
 };
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::{
@@ -248,6 +247,7 @@ impl Resolver {
                     KagcConst::Record(record_const),
                     self.curr_func_id,
                 );
+                rec_create.pool_idx = record_idx;
                 return Ok(record_idx);
             } else {
                 return Ok(0xFFFFFFFF);
@@ -266,7 +266,8 @@ impl Resolver {
         Ok(RecordConst {
             type_name: rec_create.name.clone(),
             alias: symbol_name.to_string(),
-            fields: indices.into_iter().collect::<BTreeMap<String, PoolIdx>>(),
+            fields: OrderedMap(IndexMap::from_iter(indices)),
+            alignment: 3 // on Mac M1 silicon chip
         })
     }
 
@@ -313,7 +314,7 @@ impl Resolver {
             let record_entry = RecordType {
                 name: stmt.name.clone(),
                 size: 0,
-                __alignment: 0,
+                __alignment: stmt.alignment,
                 fields: stmt.fields.iter().enumerate().map(|(idx, field)| {
                     RecordFieldType {
                         name: field.name.clone(),

@@ -56,8 +56,8 @@ impl SemanticAnalyzer {
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
             if let Err(err) = result {
-                panic!("{err:#?}");
-                // errors.push(err);
+                // panic!("{err:#?}");
+                errors.push(err);
             }
         }
 
@@ -190,9 +190,6 @@ impl SemanticAnalyzer {
         if let Some(rec_sym) = ctx_borrow.deep_lookup(&field_access.rec_alias) {
             if let SymbolType::Record { name: rec_name } = &rec_sym.sym_type {
                 if let Some(rec) = ctx_borrow.lookup_record(rec_name) {
-                    for chain_item in &field_access.field_chain {
-
-                    }
                     if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_chain[0]) {
                         field_access.rel_stack_off = field.rel_stack_off;
                         return Ok(LitTypeVariant::from(field.typ));

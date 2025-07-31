@@ -30,6 +30,13 @@ pub type RegSize = usize;
 /// Register index
 pub type RegIdx = usize;
 
+/// Register width
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum  RegWidth {
+    WORD,
+    QWORD
+}
+
 pub const INVALID_REG_IDX: usize = 0xFFFFFFFF;
 
 /// Indicating no register was produced from an code generation operation.
@@ -70,6 +77,8 @@ pub struct AllocedReg {
     /// The size of the allocated register (e.g., 32-bit, 64-bit).
     pub size: RegSize,
 
+    pub width: RegWidth,
+
     /// The index of the allocated register within the register set.
     pub idx: RegIdx,
 
@@ -81,6 +90,7 @@ impl AllocedReg {
     pub fn no_reg() -> Self {
         Self {
             size: 0xFFFFFFFF,
+            width: RegWidth::WORD,
             idx: INVALID_REG_IDX,
             status: RegStatus::Invalid
         }
@@ -91,15 +101,12 @@ impl AllocedReg {
     }
 
     pub fn name(&self) -> String {
-        format!("x{}", self.idx)
-    }
-
-    pub fn name_32(&self) -> String {
-        format!("w{}", self.idx)
-    }
-
-    pub fn name_64(&self) -> String {
-        format!("x{}", self.idx)
+        if self.width == RegWidth::WORD {
+            format!("w{}", self.idx)
+        }
+        else {
+            format!("x{}", self.idx)
+        }
     }
 }
 

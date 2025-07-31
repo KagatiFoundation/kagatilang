@@ -65,11 +65,13 @@ pub trait IRToASM {
 
             IR::Instr(irinstr) => {
                 match irinstr {
-                    IRInstr::Load { dest, stack_off } => self.gen_asm_load(dest, *stack_off),
+                    // MOV instruction
+                    IRInstr::Mov { dest, src } => self.gen_ir_mov_asm(dest, src),
 
+                    // Stack operations
+                    IRInstr::Load { dest, addr } => self.gen_asm_load(dest, addr),
+                    IRInstr::Store { src, addr } => self.gen_asm_store(src, addr),
                     IRInstr::LoadGlobal { pool_idx, dest } => self.gen_load_global_asm(*pool_idx, dest),
-                    
-                    IRInstr::Mov(irlit_type, irlit_type1) => self.gen_ir_mov_asm(irlit_type, irlit_type1),
                     
                     // Arithmetic operations
                     IRInstr::Add { dest, op1, op2 } => self.gen_ir_add_asm(dest, op1, op2),
@@ -80,8 +82,6 @@ pub trait IRToASM {
                     IRInstr::Call { fn_name, params, return_type } => self.gen_ir_fn_call_asm(fn_name.clone(), params, return_type),
 
                     IRInstr::Jump { label_id } => self.gen_ir_jump_asm(*label_id),
-
-                    IRInstr::Store { src, stack_off, .. } => self.gen_asm_store(src, stack_off.as_stack_off().unwrap()),
 
                     IRInstr::CallStart => self.start_func_call_proc(),
 
@@ -145,9 +145,9 @@ pub trait IRToASM {
 
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String;
     
-    fn gen_asm_load(&mut self, dest: &IRLitType, stack_off: usize) -> String;
+    fn gen_asm_load(&mut self, dest: &IRLitType, addr: &IRAddr) -> String;
     
-    fn gen_asm_store(&mut self, src: &IRLitType, stack_off: usize) -> String;
+    fn gen_asm_store(&mut self, src: &IRLitType, addr: &IRAddr) -> String;
 
     fn gen_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String;
 

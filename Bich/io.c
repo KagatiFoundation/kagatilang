@@ -1,11 +1,13 @@
 #include <stdio.h>
 
+void print_int(int value) {
+    printf("%d\n", value);
+}
+
 void println(char *str) {
     puts(str);
-    puts("returning from here");
 }
 
 void eprintln(char *str) {
-    fprintf(stderr, "%s\n", str);
-    return;
+    fputs(str, stderr);
 }

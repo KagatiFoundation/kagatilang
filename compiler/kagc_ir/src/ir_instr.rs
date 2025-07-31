@@ -3,8 +3,17 @@ use kagc_symbol::StorageClass;
 use crate::{ir_types::*, LabelId};
 
 #[derive(Debug, Clone)]
+pub enum IRAddr {
+    StackOff(usize),
+    BaseOff(IRLitType, i32)
+}
+
+#[derive(Debug, Clone)]
 pub enum IRInstr {
-    Mov(IRLitType, IRLitType),
+    Mov {
+        dest: IRLitType, 
+        src: IRLitType
+    },
     
     Add {
         dest: IRLitType, 
@@ -52,17 +61,14 @@ pub enum IRInstr {
         /// Value to be stored. `src` is always a register type.
         src: IRLitType,
 
-        /// Location to store to. `IRLitType` must be of type `IRLitType::StackOff(usize)`.
-        stack_off: IRLitType
+        addr: IRAddr 
     },
     
     Load {
         /// Destination to load to. `dest` is always a register type
         dest: IRLitType,
 
-        /// Stack offset to load value from
-        /// TODO: change the type of `IRLitType`
-        stack_off: usize
+        addr: IRAddr
     },
 
     /**
@@ -107,7 +113,7 @@ pub enum IRInstr {
 impl IRInstr {
     pub fn dest(&self) -> Option<IRLitType> {
         match self {
-            Self::Mov(dst, _) => Some(dst.clone()),
+            Self::Mov { dest, .. } => Some(dest.clone()),
 
             Self::Add { dest, .. } => Some(dest.clone()),
             
@@ -123,17 +129,22 @@ impl IRInstr {
             
             Self::LoadGlobal { dest, .. } => Some(dest.clone()),
 
-            Self::Store { stack_off, .. } => Some(stack_off.clone()),
+            Self::Store { addr, .. } => {
+                match addr {
+                    IRAddr::StackOff(off) => Some(IRLitType::StackOff(*off)),
+                    IRAddr::BaseOff(base, _) => Some(base.clone())
+                }
+            },
 
             _ => None
         }
     }
 
     pub fn mov_into_temp(temp: usize, value: IRLitType) -> Self {
-        Self::Mov(
-            IRLitType::Temp(temp), 
-            value
-        )
+        Self::Mov {
+            dest: IRLitType::Temp(temp), 
+            src: value
+        }
     }
 }
 

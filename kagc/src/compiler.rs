@@ -7,7 +7,7 @@ use std::{
 use kagc_comp_unit::{source::*, *};
 
 use kagc_ctx::CompilerCtx;
-use kagc_ir::ir_asm::aarch64::Aarch64IRToASM;
+use kagc_ir::{ir_asm::aarch64::Aarch64IRToASM, ir_wasm::ir_wasm_gen::IRToWASM};
 use kagc_lexer::Tokenizer;
 
 use kagc_lowering::{
@@ -66,9 +66,6 @@ impl Compiler {
         // AST to IR generator
         let mut lowerer = Aarch64CodeGen::new(rm.clone(), self.ctx.clone());
 
-        // IR to Aarch64 ASM generator
-        let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm.clone());
-
         let mut final_irs = vec![];
 
         for unit_file in &self.compiler_order {
@@ -79,6 +76,12 @@ impl Compiler {
             }
         }
 
+        // let mut cg1 = IRToWASM {};
+        // let code = cg1.gen_wasm(&mut final_irs);
+        // println!("{code}");
+
+        // IR to Aarch64 ASM generator
+        let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm.clone());
         let code = cg.gen_asm(&mut final_irs);
         println!("{code}");
         Ok(())
@@ -98,7 +101,7 @@ impl Compiler {
         unit.tokens = Some(Rc::new(tokens));
         unit.stage = ParsingStage::Tokenized;
 
-        let mut parser = Parser::new(true, self.ctx.clone(), self.shared_pctx.clone());
+        let mut parser = Parser::new(self.ctx.clone(), self.shared_pctx.clone());
         let asts = parser.parse(&mut unit);
         unit.asts.extend(asts);
 

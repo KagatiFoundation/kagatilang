@@ -307,17 +307,10 @@ pub trait CodeGen {
     }
 
     /// Generates code for the given literal value expression.
-    ///
     /// This method generates code to load the literal value into a register based on its type.
     ///
     /// # Arguments
-    ///
     /// * `lit_expr` - The literal value expression for which to generate code.
-    ///
-    /// # Returns
-    ///
-    /// The register index if code generation is successful, otherwise 0xFFFFFFFF.
-    ///
     fn gen_lit_expr(&mut self, lit_expr: &LitValExpr) -> CodeGenResult {
         match lit_expr.result_type {
             LitTypeVariant::U8 |
@@ -407,7 +400,7 @@ pub trait CodeGen {
     /// Generate IR nodes from an AST expression node.
     fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         if !ast.kind.is_expr() {
-            panic!("Needed an Expr--but found {:#?}", ast);
+            panic!("Needed an Expr--but found {ast:#?}");
         }
         
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
@@ -424,44 +417,51 @@ pub trait CodeGen {
             Expr::Ident(identexpr) => self.gen_ident_ir_expr(identexpr, fn_ctx),
             Expr::FuncCall(funccallexpr) => self.gen_ir_fn_call_expr(funccallexpr, fn_ctx),
             Expr::RecordCreation(ref mut recexpr) => self.lower_rec_creation_to_ir(recexpr, fn_ctx),
-            Expr::RecordFieldAssign(recfieldexpr) => self.lower_rec_field_assign_to_ir(recfieldexpr, fn_ctx),
             Expr::RecordFieldAccess(recfieldexpr) => self.lower_rec_field_access_to_ir(recfieldexpr, fn_ctx),
             Expr::Null => self.lower_null_const_to_ir(fn_ctx),
             _ => todo!()
         }
     }
 
-    fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, rec_mem_loc: IRLitType, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut output = vec![];
-        let expr_res = self.__gen_expr(&mut rec_field.value, fn_ctx)?;
-        let expr_temp = expr_res.last().unwrap().clone();
-        let mut store_src = expr_temp.dest().clone();
 
-        if let Some(IRLitType::StackOff(off)) = store_src {
-            let tmp_id: usize = fn_ctx.temp_counter;
-            fn_ctx.temp_counter += 1;
-            output.push(IRInstr::Load { 
-                dest: IRLitType::Temp(tmp_id), 
-                stack_off: off 
-            });
-            store_src = Some(IRLitType::Temp(tmp_id));
-        }
-
-        let store = IRInstr::Store { 
-            src: store_src.unwrap(),
-            stack_off: IRLitType::StackOff(rec_field.offset)
+        let tmp_id: usize = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 1;
+        let load_field_val = IRInstr::Load { 
+            dest: IRLitType::Temp(tmp_id), 
+            addr: IRAddr::BaseOff(rec_mem_loc.clone(), rec_field.offset as i32)
         };
 
-        output.extend(expr_res);
-        output.push(store);
+        let store_field_val = IRInstr::Store { 
+            src: IRLitType::Temp(tmp_id),
+            addr: IRAddr::StackOff(rec_field.offset)
+        };
+
+        // increment stack offset for each record field
+        fn_ctx.stack_offset += 1;
+
+        output.push(load_field_val);
+        output.push(store_field_val);
         Ok(output)
     }
 
     fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut output = vec![];
 
+       let load_rec_into_stack = IRInstr::LoadGlobal { 
+            pool_idx: rec_creation.pool_idx,
+            dest: {
+                let tmp_id: usize = fn_ctx.temp_counter;
+                fn_ctx.temp_counter += 1;
+                IRLitType::Temp(tmp_id)
+            }
+        };
+        let rec_dest = load_rec_into_stack.dest();
+        output.push(load_rec_into_stack);
+
         for field in &mut rec_creation.fields {
-            let field_output = self.lower_rec_field_assign_to_ir(field, fn_ctx)?;
+            let field_output = self.lower_rec_field_assign_to_ir(field, rec_dest.clone().unwrap(), fn_ctx)?;
             output.extend(field_output);
         }
 

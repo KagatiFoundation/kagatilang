@@ -39,7 +39,7 @@ impl SpillCompilerPass {
                                                 index,
                                                 IRInstr::Store {
                                                     src: IRLitType::Reg(reg),
-                                                    stack_off: IRLitType::StackOff(index) // index serves as an unique identifier for load offseet
+                                                    addr: IRAddr::StackOff(index)
                                                 }
                                             )
                                         );
@@ -65,7 +65,7 @@ impl SpillCompilerPass {
 
     fn extract_reg_from_instr(instr: &IRInstr) -> Option<(RegIdx, usize)> {
         match instr {
-            IRInstr::Mov(dest, _) => dest.as_alloc_reg(),
+            IRInstr::Mov { dest, .. } => dest.as_alloc_reg(),
 
             IRInstr::Add { dest, .. } => dest.as_alloc_reg(),
             

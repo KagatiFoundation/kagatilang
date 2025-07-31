@@ -20,6 +20,7 @@ impl AllocedReg {
         AllocedReg {
             idx: EARLY_RETURN,
             size: 0,
+            width: RegWidth::WORD,
             status: RegStatus::Invalid
         }
     }
@@ -46,10 +47,18 @@ impl Aarch64RegManager2 {
         self.available_registers[reg_to_spill] = true; 
         self.register_map.remove(&reg_to_spill);
 
+        let width = if alloc_size == 64 {
+            RegWidth::QWORD
+        }
+        else {
+            RegWidth::WORD
+        };
+
         AllocedReg { 
             size: alloc_size, 
             idx: reg_to_spill,
-            status: RegStatus::Spilled
+            status: RegStatus::Spilled,
+            width
         }
     }
 }
@@ -74,10 +83,18 @@ impl RegManager2 for Aarch64RegManager2 {
                     }
                 );
 
+                let width = if alloc_size == 64 {
+                    RegWidth::QWORD
+                }
+                else {
+                    RegWidth::WORD
+                };
+
                 return AllocedReg {
                     idx: i,
                     size: alloc_size,
-                    status: RegStatus::Alloced
+                    status: RegStatus::Alloced,
+                    width
                 };
             }
         }
@@ -100,9 +117,17 @@ impl RegManager2 for Aarch64RegManager2 {
                 }
             );
 
+            let width = if alloc_size == 64 {
+                RegWidth::QWORD
+            }
+            else {
+                RegWidth::WORD
+            };
+
             return AllocedReg {
                 idx,
                 size: alloc_size,
+                width,
                 status: RegStatus::Alloced
             };
         }
@@ -128,9 +153,18 @@ impl RegManager2 for Aarch64RegManager2 {
                         status: RegStatus::Alloced
                     }
                 );
+
+                let width = if alloc_size == 64 {
+                    RegWidth::QWORD
+                }
+                else {
+                    RegWidth::WORD
+                };
+
                 return AllocedReg {
                     idx: i,
                     size: alloc_size,
+                    width,
                     status: RegStatus::Alloced
                 };
             }
@@ -153,9 +187,17 @@ impl RegManager2 for Aarch64RegManager2 {
                 }
             );
 
+            let width = if alloc_size == 64 {
+                RegWidth::QWORD
+            }
+            else {
+                RegWidth::WORD
+            };
+
             return AllocedReg {
                 idx,
                 size: alloc_size,
+                width,
                 status: RegStatus::Alloced
             };
         }
