@@ -150,7 +150,7 @@ impl BErr {
             info: Some(
                 BErrorInfo { 
                     token: found.clone(), 
-                    message: format!("Unexpected token: expected {} but found '{}'", expect_token_msg, found.kind.as_str()), 
+                    message: format!("Unexpected token: expected {} but found '{found:#?}'", expect_token_msg), 
                     source_file
                 }
             )

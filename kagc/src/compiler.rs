@@ -7,14 +7,14 @@ use std::{
 use kagc_comp_unit::{source::*, *};
 
 use kagc_ctx::CompilerCtx;
-use kagc_ir::{ir_asm::aarch64::Aarch64IRToASM, ir_wasm::ir_wasm_gen::IRToWASM};
+use kagc_ir::ir_asm::aarch64::Aarch64IRToASM;
 use kagc_lexer::Tokenizer;
 
 use kagc_lowering::{
     aarch64::aarch64_lowerer::Aarch64CodeGen, 
     CodeGen
 };
-use kagc_parser::{Parser, SharedParserCtx};
+use kagc_parser::{builder::ParserBuilder, SharedParserCtx};
 use kagc_sema::{resolver::Resolver, SemanticAnalyzer};
 use kagc_target::asm::aarch64::Aarch64RegManager2;
 
@@ -101,8 +101,13 @@ impl Compiler {
         unit.tokens = Some(Rc::new(tokens));
         unit.stage = ParsingStage::Tokenized;
 
-        let mut parser = Parser::new(self.ctx.clone(), self.shared_pctx.clone());
-        let asts = parser.parse(&mut unit);
+        let mut parser = ParserBuilder::new()
+            .context(self.ctx.clone())
+            .shared_context(self.shared_pctx.clone())
+            .compile_unit(&mut unit)
+            .build();
+
+        let asts = parser.parse();
         unit.asts.extend(asts);
 
         let imports = unit.extract_imports();

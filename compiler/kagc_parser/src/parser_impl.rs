@@ -27,7 +27,6 @@ use std::{cell::RefCell, collections::HashMap};
 use std::rc::Rc;
 
 use kagc_ast::{record::*, *};
-use kagc_comp_unit::CompilationUnit;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::*;
 use kagc_scope::scope::ScopeType;
@@ -69,17 +68,6 @@ impl SharedParserCtx {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ParserContext {
-    is_erronous_parse: bool,
-}
-
-impl ParserContext {
-    pub fn toggle_error_flag(&mut self) {
-        self.is_erronous_parse = !self.is_erronous_parse;
-    }
-}
-
 /// Represents a parser for converting tokens into an
 /// abstract syntax tree (AST).
 #[derive(Debug, Clone)]
@@ -113,9 +101,6 @@ pub struct Parser {
     /// Context in which the ```Parser``` is going to work on.
     ctx: Rc<RefCell<CompilerCtx>>,
 
-    /// Context of this parser.
-    __pctx: ParserContext,
-
     shared_pctx: Rc<RefCell<SharedParserCtx>>,
 
     /// Label generator that is going to be used by string literals only.
@@ -125,38 +110,31 @@ pub struct Parser {
 }
 
 impl Parser {
-    #[allow(clippy::new_without_default)]
-    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, shared_pctx: Rc<RefCell<SharedParserCtx>>) -> Self {
-        let current_token: Token = Token::none();
+    /// Internal parser constructor.
+    /// Use `ParserBuilder` instead.
+    pub(crate) fn new(
+        ctx: Rc<RefCell<CompilerCtx>>, 
+        shared_pctx: Rc<RefCell<SharedParserCtx>>,
+        tokens: Rc<Vec<Token>>,
+        current: Token
+    ) -> Self {
         Self {
-            tokens: Rc::new(vec![]),
+            tokens,
             current: 0,
-            current_token,
+            current_token: current,
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
             temp_local_syms: Symtable::default(),
             local_offset: 0,
             next_local_sym_pos: 0,
             ctx,
-            __pctx: ParserContext {
-                is_erronous_parse: false,
-            },
             shared_pctx,
             _str_label_: 0,
             var_offsets: HashMap::new()
         }
     }
 
-    pub fn parse(&mut self, unit: &mut CompilationUnit) -> Vec<AST> {
-        if let Some(tokens) = &unit.tokens {
-            self.tokens = tokens.clone();
-        }
-        else {
-            panic!("No tokens provided!");
-        }
-
-        self.current_token = self.tokens[0].clone();
-
+    pub fn parse(&mut self) -> Vec<AST> {
         let mut nodes: Vec<AST> = vec![];
         loop {
             if self.current_token.kind == TokenKind::T_EOF {
@@ -169,16 +147,11 @@ impl Parser {
             else if let Some(parse_error) = stmt_parse_result.err() {
                 if !parse_error.is_ignorable() {
                     parse_error.fatal();
-                    self.__pctx.toggle_error_flag();
                     self.skip_to_next_stmt();
                 }
             }
         }
         nodes
-    }
-
-    pub fn has_parsing_errors(&self) -> bool {
-        self.__pctx.is_erronous_parse
     }
 
     /// Parses a single statement based on the current token.
@@ -247,7 +220,6 @@ impl Parser {
             | TokenKind::KW_RETURN
             | TokenKind::KW_BREAK
             | TokenKind::T_IDENTIFIER => {
-                println!("error from here: {curr_tok_kind:#?}");
                 _ = self.token_match(TokenKind::T_SEMICOLON)?;
             },
             _ => ()
@@ -495,12 +467,7 @@ impl Parser {
         // create function body
         if func_storage_class != StorageClass::EXTERN {
             let function_body_res: ParseResult2 = self.parse_compound_stmt();
-
-            let body: AST = match function_body_res {
-                Ok(ast) => ast,
-                Err(err) => return Err(err)
-            };
-
+            let body: AST = function_body_res?;
             function_body = Some(body);
         } 
         else {
@@ -604,11 +571,10 @@ impl Parser {
                 )
             );
         }
-
         _ = self.token_match(TokenKind::KW_RETURN)?;
 
         if self.current_token.kind == TokenKind::T_SEMICOLON {
-            return Ok(
+            Ok(
                 AST::create_leaf(
                     ASTKind::StmtAST(
                         Stmt::Return(
@@ -622,18 +588,24 @@ impl Parser {
                     None,
                     None
                 )
-            );
+            )
         }
-        let return_expr: AST = self.parse_record_or_expr()?;
-        Ok(AST::new(
-            ASTKind::StmtAST(Stmt::Return(ReturnStmt {
-                func_id: self.current_function_id,
-            })),
-            ASTOperation::AST_RETURN,
-            Some(return_expr),
-            None,
-            LitTypeVariant::None,
-        ))
+        else {
+            let return_expr: AST = self.parse_record_or_expr()?;
+            Ok(AST::new(
+                ASTKind::StmtAST(
+                    Stmt::Return(
+                        ReturnStmt {
+                            func_id: self.current_function_id,
+                        }
+                    )
+                ),
+                ASTOperation::AST_RETURN,
+                Some(return_expr),
+                None,
+                LitTypeVariant::None,
+            ))
+        }
     }
 
     fn parse_while_stmt(&mut self) -> ParseResult2 {
@@ -662,13 +634,15 @@ impl Parser {
 
     fn parse_break_stmt(&mut self) -> ParseResult2 {
         _ = self.token_match(TokenKind::KW_BREAK)?; // match and ignore 'break'
-        Ok(AST::new(
-            ASTKind::StmtAST(Stmt::Break),
-            ASTOperation::AST_BREAK,
-            None,
-            None,
-            LitTypeVariant::None
-        ))
+        Ok(
+            AST::new(
+                ASTKind::StmtAST(Stmt::Break),
+                ASTOperation::AST_BREAK,
+                None,
+                None,
+                LitTypeVariant::None
+            )
+        )
     }
 
     fn parse_for_stmt(&mut self) -> ParseResult2 {
