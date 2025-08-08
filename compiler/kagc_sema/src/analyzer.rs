@@ -26,7 +26,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{registery::Registry, Symbol, SymbolType};
+use kagc_symbol::{function::INVALID_FUNC_ID, registery::Registry, Symbol, SymbolType};
 use kagc_token::Token;
 use kagc_types::{is_type_coalescing_possible, LitTypeVariant};
 
@@ -43,7 +43,7 @@ pub struct SemanticAnalyzer {
 impl SemanticAnalyzer {
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
-            ctx
+            ctx,
         }
     }
 
@@ -56,7 +56,6 @@ impl SemanticAnalyzer {
         for node in nodes {
             let result: SAResult = self.analyze_node(node);
             if let Err(err) = result {
-                // panic!("{err:#?}");
                 errors.push(err);
             }
         }
@@ -145,7 +144,9 @@ impl SemanticAnalyzer {
         }
 
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
-            return self.analyze_and_mutate_expr(expr);
+            let result_type = self.analyze_and_mutate_expr(expr)?;
+            ast.result_type = result_type;
+            return Ok(result_type);
         }
 
         panic!()
@@ -276,7 +277,6 @@ impl SemanticAnalyzer {
         for (idx, param_type) in param_types.iter().enumerate() {
             let expr_res: LitTypeVariant = self.analyze_and_mutate_expr(&mut args[idx].1)?;
             let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res, *param_type);
-
             if !assignment_ok {
                 return Err(
                     SAError::TypeError(
@@ -311,12 +311,11 @@ impl SemanticAnalyzer {
             panic!("Needed a ReturnStmt--but found {node:#?}");
         }
 
-        if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt() {
+        if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt_mut() {
             let ctx_borrow = self.ctx.borrow();
-            
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
-            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.lookup_fn(ret_stmt.func_id).unwrap().return_type;
+            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.lookup_fn(ctx_borrow.current_function).unwrap().return_type;
 
             drop(ctx_borrow);
             
@@ -357,6 +356,7 @@ impl SemanticAnalyzer {
                     )
                 );
             }  
+            ret_stmt.func_id = self.ctx.borrow().current_function;
             return Ok(found_fn_ret_type);
         }
         panic!("Not a return statement!");
@@ -368,10 +368,13 @@ impl SemanticAnalyzer {
         }
 
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt() {
-            // switch to function's scope
             let mut ctx_borrow = self.ctx.borrow_mut();
+            let func_ret_type = ctx_borrow
+                .root_scope()
+                .lookup(&func_decl.name)
+                .map(|func_sym| func_sym.lit_type);
 
-            let func_ret_type = ctx_borrow.root_scope().lookup(&func_decl.name).map(|func_sym| func_sym.lit_type);
+            ctx_borrow.current_function = func_decl.func_id;
 
             if func_ret_type.is_none() {
                 return Err(
@@ -384,10 +387,8 @@ impl SemanticAnalyzer {
 
             // unwrap the return type
             let func_ret_type: LitTypeVariant = func_ret_type.unwrap();
-
+            // switch to function's scope
             ctx_borrow.enter_scope(func_decl.scope_id);
-            
-            // drop context borrow
             drop(ctx_borrow);
 
             if let Some(func_body) = &mut node.left {
@@ -396,20 +397,25 @@ impl SemanticAnalyzer {
 
             // exit function's scope
             self.ctx.borrow_mut().exit_scope();
-
+            // invalidate function id
+            self.ctx.borrow_mut().current_function = INVALID_FUNC_ID;
             return Ok(func_ret_type);
         }
         panic!("Not a function declaration statement!");
     }
 
     fn analyze_var_decl_stmt(&mut self, node: &mut AST) -> SAResult {
-        if let Some(Stmt::VarDecl(ref var_decl)) = node.kind.as_stmt() {
+        if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
             let var_value_type: LitTypeVariant = self.analyze_expr(node.left.as_mut().unwrap())?;
-
             let mut ctx_borrow = self.ctx.borrow_mut();
+            let curr_func_id = ctx_borrow.current_function;
 
             if let Some(var_sym) = ctx_borrow.deep_lookup_mut(&var_decl.sym_name) {
-                return Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type);
+                let var_type = Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type)?;
+                var_sym.func_id = Some(curr_func_id);
+                var_sym.lit_type = var_type;
+                node.result_type = var_type;
+                return Ok(var_type);
             }
             return Err(
                 SAError::UndefinedSymbol { 

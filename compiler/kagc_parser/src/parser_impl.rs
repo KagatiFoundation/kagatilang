@@ -560,7 +560,7 @@ impl Parser {
 
     fn parse_return_stmt(&mut self) -> ParseResult2 {
         // check whether parser's parsing a function or not
-        if self.current_function_id == INVALID_FUNC_ID {
+        if !self.ctx.borrow().inside_function() {
             return Err(
                 Box::new(
                     BErr::unexpected_token(

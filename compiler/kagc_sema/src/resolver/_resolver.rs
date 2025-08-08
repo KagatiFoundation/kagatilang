@@ -1,12 +1,11 @@
 use std::{
     cell::RefCell, 
-    collections::BTreeMap, 
     rc::Rc
 };
 use indexmap::IndexMap;
 use kagc_ast::*;
 use kagc_const::pool::{
-    KagcConst, OrderedMap, PoolIdx, RecordConst
+    KagcConst, OrderedMap, RecordConst
 };
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::{
@@ -62,6 +61,26 @@ impl Resolver {
             ASTOperation::AST_VAR_DECL => self.declare_let_binding(node),
             
             ASTOperation::AST_RECORD_DECL => self.declare_record(node),
+
+            ASTOperation::AST_IF => {
+                if !node.kind.is_stmt() {
+                    panic!("Needed a IfStmt--but found {:#?}", node);
+                }
+                if let Some(mid) = &mut node.mid {
+                    return self.declare_symbol(mid);
+                }
+                Ok(0xFF)
+            }
+
+            ASTOperation::AST_FUNC_CALL => {
+                if !node.kind.is_expr() {
+                    panic!("Needed a FuncCallExpr--but found {:#?}", node);
+                }
+                if let Some(func_call) = node.kind.as_expr_mut() {
+                    return self.resolve_literal_constant(func_call, false, "");
+                }
+                Ok(0xFFFFFFFF)
+            }
 
             ASTOperation::AST_GLUE => {
                 if let Some(left) = node.left.as_mut() {
@@ -253,7 +272,13 @@ impl Resolver {
                 return Ok(0xFFFFFFFF);
             }
         }
-        panic!()
+        else if let Expr::FuncCall(func_call) = expr {
+            for arg in &mut func_call.args {
+                let status = self.resolve_literal_constant(&mut arg.1, false, "");
+            }
+            return Ok(0xFFFFFFFF);
+        }
+        Ok(0xFFFFFFFF)
     }
 
     fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str) -> Result<RecordConst, SAError> {

@@ -15,16 +15,16 @@ Cargo.lock
 
 
 # Added by cargo
-
 /target
 .vscode/
 
 # Stupid files
-*.S
-*.so
+**/*.S
+**/*.so
 out
-std.c
 examples/
+build/
 
 # MacOS files
-.DS_Store
+**/.DS_Store
+**/*.o
