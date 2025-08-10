@@ -24,6 +24,7 @@ Cargo.lock
 out
 examples/
 build/
+**/main.dSYM
 
 # MacOS files
 **/.DS_Store

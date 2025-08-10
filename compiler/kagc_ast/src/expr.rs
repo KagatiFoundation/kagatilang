@@ -90,7 +90,9 @@ pub struct RecordFieldAccessExpr {
     /// 
     /// This feild is filled up by the pass `analyzer`.
     /// This field is assigned the value 0(zero) while initializing.
-    pub rel_stack_off: usize 
+    pub rel_stack_off: usize,
+
+    pub result_type: LitTypeVariant
 }
 
 #[derive(Clone, Debug)]
@@ -115,6 +117,23 @@ pub enum Expr {
 
     /// Null expression
     Null
+}
+
+impl Expr {
+    pub fn result_type(&self) -> LitTypeVariant {
+        match self {
+            Expr::Binary(bin_expr) => bin_expr.result_type,
+            Expr::Widen(widen_expr) => widen_expr.result_type,
+            Expr::Ident(ident_expr) => ident_expr.result_type,
+            Expr::LitVal(lit_val_expr) => lit_val_expr.result_type,
+            Expr::Subscript(subscript_expr) => subscript_expr.result_type,
+            Expr::FuncCall(func_call_expr) => func_call_expr.result_type,
+            Expr::RecordCreation(_record_creation_expr) => LitTypeVariant::Record,
+            Expr::RecordFieldAssign(_record_field_assign_expr) => todo!(),
+            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.result_type,
+            Expr::Null => todo!(),
+        }
+    }
 }
 
 lazy_static! {

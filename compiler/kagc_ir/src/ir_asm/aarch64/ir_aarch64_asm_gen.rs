@@ -178,13 +178,14 @@ impl Aarch64IRToASM {
 
     fn gen_fn_param_asm(&self, param: &IRLitType, stack_size: usize, is_leaf_fn: bool) -> String {
         match param {
-            IRLitType::Reg(alloced_reg) => {
-                let stack_off: usize = (*alloced_reg * 8) + 8;
+            IRLitType::Reg { idx, size } => {
+                let name = self.reg_manager.borrow().name(*idx, *size);
+                let stack_off: usize = (*idx * 8) + 8;
                 if is_leaf_fn {
-                    format!("STR x{}, [sp, #{}]", alloced_reg, stack_size - stack_off)
+                    format!("STR {name}, [SP, #{}]", stack_size - stack_off)
                 }
                 else {
-                    format!("STR x{}, [x29, #-{}]", alloced_reg, stack_off)
+                    format!("STR {name}, [x29, #-{stack_off}]")
                 }
             },
             _ => unimplemented!()
@@ -390,14 +391,15 @@ impl IRToASM for Aarch64IRToASM {
         let stack_off: usize = vdecl_ir.offset.unwrap_or_else(|| panic!("Local variables must have stack offset!"));
 
         let value_reg: AllocedReg = match &vdecl_ir.value {
-            IRLitType::Temp(temp_value) => {
-                let temp_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
+            IRLitType::ExtendedTemp { id, .. } => {
+                let temp_reg: AllocedReg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
                 temp_reg
-            },
+            }
 
-            IRLitType::AllocReg { temp, reg } => {
-                self.get_or_allocate_specific_register(*reg, *temp)
-            },
+            // IRLitType::AllocReg { temp, reg } => {
+            //     println!("Reg: {reg}");
+            //     self.get_or_allocate_specific_register(*reg, *temp, 64)
+            // },
             
             _ => todo!()
         };
@@ -645,11 +647,10 @@ impl Aarch64IRToASM {
                 }
             },
             
-            IRLitType::Reg(idx) => format!("x{}", idx),
-            
-            IRLitType::Temp(temp_value) => {
-                let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(temp_value).unwrap().clone();
-                // self.try_dropping_temp(*temp_value);
+            IRLitType::Reg { idx, .. } => format!("x{}", idx),
+
+            IRLitType::ExtendedTemp { id, .. } => {
+                let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
                 src_reg.name()
             },
 
@@ -661,54 +662,49 @@ impl Aarch64IRToASM {
     /// Returns temporary ID with it's mapped AllocedReg.
     fn resolve_register(&mut self, irlit: &IRLitType) -> (TempId, AllocedReg) {
         match irlit {
-            IRLitType::Temp(temp_value) => (*temp_value, self.get_or_allocate_temp_register(*temp_value)),
-
-            IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp)),
-            
-            IRLitType::Reg(idx) => (0, AllocedReg { 
-                size: 64, 
+            IRLitType::ExtendedTemp { id, size } => (*id, self.get_or_allocate_temp_register(*id, *size)),
+            IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp, 64)),
+            IRLitType::Reg { idx, size } => (0, AllocedReg { 
+                size: *size, 
                 idx: *idx, 
                 width: RegWidth::QWORD,
                 status: RegStatus::Alloced 
             }),
-            
-            _ => {
-                todo!()
-            },
+            _ => todo!(),
         }
     }
     
-    fn get_or_allocate_temp_register(&mut self, temp_value: usize) -> AllocedReg {
+    fn get_or_allocate_temp_register(&mut self, temp_value: usize, sz: usize) -> AllocedReg {
         self.temp_reg_map
             .reg_map
             .get(&temp_value)
             .cloned()
             .unwrap_or_else(|| {
-                let alloced_reg: AllocedReg = self.allocate_register();
+                let alloced_reg: AllocedReg = self.allocate_register(sz);
                 self.temp_reg_map.reg_map.insert(temp_value, alloced_reg.clone());
                 alloced_reg
             })
     }
     
-    fn get_or_allocate_specific_register(&mut self, reg: RegIdx, temp: usize) -> AllocedReg {
+    fn get_or_allocate_specific_register(&mut self, reg: RegIdx, temp: usize, sz: RegSize) -> AllocedReg {
         self.temp_reg_map
             .reg_map
             .get(&temp)
             .cloned()
             .unwrap_or_else(|| {
-                let alloced_reg: AllocedReg = self.allocate_specific_register(reg);
+                let alloced_reg: AllocedReg = self.allocate_specific_register(reg, sz);
                 self.temp_reg_map.reg_map.insert(temp, alloced_reg.clone());
                 alloced_reg
             })
     }
     
-    fn allocate_register(&mut self) -> AllocedReg {
+    fn allocate_register(&mut self, sz: RegSize) -> AllocedReg {
         let mut reg_mgr = self.reg_manager.borrow_mut();
-        reg_mgr.allocate_register(64)
+        reg_mgr.allocate_register(sz)
     }
     
-    fn allocate_specific_register(&mut self, reg: RegIdx) -> AllocedReg {
+    fn allocate_specific_register(&mut self, reg: RegIdx, sz: RegSize) -> AllocedReg {
         let mut reg_mgr = self.reg_manager.borrow_mut();
-        reg_mgr.allocate_register_with_idx(64, reg, AllocStrategy::Spill)
+        reg_mgr.allocate_register_with_idx(sz, reg, AllocStrategy::Spill)
     }
 }

@@ -139,6 +139,28 @@ pub enum LitTypeVariant {
     Record
 }
 
+impl LitTypeVariant {
+    /// Get the register size for this type of value
+    pub fn to_reg_size(&self) -> usize {
+        match self {
+            // 4 bytes
+            Self::I32
+            | Self::U8 => 4,
+
+            // 8 bytes
+            Self::I64
+            | Self::RawStr
+            | Self::PoolStr
+            | Self::Str
+            | Self::Void
+            | Self::Array => 8,
+
+            // 0 bytes
+            _ => 0
+        }
+    }
+}
+
 impl Display for LitTypeVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

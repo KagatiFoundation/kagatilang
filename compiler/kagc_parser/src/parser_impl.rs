@@ -421,7 +421,7 @@ impl Parser {
 
                     func_param_types.push(sym.lit_type);
                     self.add_symbol_local(sym.clone());
-                } 
+                }
 
                 let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
                 let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
@@ -1234,7 +1234,8 @@ impl Parser {
                             rec_alias: rec_alias.to_string(), 
                             // field_name: access.lexeme.clone(),
                             field_chain,
-                            rel_stack_off: field_off
+                            rel_stack_off: field_off,
+                            result_type: LitTypeVariant::None // will be determined at the semantic analysis phase
                         }
                     )
                 ),

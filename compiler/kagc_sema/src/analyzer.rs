@@ -193,6 +193,7 @@ impl SemanticAnalyzer {
                 if let Some(rec) = ctx_borrow.lookup_record(rec_name) {
                     if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_chain[0]) {
                         field_access.rel_stack_off = field.rel_stack_off;
+                        field_access.result_type = LitTypeVariant::from(field.typ);
                         return Ok(LitTypeVariant::from(field.typ));
                     }
                 }

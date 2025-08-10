@@ -1,6 +1,6 @@
 use kagc_ast::ASTOperation;
 use kagc_symbol::Symbol;
-use kagc_target::reg::RegIdx;
+use kagc_target::reg::{RegIdx, RegSize};
 
 use crate::LabelId;
 
@@ -35,9 +35,18 @@ pub enum IRLitType {
 
     Const(IRLitVal),
     
-    Reg(RegIdx),
+    Reg {
+        idx: RegIdx,
+        size: RegSize
+    },
     
+    #[deprecated]
     Temp(TempId),
+
+    ExtendedTemp {
+        id: TempId,
+        size: RegSize
+    },
 
     /// Experimental
     /// Allocate a register and associate it with a temporary
@@ -108,31 +117,42 @@ impl IRLitType {
             
             Self::Const(irlit_val) => irlit_val.into_str(),
             
-            Self::Reg(reg) => reg.to_string(),
+            Self::Reg{ idx, .. } => format!("x{}", *idx),
             
             Self::Temp(tmp) => tmp.to_string(),
 
             Self::AllocReg { .. } => "".to_string(),
 
-            Self::StackOff(off) => off.to_string()
+            Self::StackOff(off) => off.to_string(),
+
+            Self::ExtendedTemp { id, .. } => id.to_string()
         }
     }
 
     check_instr_type!(is_temp, Temp);
     check_instr_type!(is_var, Var);
     check_instr_type!(is_const, Const);
-    check_instr_type!(is_reg, Reg);
     check_instr_type!(is_stack_off, StackOff);
+
+    pub fn is_reg(&self) -> bool {
+        matches!(self, Self::Reg { .. })
+    }
 
     pub fn is_alloc_reg(&self) -> bool {
         matches!(self, Self::AllocReg { .. })
     }
 
     impl_as_irlit_type!(as_temp, Temp, usize);
-    impl_as_irlit_type!(as_reg, Reg, RegIdx);
     impl_as_irlit_type!(as_var, Var, Symbol);
     impl_as_irlit_type!(as_const, Const, IRLitVal);
     impl_as_irlit_type!(as_stack_off, StackOff, usize);
+
+    pub fn as_reg(&self) -> Option<(RegIdx, usize)> {
+        match self {
+            Self::Reg { idx, size } => Some((*idx, *size)),
+            _ => None
+        }
+    }
 
     pub fn as_alloc_reg(&self) -> Option<(RegIdx, usize)> {
         match self {

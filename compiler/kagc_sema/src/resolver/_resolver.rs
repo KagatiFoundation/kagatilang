@@ -62,6 +62,16 @@ impl Resolver {
             
             ASTOperation::AST_RECORD_DECL => self.declare_record(node),
 
+            ASTOperation::AST_LOOP => {
+                if !node.kind.is_stmt() {
+                    panic!("Needed a LoopStmt--but found {:#?}", node);
+                }
+                if let Some(left) = &mut node.left {
+                    return self.declare_symbol(left);
+                }
+                Ok(0xFFFFFFFF)
+            }
+
             ASTOperation::AST_IF => {
                 if !node.kind.is_stmt() {
                     panic!("Needed a IfStmt--but found {:#?}", node);
@@ -69,7 +79,7 @@ impl Resolver {
                 if let Some(mid) = &mut node.mid {
                     return self.declare_symbol(mid);
                 }
-                Ok(0xFF)
+                Ok(0xFFFFFFFF)
             }
 
             ASTOperation::AST_FUNC_CALL => {

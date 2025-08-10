@@ -38,7 +38,7 @@ impl SpillCompilerPass {
                                             (
                                                 index,
                                                 IRInstr::Store {
-                                                    src: IRLitType::Reg(reg),
+                                                    src: IRLitType::Reg { idx: reg, size: 64 },
                                                     addr: IRAddr::StackOff(index)
                                                 }
                                             )

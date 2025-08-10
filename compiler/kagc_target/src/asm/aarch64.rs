@@ -42,6 +42,14 @@ impl Aarch64RegManager2 {
         }
     }
 
+    pub fn name(idx: usize, size: usize) -> String {
+        match size {
+            32 => format!("w{idx}"),
+            64 => format!("x{idx}"),
+            _ => unimplemented!()
+        }
+    }
+
     fn spill_and_mark_available(&mut self, reg_to_spill: usize, alloc_size: usize) -> AllocedReg {
         self.spilled_stack.push_back(reg_to_spill);
         self.available_registers[reg_to_spill] = true; 

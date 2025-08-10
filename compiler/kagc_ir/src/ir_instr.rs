@@ -140,9 +140,9 @@ impl IRInstr {
         }
     }
 
-    pub fn mov_into_temp(temp: usize, value: IRLitType) -> Self {
+    pub fn mov_into_temp(temp: usize, value: IRLitType, reg_size: usize) -> Self {
         Self::Mov {
-            dest: IRLitType::Temp(temp), 
+            dest: IRLitType::ExtendedTemp{ id: temp, size: reg_size }, 
             src: value
         }
     }
