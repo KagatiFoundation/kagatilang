@@ -178,7 +178,7 @@ impl Aarch64IRToASM {
 
     fn gen_fn_param_asm(&self, param: &IRLitType, stack_size: usize, is_leaf_fn: bool) -> String {
         match param {
-            IRLitType::Reg { idx, size } => {
+            IRLitType::Reg { idx, size, .. } => {
                 let name = self.reg_manager.borrow().name(*idx, *size);
                 let stack_off: usize = (*idx * 8) + 8;
                 if is_leaf_fn {
@@ -244,6 +244,10 @@ impl Aarch64IRToASM {
     }
 
     fn dump_globals(&self) -> String {
+        if self.ctx.borrow().const_pool.is_empty() {
+            return "".to_string();
+        }
+
         let mut output_str: String = String::new();
         output_str.push_str(".data\n.align 3\n");
         for (index, c_item) in self.ctx.borrow().const_pool.iter_enumerated() {
@@ -395,25 +399,17 @@ impl IRToASM for Aarch64IRToASM {
                 let temp_reg: AllocedReg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
                 temp_reg
             }
-
-            // IRLitType::AllocReg { temp, reg } => {
-            //     println!("Reg: {reg}");
-            //     self.get_or_allocate_specific_register(*reg, *temp, 64)
-            // },
-            
             _ => todo!()
         };
 
         // since we are parsing a local variable, the compile-time function props cannot be None
         let fn_props: &ComptFnProps = self.compt_fn_props.as_ref().unwrap_or_else(|| panic!("Compile time information not available for the function!"));
-        
         if !fn_props.is_leaf {
             output_str.push_str(&format!("STR {}, [x29, #-{}]", value_reg.name(), (stack_off * 8) + 8));
         }
         else {
             output_str.push_str(&format!("STR {}, [SP, #{}]", value_reg.name(), fn_props.stack_size - ((stack_off * 8) + 8)));
         }
-
         output_str
     }
     
@@ -639,15 +635,22 @@ impl Aarch64IRToASM {
         match irlit {
             IRLitType::Const(irlit_val) => {
                 match irlit_val {
-                    IRLitVal::Int32(value) => value.to_string(),
-                    IRLitVal::U8(value) => value.to_string(),
+                    IRLitVal::Int32(value) => format!("{:#x}", *value),
+                    IRLitVal::U8(value) => format!("{:#x}", *value),
                     IRLitVal::Str(value, ..) => value.clone(),
                     IRLitVal::Null => "#0".to_string(), // Null is just '0' under the hood. LOL
                     _ => todo!()
                 }
             },
             
-            IRLitType::Reg { idx, .. } => format!("x{}", idx),
+            IRLitType::Reg { idx, size, .. } => {
+                if *size == 4 {
+                    format!("w{}", *idx)
+                }
+                else {
+                    format!("x{}", *idx)
+                }
+            },
 
             IRLitType::ExtendedTemp { id, .. } => {
                 let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
@@ -663,13 +666,8 @@ impl Aarch64IRToASM {
     fn resolve_register(&mut self, irlit: &IRLitType) -> (TempId, AllocedReg) {
         match irlit {
             IRLitType::ExtendedTemp { id, size } => (*id, self.get_or_allocate_temp_register(*id, *size)),
-            IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp, 64)),
-            IRLitType::Reg { idx, size } => (0, AllocedReg { 
-                size: *size, 
-                idx: *idx, 
-                width: RegWidth::QWORD,
-                status: RegStatus::Alloced 
-            }),
+            IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp, 8)),
+            IRLitType::Reg { idx, size, temp } => (*temp, self.get_or_allocate_specific_register(*idx, *temp, *size)),
             _ => todo!(),
         }
     }
@@ -699,12 +697,18 @@ impl Aarch64IRToASM {
     }
     
     fn allocate_register(&mut self, sz: RegSize) -> AllocedReg {
+        assert!(sz != 0);
         let mut reg_mgr = self.reg_manager.borrow_mut();
-        reg_mgr.allocate_register(sz)
+        let reg = reg_mgr.allocate_register(sz);
+        assert!(reg.size != 0);
+        reg
     }
     
     fn allocate_specific_register(&mut self, reg: RegIdx, sz: RegSize) -> AllocedReg {
+        assert!(sz != 0);
         let mut reg_mgr = self.reg_manager.borrow_mut();
-        reg_mgr.allocate_register_with_idx(sz, reg, AllocStrategy::Spill)
+        let reg = reg_mgr.allocate_register_with_idx(sz, reg, AllocStrategy::Spill);
+        assert!(reg.size != 0);
+        reg
     }
 }

@@ -24,16 +24,12 @@ SOFTWARE.
 
 #![allow(clippy::new_without_default)]
 
-use itertools::Itertools;
 use kagc_types::LitTypeVariant;
 
 use crate::{
     registery::RegisteryEntry, 
-    sym::{
-        StorageClass, 
-        Symbol
-    }, 
-    symbol_table::Symtable
+    sym::StorageClass, 
+    SymbolPos, 
 };
 
 /// Inavlid function ID.
@@ -69,7 +65,7 @@ pub struct FunctionInfo {
     pub return_type: LitTypeVariant,
 
     /// Contains information about the variables defined locally in 'this' function
-    pub local_syms: Symtable<Symbol>,
+    pub local_syms: Vec<SymbolPos>,
 
     pub param_types: Vec<LitTypeVariant>,
     
@@ -84,7 +80,7 @@ impl FunctionInfo {
         stack_size: i32, 
         return_type: LitTypeVariant,
         storage_class: StorageClass,
-        locals: Symtable<Symbol>,
+        locals: Vec<SymbolPos>,
         param_types: Vec<LitTypeVariant>
     ) -> Self {
         Self {
@@ -96,26 +92,6 @@ impl FunctionInfo {
             storage_class,
             param_types
         }
-    }
-
-    pub fn get_param(&self, param_name: &str) -> Option<&Symbol> {
-        self.collect_params().into_iter().find(|&sym| sym.name == param_name)
-    }
-
-    pub fn has_param(&self, param_name: &str) -> bool {
-        self.collect_params().into_iter().any(|sym| sym.name == param_name)
-    }
-
-    pub fn has_local_sym(&self, local_sym_name: &str) -> bool {
-        self.collect_locals().into_iter().any(|sym| sym.name == local_sym_name)
-    }
-
-    pub fn collect_locals(&self) -> Vec<&Symbol> {
-        self.local_syms.iter().filter(|&sym| sym.class == StorageClass::LOCAL).collect_vec()
-    }
-
-    pub fn collect_params(&self) -> Vec<&Symbol> {
-        self.local_syms.iter().filter(|&sym| sym.class == StorageClass::PARAM).collect_vec()
     }
 }
 

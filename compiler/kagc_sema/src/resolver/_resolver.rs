@@ -156,6 +156,7 @@ impl Resolver {
 
             // create a new FunctionInfo
             ctx_borrow.func_table.declare(func_info);
+
             // drop context borrow
             drop(ctx_borrow);
 
@@ -163,7 +164,7 @@ impl Resolver {
                 let _ = self.declare_symbol(func_body)?;
             }
 
-            // exit function's scope
+            // exit the function's scope
             self.ctx.borrow_mut().exit_scope();
             return Ok(function_id);
         }
@@ -185,6 +186,8 @@ impl Resolver {
         if let Some(left) = &mut node.left {
             let _ = self.validate_and_process_expr(left, &stmt.sym_name)?;
         }
+
+        stmt.func_id = self.ctx.borrow_mut().current_function;
 
         let sym = Symbol::create(
             stmt.sym_name.clone(),

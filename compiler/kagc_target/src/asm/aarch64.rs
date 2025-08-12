@@ -26,6 +26,7 @@ impl AllocedReg {
     }
 }
 
+#[derive(Debug)]
 pub struct Aarch64RegManager2 {
     available_registers: Vec<bool>,
     register_map: HashMap<usize, RegState>,
@@ -44,8 +45,8 @@ impl Aarch64RegManager2 {
 
     pub fn name(idx: usize, size: usize) -> String {
         match size {
-            32 => format!("w{idx}"),
-            64 => format!("x{idx}"),
+            4 => format!("w{idx}"),
+            8 => format!("x{idx}"),
             _ => unimplemented!()
         }
     }
@@ -55,7 +56,7 @@ impl Aarch64RegManager2 {
         self.available_registers[reg_to_spill] = true; 
         self.register_map.remove(&reg_to_spill);
 
-        let width = if alloc_size == 64 {
+        let width = if alloc_size == 8 {
             RegWidth::QWORD
         }
         else {
@@ -91,19 +92,20 @@ impl RegManager2 for Aarch64RegManager2 {
                     }
                 );
 
-                let width = if alloc_size == 64 {
+                let width = if alloc_size == 8 {
                     RegWidth::QWORD
                 }
                 else {
                     RegWidth::WORD
                 };
 
-                return AllocedReg {
+                let ar = AllocedReg {
                     idx: i,
                     size: alloc_size,
                     status: RegStatus::Alloced,
                     width
                 };
+                return ar;
             }
         }
         self.spill_register(alloc_size, None)
@@ -125,19 +127,20 @@ impl RegManager2 for Aarch64RegManager2 {
                 }
             );
 
-            let width = if alloc_size == 64 {
+            let width = if alloc_size == 8 {
                 RegWidth::QWORD
             }
             else {
                 RegWidth::WORD
             };
 
-            return AllocedReg {
+            let a = AllocedReg {
                 idx,
                 size: alloc_size,
                 width,
                 status: RegStatus::Alloced
             };
+            return a;
         }
 
         if strat == AllocStrategy::Spill {
@@ -162,7 +165,7 @@ impl RegManager2 for Aarch64RegManager2 {
                     }
                 );
 
-                let width = if alloc_size == 64 {
+                let width = if alloc_size == 8 {
                     RegWidth::QWORD
                 }
                 else {
@@ -195,7 +198,7 @@ impl RegManager2 for Aarch64RegManager2 {
                 }
             );
 
-            let width = if alloc_size == 64 {
+            let width = if alloc_size == 8 {
                 RegWidth::QWORD
             }
             else {

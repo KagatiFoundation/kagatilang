@@ -190,7 +190,7 @@ pub trait CodeGen {
             dest: {
                 let tmp_id: usize = fn_ctx.temp_counter;
                 fn_ctx.temp_counter += 1;
-                IRLitType::ExtendedTemp{ id: tmp_id, size: 64 } // always use 8 bytes to load records into the stack
+                IRLitType::ExtendedTemp{ id: tmp_id, size: 8 } // always use 8 bytes to load records into the stack
             }
         };
 
@@ -207,7 +207,7 @@ pub trait CodeGen {
     fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let lit_val_tmp: usize = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 1;
-        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(IRLitVal::Null), 64)])
+        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(IRLitVal::Null), 8)])
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
@@ -216,14 +216,13 @@ pub trait CodeGen {
         }
 
         let (ir_lit, reg_size) = match lit_expr.result_type {
-            LitTypeVariant::I32 => (IRLitVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")), 32_usize),
-            LitTypeVariant::U8 => (IRLitVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")), 32_usize),
+            LitTypeVariant::I32 => (IRLitVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")), 4_usize),
+            LitTypeVariant::U8 => (IRLitVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")), 4_usize),
             _ => todo!(),
         };
 
         let lit_val_tmp: usize = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 1;
-  
         Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit), reg_size)])
     }
 
@@ -239,7 +238,7 @@ pub trait CodeGen {
             vec![
                 IRInstr::LoadGlobal { 
                     pool_idx: idx, 
-                    dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 64 } // always use 8 bytes to load string literals into the stack
+                    dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 8 } // always use 8 bytes to load string literals into the stack
                 }
             ]
         )

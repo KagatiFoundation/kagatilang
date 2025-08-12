@@ -8,3 +8,5 @@ pub mod registery;
 
 pub use sym::*;
 pub use symbol_table::*;
+
+pub type SymbolPos = usize;

@@ -89,9 +89,6 @@ pub struct Parser {
     /// Name of the function that is currently being parsed.
     current_function_name: Option<String>,
 
-    /// Local symbols of the function that is currently being parsed.
-    temp_local_syms: Symtable<Symbol>,
-
     /// Offset of next local variable.
     local_offset: i32,
 
@@ -124,7 +121,6 @@ impl Parser {
             current_token: current,
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
-            temp_local_syms: Symtable::default(),
             local_offset: 0,
             next_local_sym_pos: 0,
             ctx,
@@ -404,6 +400,7 @@ impl Parser {
         let current_file: String = self.get_current_file_name();
 
         let mut func_param_types: Vec<LitTypeVariant> = vec![];
+        let mut func_locals = vec![];
 
         if self.current_token.kind != TokenKind::T_RPAREN {
             loop {
@@ -420,7 +417,8 @@ impl Parser {
                     );
 
                     func_param_types.push(sym.lit_type);
-                    self.add_symbol_local(sym.clone());
+                    let local_pos = self.add_symbol_local(sym.clone());
+                    func_locals.push(local_pos);
                 }
 
                 let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
@@ -483,10 +481,6 @@ impl Parser {
         // reset offset counter after parsing function
         let local_offset = self.local_offset;
         self.local_offset = 0;
-
-        // reset temporary symbols holder after the function has been parsed
-        let tmp_syms = self.temp_local_syms.clone();
-        self.temp_local_syms = Symtable::default();
         
         /*
         Stack offset calculation:
@@ -506,7 +500,7 @@ impl Parser {
                 scope_id: func_scope_id,
                 return_type: TypeId::from(func_return_type),
                 storage_class: func_storage_class,
-                locals: tmp_syms,
+                locals: func_locals,
                 func_param_types
             })),
             ASTOperation::AST_FUNCTION,
@@ -1311,10 +1305,14 @@ impl Parser {
     }
 
     /// Adds the symbol to the current scope.
-    fn add_symbol_local(&mut self, sym: Symbol) -> Option<usize> {
-        let insert_pos = self.ctx.borrow_mut().declare(sym.clone());
-        self.next_local_sym_pos += 1;
-        insert_pos
+    fn add_symbol_local(&mut self, sym: Symbol) -> usize {
+        if let Some(insert_pos) = self.ctx.borrow_mut().declare(sym.clone()) {
+            self.next_local_sym_pos += 1;
+            insert_pos
+        }
+        else {
+            panic!("Symbol addition failed!");
+        }
     }
 
     fn is_scope_global(&self) -> bool {

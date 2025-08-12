@@ -106,19 +106,6 @@ impl CodeGen for Aarch64CodeGen {
         let mut stack_off: usize = 0;
         let mut virtual_reg: usize = 0;
 
-        // Collect function parameters and map each of them to a 
-        // parameter register based on the Aarch64 ABI
-        let params: Vec<IRLitType> = self.ctx.borrow()
-                                    .collect_params(func_scope)
-                                    .iter()
-                                    .map(|&e| {
-                                        let reg_sz = e.lit_type.to_reg_size();
-                                        let reg: IRLitType = IRLitType::Reg{ idx: virtual_reg, size: reg_sz };
-                                        virtual_reg += 1;
-                                        stack_off += 1;
-                                        reg
-                                    }).collect();
-
         let mut fn_body: Vec<IR> = vec![];
 
         // Setting up function context
@@ -141,6 +128,24 @@ impl CodeGen for Aarch64CodeGen {
             next_label: self.label_id,
             force_label_use: 0,
         };
+
+        // Collect function parameters and map each of them to a 
+        // parameter register based on the Aarch64 ABI
+        let params: Vec<IRLitType> = self.ctx.borrow()
+                                    .collect_params(func_scope)
+                                    .iter()
+                                    .map(|&e| {
+                                        let reg_sz = e.lit_type.to_reg_size();
+                                        assert_ne!(reg_sz, 0);
+
+                                        let param_tmp: usize = fn_ctx.temp_counter;
+                                        fn_ctx.temp_counter += 1;
+                                        let reg: IRLitType = IRLitType::Reg{ temp: param_tmp, idx: virtual_reg, size: reg_sz };
+                                        
+                                        virtual_reg += 1;
+                                        stack_off += 1;
+                                        reg
+                                    }).collect();
 
         let linearized_body: Vec<&mut AST> = ast.left.as_mut().unwrap().linearize_mut();
         for body_ast  in linearized_body {
@@ -230,8 +235,10 @@ impl CodeGen for Aarch64CodeGen {
         fn_ctx.temp_counter += 1;
 
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
+
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
-        println!("Found sym: {:#?}, size: {reg_sz}", IRLitType::ExtendedTemp { id: lit_val_tmp, size: reg_sz });
+        assert_ne!(reg_sz, 0);
+
         Ok(vec![
             IRInstr::Load {
                 dest: IRLitType::ExtendedTemp { id: lit_val_tmp, size: reg_sz },
@@ -262,6 +269,8 @@ impl CodeGen for Aarch64CodeGen {
             let tmp_reg_loc: usize = current_tmp + (new_temp - current_tmp) - 1;
 
             let reg_sz = param_expr.result_type().to_reg_size();
+            assert_ne!(reg_sz, 0);
+
             param_instrs.extend(p_instr);
             actual_params.push((param_reg_idx, IRLitType::ExtendedTemp{ id: tmp_reg_loc, size: reg_sz }));
         }
@@ -274,9 +283,11 @@ impl CodeGen for Aarch64CodeGen {
         }
 
         for (rev_idx, last_instr) in last_instrs.iter().rev().enumerate() {
+            let param_tmp: usize = fn_ctx.temp_counter;
+            fn_ctx.temp_counter += 1;
             param_instrs.push(
                 IRInstr::Mov {
-                    dest: IRLitType::Reg{ idx: rev_idx, size: last_instr.1.to_reg_size() }, 
+                    dest: IRLitType::Reg{ temp: param_tmp, idx: rev_idx, size: last_instr.1.to_reg_size() }, 
                     src: last_instr.0.dest().unwrap()
                 }
             );
@@ -285,19 +296,27 @@ impl CodeGen for Aarch64CodeGen {
         let preserve_ret_val_instr: Option<IRInstr> = 
         if !func_call_expr.result_type.is_void() && !func_call_expr.result_type.is_none() {
             let reg_sz = func_call_expr.result_type.to_reg_size();
+            assert_ne!(reg_sz, 0);
+
+            let param_tmp: usize = fn_ctx.temp_counter;
+            fn_ctx.temp_counter += 2;
+
             if use_reg {
                 Some(IRInstr::Mov {
-                    dest: IRLitType::Reg{ idx: forced_reg.unwrap(), size: reg_sz },
-                    src: IRLitType::Reg{ idx: 0, size: reg_sz }
+                    dest: IRLitType::Reg{ temp: param_tmp, idx: forced_reg.unwrap(), size: reg_sz },
+                    src: IRLitType::Reg{ temp: param_tmp + 1, idx: 0, size: reg_sz }
                 })
             }
             else {
                 let call_tmp: usize = fn_ctx.temp_counter;
-                fn_ctx.temp_counter += 1;
+                fn_ctx.temp_counter += 2;
+
                 let reg_sz = func_call_expr.result_type.to_reg_size();
+                assert_ne!(reg_sz, 0);
+
                 Some(IRInstr::Mov {
                     dest: IRLitType::ExtendedTemp{ id: call_tmp, size: reg_sz },
-                    src: IRLitType::Reg{ idx: 0, size: reg_sz }
+                    src: IRLitType::Reg{ temp: call_tmp + 1, idx: 0, size: reg_sz }
                 })
             }
         }
@@ -327,6 +346,8 @@ impl CodeGen for Aarch64CodeGen {
                 // if the function is non-void type
                 if !curr_fn.return_type.is_void() {
                     let reg_sz = curr_fn.return_type.to_reg_size();
+                    assert_ne!(reg_sz, 0);
+
                     let ret_stmt_instrs: Vec<IRInstr> = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
 
                     // last instruction is basically the temporary which holds the return 
@@ -334,10 +355,14 @@ impl CodeGen for Aarch64CodeGen {
                     let last_instr: IRInstr = ret_stmt_instrs.last().cloned().unwrap();
 
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
+                    
+                    let ret_tmp: usize = fn_ctx.temp_counter;
+                    fn_ctx.temp_counter += 1;
+                    
                     ret_instrs.push(
                         IR::Instr(
                             IRInstr::Mov {
-                                dest: IRLitType::Reg{ idx: 0, size: reg_sz },
+                                dest: IRLitType::Reg{ temp: ret_tmp, idx: 0, size: reg_sz },
                                 src: last_instr.dest().unwrap()
                             }
                         )
@@ -447,7 +472,10 @@ impl CodeGen for Aarch64CodeGen {
     fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let lit_val_tmp: usize = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 1;
+
         let reg_sz = access.result_type.to_reg_size();
+        assert_ne!(reg_sz, 0);
+
         Ok(vec![
             IRInstr::Load { 
                 dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: reg_sz }, 

@@ -42,7 +42,7 @@ pub struct FuncDeclStmt {
 
     pub storage_class: StorageClass,
 
-    pub locals: Symtable<Symbol>,
+    pub locals: Vec<usize>,
 
     pub func_param_types: Vec<LitTypeVariant>
 }

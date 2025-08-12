@@ -210,6 +210,7 @@ impl SemanticAnalyzer {
         let ctx_borrow = self.ctx.borrow();
 
         if let Some(ident) = ctx_borrow.deep_lookup(&ident_expr.sym_name) {
+            ident_expr.result_type = ident.lit_type;
             Ok(ident.lit_type)
         }
         else {

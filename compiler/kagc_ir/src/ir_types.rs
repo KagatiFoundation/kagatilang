@@ -36,6 +36,7 @@ pub enum IRLitType {
     Const(IRLitVal),
     
     Reg {
+        temp: TempId,
         idx: RegIdx,
         size: RegSize
     },
@@ -149,7 +150,7 @@ impl IRLitType {
 
     pub fn as_reg(&self) -> Option<(RegIdx, usize)> {
         match self {
-            Self::Reg { idx, size } => Some((*idx, *size)),
+            Self::Reg { idx, size, .. } => Some((*idx, *size)),
             _ => None
         }
     }

@@ -128,9 +128,9 @@ impl Expr {
             Expr::LitVal(lit_val_expr) => lit_val_expr.result_type,
             Expr::Subscript(subscript_expr) => subscript_expr.result_type,
             Expr::FuncCall(func_call_expr) => func_call_expr.result_type,
+            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.result_type,
             Expr::RecordCreation(_record_creation_expr) => LitTypeVariant::Record,
             Expr::RecordFieldAssign(_record_field_assign_expr) => todo!(),
-            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.result_type,
             Expr::Null => todo!(),
         }
     }

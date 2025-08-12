@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use std::slice::Iter;
+use std::slice::{Iter, IterMut};
 use crate::{sym::SymbolTrait, STableLookupKey};
 
 /// Maximum number of symbols that can be stored in the symbol table.
@@ -123,6 +123,10 @@ impl<T: SymbolTrait + Clone> Symtable<T> {
 
     pub fn iter(&self) -> Iter<'_, T> {
         self.syms.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        self.syms.iter_mut()
     }
 
     pub fn count(&self) -> usize {
