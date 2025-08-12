@@ -26,7 +26,13 @@ use std::collections::HashMap;
 
 use kagc_target::reg::RegIdx;
 
-use crate::{ir_instr::*, ir_types::{IRLitType, TempId}};
+use crate::{
+    ir_instr::*, 
+    ir_types::{
+        IRLitType, 
+        TempId
+    }
+};
 
 /// Live range of a temporary
 pub type LiveRange = (usize, usize);
@@ -109,10 +115,10 @@ impl LivenessAnalyzer {
     fn extract_temp_dest(ir: &IR) -> Option<usize> {
         match ir {
             IR::Instr(instr) => {
-                if let Some(IRLitType::Temp(temp_value)) = instr.dest() {
-                    Some(temp_value)
+                if let Some(IRLitType::ExtendedTemp{ id, ..}) = instr.dest() {
+                    Some(id)
                 }
-                else if let Some(IRLitType::AllocReg { temp, .. }) = instr.dest() {
+                else if let Some(IRLitType::Reg { temp, .. }) = instr.dest() {
                     Some(temp)
                 }
                 else {
@@ -157,10 +163,10 @@ impl LivenessAnalyzer {
 
                     IRInstr::CondJump { op1, op2, .. } => {
                         [
-                            op1.as_temp() == Some(temp_lookup),
-                            op2.as_temp() == Some(temp_lookup),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_alloc_reg()),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_alloc_reg())
+                            op1.as_ext_temp() == Some(temp_lookup),
+                            op2.as_ext_temp() == Some(temp_lookup),
+                            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_reg()),
+                            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_reg())
                         ].iter().any(|c| *c)
                     }
 
@@ -168,7 +174,7 @@ impl LivenessAnalyzer {
                 }
             },
 
-            IR::VarDecl(vardecl) => matches!(vardecl.value, IRLitType::Temp(t) if t == temp_lookup),
+            IR::VarDecl(vardecl) => matches!(vardecl.value, IRLitType::ExtendedTemp{ id, .. } if id == temp_lookup),
 
             _ => false,
         }
@@ -176,20 +182,20 @@ impl LivenessAnalyzer {
 
     fn uses_temp_in_ir_lit(ir_lit: &IRLitType, temp: usize) -> bool {
         match ir_lit {
-            IRLitType::Temp(t) => *t == temp,
-            IRLitType::AllocReg { temp: t, .. } => *t == temp,
+            IRLitType::ExtendedTemp{ id, .. } => *id == temp,
+            IRLitType::Reg { temp: id, .. } => *id == temp,
             _ => false
         }
     }
 
     fn is_temp_used_bin_op(dest: &IRLitType, op1: &IRLitType, op2: &IRLitType, temp_lookup: usize) -> bool {
         [
-            dest.as_temp() == Some(temp_lookup),
-            op1.as_temp() == Some(temp_lookup),
-            op2.as_temp() == Some(temp_lookup),
-            Self::is_temp_used_in_alloc_reg(temp_lookup, dest.as_alloc_reg()),
-            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_alloc_reg()),
-            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_alloc_reg())
+            dest.as_ext_temp() == Some(temp_lookup),
+            op1.as_ext_temp() == Some(temp_lookup),
+            op2.as_ext_temp() == Some(temp_lookup),
+            Self::is_temp_used_in_alloc_reg(temp_lookup, dest.as_reg()),
+            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_reg()),
+            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_reg())
         ].iter().any(|c| *c) 
     }
 

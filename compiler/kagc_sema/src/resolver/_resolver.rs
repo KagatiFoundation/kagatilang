@@ -144,6 +144,10 @@ impl Resolver {
             // what the function ID is
             func_decl.func_id = function_id;
 
+            func_decl.locals.iter().for_each(|local| {
+                
+            });
+
             let func_info: FunctionInfo = FunctionInfo::new(
                 func_decl.name.clone(),
                 function_id,
@@ -287,7 +291,7 @@ impl Resolver {
         }
         else if let Expr::FuncCall(func_call) = expr {
             for arg in &mut func_call.args {
-                let status = self.resolve_literal_constant(&mut arg.1, false, "");
+                let _ = self.resolve_literal_constant(&mut arg.1, false, "")?;
             }
             return Ok(0xFFFFFFFF);
         }

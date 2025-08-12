@@ -188,15 +188,24 @@ macro_rules! check_lit_type_var_fn_impl {
 impl LitTypeVariant {
     pub fn size(&self) -> usize {
         match self {
+            // 8 bytes
             Self::I64 
             | Self::F64
-            | Self::Str => 8,
+            | Self::Str
+            | Self::PoolStr
+            | Self::RawStr => 8,
 
+            // 4 bytes
             Self::F32 | 
             Self::I32 => 4,
 
+            // 1 byte
             Self::U8 => 1,
+
+            // 2 bytes
             Self::I16 => 2,
+
+            // hmmm... suspicious
             _ => 0,
         }
     }

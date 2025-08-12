@@ -40,9 +40,6 @@ pub enum IRLitType {
         idx: RegIdx,
         size: RegSize
     },
-    
-    #[deprecated]
-    Temp(TempId),
 
     ExtendedTemp {
         id: TempId,
@@ -119,8 +116,6 @@ impl IRLitType {
             Self::Const(irlit_val) => irlit_val.into_str(),
             
             Self::Reg{ idx, .. } => format!("x{}", *idx),
-            
-            Self::Temp(tmp) => tmp.to_string(),
 
             Self::AllocReg { .. } => "".to_string(),
 
@@ -130,7 +125,6 @@ impl IRLitType {
         }
     }
 
-    check_instr_type!(is_temp, Temp);
     check_instr_type!(is_var, Var);
     check_instr_type!(is_const, Const);
     check_instr_type!(is_stack_off, StackOff);
@@ -143,10 +137,16 @@ impl IRLitType {
         matches!(self, Self::AllocReg { .. })
     }
 
-    impl_as_irlit_type!(as_temp, Temp, usize);
     impl_as_irlit_type!(as_var, Var, Symbol);
     impl_as_irlit_type!(as_const, Const, IRLitVal);
     impl_as_irlit_type!(as_stack_off, StackOff, usize);
+
+    pub fn as_ext_temp(&self) -> Option<usize> {
+        match self {
+            Self::ExtendedTemp { id, .. } => Some(*id),
+            _ => None
+        }
+    }
 
     pub fn as_reg(&self) -> Option<(RegIdx, usize)> {
         match self {

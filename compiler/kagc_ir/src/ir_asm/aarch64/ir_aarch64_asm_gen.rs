@@ -666,7 +666,6 @@ impl Aarch64IRToASM {
     fn resolve_register(&mut self, irlit: &IRLitType) -> (TempId, AllocedReg) {
         match irlit {
             IRLitType::ExtendedTemp { id, size } => (*id, self.get_or_allocate_temp_register(*id, *size)),
-            IRLitType::AllocReg { reg, temp } => (*temp, self.get_or_allocate_specific_register(*reg, *temp, 8)),
             IRLitType::Reg { idx, size, temp } => (*temp, self.get_or_allocate_specific_register(*idx, *temp, *size)),
             _ => todo!(),
         }
