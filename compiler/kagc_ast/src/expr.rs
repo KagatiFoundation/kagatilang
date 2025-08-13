@@ -6,20 +6,23 @@ use lazy_static::lazy_static;
 
 use super::{ASTOperation, AST};
 
+/// A binary expression AST node.
 #[derive(Clone, Debug)]
 pub struct BinExpr {
     pub operation: ASTOperation,
     pub left: Box<Expr>,
     pub right: Box<Expr>,
-    pub result_type: LitTypeVariant
+    pub result_type: LitTypeVariant,
 }
 
+/// A widen expression AST node.
 #[derive(Clone, Debug)]
 pub struct WidenExpr {
     pub from: Box<AST>,
     pub result_type: LitTypeVariant
 }
 
+/// A identifier expression AST node.
 #[derive(Clone, Debug)]
 pub struct IdentExpr {
     /// Name of the symbol

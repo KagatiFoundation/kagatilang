@@ -22,10 +22,40 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub mod source;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SourcePos {
+    pub line: usize,
+    pub column: usize,
+}
 
-mod comp_unit;
-pub use comp_unit::*;
+/// Represents a continuous range in a source file.
+/// Both start and end are inclusive positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Span {
+    /// File identifier 
+    pub file_id: usize,
 
-mod import_resolver;
-pub use import_resolver::*;
+    /// Starting position (line and column).
+    pub start: SourcePos,
+
+    /// Ending position (line and column).
+    pub end: SourcePos,
+}
+
+impl Span {
+    pub fn new(file: usize, start: SourcePos, end: SourcePos) -> Self {
+        Self {
+            file_id: file,
+            start,
+            end
+        }
+    }
+}
+
+/// A trait for types that provide access to a source code span.
+///
+/// Implementors of this trait can return a reference to their associated `Span`,
+/// which represents the location in the source code corresponding to the item.
+pub trait HasSpan {
+    fn span(&self) -> &Span;
+}

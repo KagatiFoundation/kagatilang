@@ -24,8 +24,16 @@ SOFTWARE.
 
 #![allow(non_camel_case_types)]
 
-use kagc_token::{FromTokenKind, Token, TokenKind};
-use kagc_types::{BTypeComparable, LitTypeVariant, TypeSized};
+use kagc_span::span::{HasSpan, SourcePos, Span};
+use kagc_token::{
+    FromTokenKind, 
+    TokenKind
+};
+use kagc_types::{
+    BTypeComparable, 
+    LitTypeVariant, 
+    TypeSized
+};
 
 use super::ASTKind;
 
@@ -108,16 +116,16 @@ impl FromTokenKind<ASTOperation> for ASTOperation {
 ///
 /// * `kind` - An enum representing the kind of AST node (`ASTKind`).
 /// * `operation` - An enum representing the operation performed by the AST 
-///     node (`ASTOperation`).
+///   node (`ASTOperation`).
 /// * `left` - A boxed optional child node representing the left subtree of 
-///     the current node.
+///   the current node.
 /// * `mid` - A boxed optional child node representing the middle subtree of 
-///     the current node.
+///   the current node.
 /// * `right` - A boxed optional child node representing the right subtree of 
-///     the current node.
+///   the current node.
 /// * `value` - An optional literal value associated with the AST node (`LitType`).
 /// * `result_type` - The variant of literal type representing the result type of 
-///     the AST node (`LitTypeVariant`).
+///   the AST node (`LitTypeVariant`).
 #[derive(Clone, Debug)]
 pub struct AST {
     pub kind: ASTKind,
@@ -126,8 +134,7 @@ pub struct AST {
     pub mid: Option<Box<AST>>,
     pub right: Option<Box<AST>>,
     pub result_type: LitTypeVariant,
-    pub start_token: Option<Token>,
-    pub end_token: Option<Token>
+    pub meta: NodeMeta,
 }
 
 impl AST {
@@ -139,8 +146,7 @@ impl AST {
             right: None,
             mid: None,
             result_type: LitTypeVariant::None,
-            start_token: None,
-            end_token: None
+            meta: NodeMeta::none()
         }
     }
 
@@ -152,12 +158,16 @@ impl AST {
             mid: None,
             right: right.map(Box::new),
             result_type,
-            start_token: None,
-            end_token: None
+            meta: NodeMeta::none()
         }
     }
 
-    pub fn create_leaf(kind: ASTKind, operation: ASTOperation, result_type: LitTypeVariant, start_tok: Option<Token>, end_tok: Option<Token>) -> Self {
+    pub fn create_leaf(
+        kind: ASTKind, 
+        operation: ASTOperation, 
+        result_type: LitTypeVariant,
+        meta: NodeMeta
+    ) -> Self {
         Self {
             kind,
             operation,
@@ -165,12 +175,18 @@ impl AST {
             mid: None,
             right: None,
             result_type,
-            start_token: start_tok,
-            end_token: end_tok
+            meta
         }
     }
     
-    pub fn with_mid(kind: ASTKind, op: ASTOperation, left: Option<AST>, mid: Option<AST>, right: Option<AST>, result_type: LitTypeVariant) -> Self {
+    pub fn with_mid(
+        kind: ASTKind, 
+        op: ASTOperation, 
+        left: Option<AST>, 
+        mid: Option<AST>, 
+        right: Option<AST>, 
+        result_type: LitTypeVariant
+    ) -> Self {
         Self {
             kind,
             operation: op,
@@ -178,8 +194,27 @@ impl AST {
             mid: mid.map(Box::new),
             right: right.map(Box::new),
             result_type,
-            start_token: None,
-            end_token: None
+            meta: NodeMeta::none()
+        }
+    }
+
+    pub fn with_meta(
+        kind: ASTKind,
+        op: ASTOperation,
+        left: Option<AST>,
+        mid: Option<AST>,
+        right: Option<AST>,
+        result_type: LitTypeVariant,
+        meta: NodeMeta
+    ) -> Self {
+        Self {
+            kind,
+            operation: op,
+            left: left.map(Box::new),
+            mid: mid.map(Box::new),
+            right: right.map(Box::new),
+            result_type,
+            meta
         }
     }
 
@@ -293,5 +328,42 @@ pub fn are_compatible_for_operation<T: BTypeComparable + TypeSized>(
             }
         },
         _ => (false, larger_type)
+    }
+}
+
+/// `HasSpan` implemented for AST node.
+impl HasSpan for AST {
+    fn span(&self) -> &Span {
+        &self.meta.span
+    }
+}
+
+/// Metadata associated with an AST node.
+///
+/// Contains the source code location (`span`) and a list of informational notes
+/// (e.g., warnings, hints) relevant to the node.
+#[derive(Clone, Debug)]
+pub struct NodeMeta {
+    pub span: Span,
+    pub notes: Vec<String>,
+}
+
+impl NodeMeta {
+    pub fn none() -> Self {
+        Self {
+            span: Span::new(0, SourcePos{column: 1, line: 1}, SourcePos { line: 0, column: 0 }),
+            notes: vec![]
+        }
+    }
+
+    pub fn new(span: Span, notes: Vec<String>) -> Self {
+        Self {
+            span,
+            notes
+        }
+    }
+
+    pub fn add_note(&mut self, note: &str) {
+        self.notes.push(note.to_string());
     }
 }

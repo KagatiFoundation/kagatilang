@@ -22,10 +22,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub mod source;
-
-mod comp_unit;
-pub use comp_unit::*;
-
-mod import_resolver;
-pub use import_resolver::*;
+pub mod span;

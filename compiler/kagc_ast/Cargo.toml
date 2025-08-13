@@ -10,5 +10,6 @@ lazy_static = "1.4.0"
 kagc_types = { path = "../kagc_types" }
 kagc_lexer = { path = "../kagc_lexer" }
 kagc_token = { path = "../kagc_token" }
+kagc_span = { path = "../kagc_span" }
 kagc_errors = { path = "../kagc_errors" }
 kagc_symbol = { path = "../kagc_symbol" }

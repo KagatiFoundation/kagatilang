@@ -30,6 +30,7 @@ use kagc_ast::{record::*, *};
 use kagc_ctx::CompilerCtx;
 use kagc_errors::*;
 use kagc_scope::scope::ScopeType;
+use kagc_span::span::{SourcePos, Span};
 use kagc_symbol::{function::*, *};
 use kagc_token::*;
 use kagc_types::{
@@ -273,9 +274,24 @@ impl Parser {
     }
 
     fn parse_import_stmt(&mut self) -> ParseResult2 {
-        _ = self.token_match(TokenKind::KW_IMPORT)?; // match 'import' keyword
+        let start_tok = self.token_match(TokenKind::KW_IMPORT)?.pos; // match 'import' keyword
         let module_path_tok: Token = self.token_match(TokenKind::T_STRING)?.clone();
-        _ = self.token_match(TokenKind::T_SEMICOLON); // match ';'
+        let end_tok = self.token_match(TokenKind::T_SEMICOLON)?.pos; // match ';'
+
+        let meta = NodeMeta::new(
+            Span::new(
+                0,
+                SourcePos { 
+                    line: start_tok.line, 
+                    column: start_tok.column 
+                },
+                SourcePos { 
+                    line: end_tok.line, 
+                    column: end_tok.column 
+                }
+            ),
+            vec![]
+        );
         Ok(
             AST::create_leaf(
                 ASTKind::StmtAST(
@@ -286,15 +302,14 @@ impl Parser {
                     )
                 ), 
                 ASTOperation::AST_IMPORT,
-                LitTypeVariant::None, // none type
-                None,
-                None
+                LitTypeVariant::None,
+                meta
             )
         )
     }
 
     fn parse_record_decl_stmt(&mut self) -> ParseResult2 {
-        _ = self.token_match(TokenKind::KW_RECORD); // match 'record' keyword
+        let start_tok = self.token_match(TokenKind::KW_RECORD)?.pos; // match 'record' keyword
 
         // expect name of the record
         let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
@@ -307,7 +322,21 @@ impl Parser {
             rec_fields.push(self.parse_record_field_decl_stmt()?);
         }
         
-        _ = self.token_match(TokenKind::T_RBRACE); // match '}'
+        let end_tok = self.token_match(TokenKind::T_RBRACE)?.pos; // match '}'
+        let meta = NodeMeta::new(
+            Span::new(
+                0,
+                SourcePos { 
+                    line: start_tok.line, 
+                    column: start_tok.column 
+                },
+                SourcePos { 
+                    line: end_tok.line, 
+                    column: end_tok.column 
+                }
+            ),
+            vec![]
+        );
 
         Ok(
             AST::create_leaf(
@@ -318,19 +347,18 @@ impl Parser {
                             size: 0,
                             alignment: 0,
                             fields: rec_fields.into_iter().enumerate().map(|(idx, field)| {
-                                    RecordFieldType {
-                                        name: field.name.clone(),
-                                        typ: field.typ,
-                                        rel_stack_off: idx
-                                    }
-                                }).collect::<Vec<RecordFieldType>>() 
+                                RecordFieldType {
+                                    name: field.name.clone(),
+                                    typ: field.typ,
+                                    rel_stack_off: idx
+                                }
+                            }).collect::<Vec<RecordFieldType>>() 
                         }
                     )
                 ), 
                 ASTOperation::AST_RECORD_DECL,
                 LitTypeVariant::Record,
-                None,
-                None
+                meta
             )
         )
     }
@@ -565,9 +593,22 @@ impl Parser {
                 )
             );
         }
-        _ = self.token_match(TokenKind::KW_RETURN)?;
+        let ret_tok = self.token_match(TokenKind::KW_RETURN)?;
+
+        let pos = SourcePos {
+            line: ret_tok.pos.line,
+            column: ret_tok.pos.column
+        };
 
         if self.current_token.kind == TokenKind::T_SEMICOLON {
+            let meta = NodeMeta::new(
+                Span::new(
+                    0,
+                    pos,
+                    pos
+                ),
+                vec![]
+            );
             Ok(
                 AST::create_leaf(
                     ASTKind::StmtAST(
@@ -579,13 +620,20 @@ impl Parser {
                     ),
                     ASTOperation::AST_RETURN,
                     LitTypeVariant::None,
-                    None,
-                    None
+                    meta
                 )
             )
         }
         else {
             let return_expr: AST = self.parse_record_or_expr()?;
+            let meta = NodeMeta::new(
+                Span::new(
+                    0,
+                    pos,
+                    return_expr.meta.span.end
+                ),
+                vec![]
+            );
             Ok(AST::new(
                 ASTKind::StmtAST(
                     Stmt::Return(
@@ -892,11 +940,14 @@ impl Parser {
         // _ = self.token_match(TokenKind::T_SEMICOLON)?;
 
         let lvalueid: AST = AST::create_leaf(
-            ASTKind::StmtAST(Stmt::LValue2{ name: id_token.lexeme.clone() }),
+            ASTKind::StmtAST(
+                Stmt::LValue2 { 
+                    name: id_token.lexeme.clone() 
+                }
+            ),
             ASTOperation::AST_LVIDENT,
             LitTypeVariant::None,
-            None,
-            None
+            NodeMeta::none()
         );
 
         Ok(AST::new(
@@ -922,6 +973,8 @@ impl Parser {
     }
 
     fn parse_record_creation(&mut self) -> ParseResult2 {
+        let span_start = self.current_token.pos;
+
         let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
         _ = self.token_match(TokenKind::T_LBRACE)?;
 
@@ -948,6 +1001,22 @@ impl Parser {
             }
         }
 
+        let span_end = self.tokens[self.current - 1].pos;
+        let meta = NodeMeta::new(
+            Span::new(
+                0, 
+                SourcePos { line: 
+                    span_start.line, 
+                    column: span_start.column 
+                }, 
+                SourcePos { 
+                    line: span_end.line, 
+                    column: span_end.column 
+                }
+            ),
+            vec![]
+        );
+
         Ok(
             AST::create_leaf(
                 ASTKind::ExprAST(
@@ -961,8 +1030,7 @@ impl Parser {
                 ),
                 ASTOperation::AST_RECORD_CREATE, 
                 LitTypeVariant::Record, 
-                None, 
-                None
+                meta
             )
         )
     }
@@ -1021,53 +1089,104 @@ impl Parser {
             return lhs;
         }
 
+        // start of the expression             
+        let span_start = left.meta.span;
+
         self.skip_to_next_token(); // skip the operator
 
         let ast_op: ASTOperation = ASTOperation::from_token_kind(current_token_kind).unwrap(); // DANGEROUS unwrap CALL
-
         let right: AST = self.parse_equality()?;
-
         let left_expr: Expr = left.kind.expr().unwrap();
         let right_expr: Expr = right.kind.expr().unwrap();
 
-        Ok(AST::create_leaf(
-            ASTKind::ExprAST(
-                Expr::Binary(BinExpr {
-                    operation: ast_op,
-                    left: Box::new(left_expr),
-                    right: Box::new(right_expr),
-                    result_type: LitTypeVariant::None,
-                })
-            ),
-            ast_op,
-            LitTypeVariant::None,
-            None,
-            None
-        ))
+        // end of the expression
+        let span_end = right.meta.span;
+
+        let combined_span = Span {
+            file_id: 0,
+            start: span_start.start,
+            end: span_end.end
+        };
+
+        Ok(
+            AST::create_leaf(
+                ASTKind::ExprAST(
+                    Expr::Binary(BinExpr {
+                        operation: ast_op,
+                        left: Box::new(left_expr),
+                        right: Box::new(right_expr),
+                        result_type: LitTypeVariant::None,
+                    })
+                ),
+                ast_op,
+                LitTypeVariant::None,
+                NodeMeta::new(
+                    combined_span,
+                    vec![]
+                )
+            )
+        )
     }
 
     fn parse_primary(&mut self) -> ParseResult2 {
         let current_token: Token = self.current_token.clone();
+
+        let start_pos = SourcePos {
+            line: current_token.pos.line,
+            column: current_token.pos.column
+        };
+        let single_token_meta = NodeMeta::new(
+            Span::new(
+                0,
+                start_pos,
+                start_pos
+            ),
+            vec![]
+        );
+
         let current_file: String = self.get_current_file_name();
+
+        // go ahead
         self.skip_to_next_token();
+
         match current_token.kind {
-            TokenKind::T_INT_NUM => Ok(Parser::create_expr_ast(
-                LitType::I32(current_token.lexeme.parse::<i32>().unwrap()),
-                ASTOperation::AST_INTLIT,
-            )),
-            TokenKind::T_CHAR => Ok(Parser::create_expr_ast(
-                LitType::U8(current_token.lexeme.parse::<u8>().unwrap()),
-                ASTOperation::AST_INTLIT,
-            )),
-            TokenKind::T_LONG_NUM => Ok(Parser::create_expr_ast(
-                LitType::I64(current_token.lexeme.parse::<i64>().unwrap()),
-                ASTOperation::AST_INTLIT,
-            )),
-            TokenKind::T_FLOAT_NUM | TokenKind::T_DOUBLE_NUM => Ok(Parser::create_expr_ast(
-                LitType::F64(current_token.lexeme.parse::<f64>().unwrap()),
-                ASTOperation::AST_INTLIT,
-            )),
-            TokenKind::T_STRING => {
+            TokenKind::T_INT_NUM => {
+                Ok(
+                    Parser::create_expr_ast(
+                        LitType::I32(current_token.lexeme.parse::<i32>().unwrap()),
+                        ASTOperation::AST_INTLIT,
+                        single_token_meta
+                    )
+                )
+            },
+            TokenKind::T_CHAR => {
+                Ok(
+                    Parser::create_expr_ast(
+                        LitType::U8(current_token.lexeme.parse::<u8>().unwrap()),
+                        ASTOperation::AST_INTLIT,
+                        single_token_meta
+                    )
+                )
+            },
+            TokenKind::T_LONG_NUM => {
+                Ok(
+                    Parser::create_expr_ast(
+                        LitType::I64(current_token.lexeme.parse::<i64>().unwrap()),
+                        ASTOperation::AST_INTLIT,
+                        single_token_meta
+                    )
+                )
+            },
+            TokenKind::T_FLOAT_NUM | TokenKind::T_DOUBLE_NUM => {
+               Ok(
+                    Parser::create_expr_ast(
+                        LitType::F64(current_token.lexeme.parse::<f64>().unwrap()),
+                        ASTOperation::AST_INTLIT,
+                        single_token_meta
+                    )
+                ) 
+            },
+            TokenKind::T_STRING => { 
                 Ok(AST::create_leaf(
                     ASTKind::ExprAST(
                         Expr::LitVal(
@@ -1079,24 +1198,25 @@ impl Parser {
                     ),
                     ASTOperation::AST_STRLIT,
                     LitTypeVariant::RawStr,
-                    None,
-                    None
+                    single_token_meta
                 ))
             }
             TokenKind::T_IDENTIFIER => {
                 // Identifiers in a global variable declaration expression are not allowed.
                 if self.is_scope_global() {
-                    return Err(Box::new(
-                        BErr::new(
-                            BErrType::TypeError(
-                                BTypeErr::InitializerNotAConstant { 
-                                    lexeme: current_token.lexeme.clone() 
-                                }
-                            ),
-                            current_file.clone(), 
-                            current_token.clone()
+                    return Err(
+                        Box::new(
+                            BErr::new(
+                                BErrType::TypeError(
+                                    BTypeErr::InitializerNotAConstant { 
+                                        lexeme: current_token.lexeme.clone() 
+                                    }
+                                ),
+                                current_file.clone(), 
+                                current_token.clone()
+                            )
                         )
-                    ));
+                    );
                 }
                 
                 let symbol_name: String = current_token.lexeme.clone();
@@ -1106,7 +1226,7 @@ impl Parser {
                     self.parse_func_call_expr(&symbol_name, &current_token)
                 } 
                 else if curr_tok_kind == TokenKind::T_DOT {
-                    self.parse_record_field_access_expr(&symbol_name)
+                    self.parse_record_field_access_expr(&symbol_name, &current_token)
                 }
                 else {
                     Ok(AST::create_leaf(
@@ -1118,17 +1238,16 @@ impl Parser {
                         )),
                         ASTOperation::AST_IDENT,
                         LitTypeVariant::None, // type will be identified at the semantic analysis phases if the symbol is defined
-                        None,
-                        None
+                        single_token_meta
                     ))
                 }
             }
             TokenKind::T_LPAREN => {
                 // group expression: e.g: (a * (b + c)))
-                let group_expr: ParseResult2 = self.parse_record_or_expr();
+                let group_expr = self.parse_record_or_expr()?;
                 // Group expression terminates with ')'. Match and ignore ')'.
-                _ = self.token_match(TokenKind::T_RPAREN)?;
-                Ok(group_expr.unwrap())
+                let _ = self.token_match(TokenKind::T_RPAREN)?;
+                Ok(group_expr)
             },
 
             // null type
@@ -1138,19 +1257,17 @@ impl Parser {
                         ASTKind::ExprAST(Expr::Null), 
                         ASTOperation::AST_NULL, 
                         LitTypeVariant::Null, 
-                        None, 
-                        None
+                        single_token_meta
                     )
                 )
             },
-
             _ => {
                 Err(
                     Box::new(
                         BErr::unexpected_token(
-                        current_file.clone(),
-                        vec![TokenKind::T_EXPR],
-                        current_token.clone(),
+                            current_file.clone(),
+                            vec![TokenKind::T_EXPR],
+                            current_token.clone(),
                         )
                     )
                 )
@@ -1158,59 +1275,48 @@ impl Parser {
         }
     }
 
-    fn create_expr_ast(value: LitType, operation: ASTOperation) -> AST {
+    fn create_expr_ast(value: LitType, operation: ASTOperation, meta: NodeMeta) -> AST {
         AST::create_leaf(
-            ASTKind::ExprAST(Expr::LitVal(LitValExpr {
-                value: value.clone(),
-                result_type: value.variant(),
-            })),
+            ASTKind::ExprAST(
+                Expr::LitVal(
+                    LitValExpr {
+                        value: value.clone(),
+                        result_type: value.variant(),
+                    }
+                )
+            ),
             operation,
             value.variant(),
-            None,
-            None
+            meta
         )
     }
 
-    fn _parse_array_index_expr(&mut self, indexed_symbol: &Symbol, sym_index: usize, sym_token: &Token) -> ParseResult2 {
-        _ = self.token_match(TokenKind::T_LBRACKET)?;
-        let current_file: String = self.get_current_file_name();
-        let array_access_expr_result: ParseResult2 = self.parse_equality();
-
-        #[allow(clippy::question_mark)]
-        if array_access_expr_result.is_err() {
-            return array_access_expr_result;
-        }
-
-        let array_access_expr: AST = array_access_expr_result.ok().unwrap();
-        if indexed_symbol.sym_type != SymbolType::Array {
-            return Err(Box::new(BErr::nonsubsriptable_ident(
-                current_file.clone(),
-                sym_token.clone(),
-            )));
-        }
-
-        _ = self.token_match(TokenKind::T_RBRACKET)?;
-        Ok(AST::create_leaf(
-            ASTKind::ExprAST(Expr::Subscript(SubscriptExpr {
-                index: Box::new(array_access_expr.kind.expr().unwrap()),
-                symtbl_pos: sym_index,
-                result_type: indexed_symbol.lit_type,
-            })),
-            ASTOperation::AST_ARRAY_ACCESS,
-            indexed_symbol.lit_type,
-            None,
-            None
-        ))
-    }
-
-    fn parse_record_field_access_expr(&mut self, rec_alias: &str) -> ParseResult2 {
+    fn parse_record_field_access_expr(&mut self, rec_alias: &str, start_token: &Token) -> ParseResult2 {
         let mut field_chain = vec![];
+        let mut end_pos = SourcePos {
+            line: start_token.pos.line,
+            column: start_token.pos.column
+        };
 
         while self.current_token.kind == TokenKind::T_DOT {
             _ = self.token_match(TokenKind::T_DOT); // match '.'
             let access = self.token_match(TokenKind::T_IDENTIFIER)?;
+            end_pos.line = access.pos.line;
+            end_pos.column = access.pos.column;
             field_chain.push(access.lexeme.clone());
         }
+
+        let meta = NodeMeta::new(
+            Span::new(
+                0,
+                SourcePos { 
+                    line: start_token.pos.line, 
+                    column: start_token.pos.column 
+                },
+                end_pos
+            ),
+            vec![]
+        );
 
         let field_off = if let Some(rec_base_off) = self.var_offsets.get(rec_alias) {
             *rec_base_off
@@ -1226,7 +1332,6 @@ impl Parser {
                         RecordFieldAccessExpr { 
                             rec_name: "".to_string(),
                             rec_alias: rec_alias.to_string(), 
-                            // field_name: access.lexeme.clone(),
                             field_chain,
                             rel_stack_off: field_off,
                             result_type: LitTypeVariant::None // will be determined at the semantic analysis phase
@@ -1235,13 +1340,12 @@ impl Parser {
                 ),
                 ASTOperation::AST_RECORD_FIELD_ACCESS, 
                 LitTypeVariant::None, 
-                None, 
-                None
+                meta
             )
         )
     }
 
-    fn parse_func_call_expr(&mut self, called_symbol: &str, sym_token: &Token) -> ParseResult2 {
+    fn parse_func_call_expr(&mut self, called_symbol: &str, start_token: &Token) -> ParseResult2 {
         let current_file: String = self.get_current_file_name();
         _ = self.token_match(TokenKind::T_LPAREN)?;
 
@@ -1280,7 +1384,16 @@ impl Parser {
             }
         }
 
-        _ = self.token_match(TokenKind::T_RPAREN)?;
+        let end_token = self.token_match(TokenKind::T_RPAREN)?;
+
+        let start_pos = SourcePos {
+            line: start_token.pos.line,
+            column: start_token.pos.column
+        };
+        let end_pos = SourcePos {
+            line: end_token.pos.line,
+            column: end_token.pos.column
+        };
 
         Ok(AST::create_leaf(
             ASTKind::ExprAST(
@@ -1295,8 +1408,14 @@ impl Parser {
             ),
             ASTOperation::AST_FUNC_CALL,
             LitTypeVariant::None,
-            Some(sym_token.clone()),
-            None
+            NodeMeta::new(
+                Span::new(
+                    0,
+                    start_pos,
+                    end_pos
+               ),
+               vec![]
+            )
         ))
     }
 
