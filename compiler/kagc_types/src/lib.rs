@@ -167,7 +167,9 @@ impl Display for LitTypeVariant {
             Self::I32 => write!(f, "integer"),
             Self::I64 => write!(f, "long"),
             Self::U8 => write!(f, "byte"),
-            Self::Str => write!(f, "str"),
+            Self::Str
+            | Self::PoolStr
+            | Self::RawStr => write!(f, "string"),
             Self::Array => write!(f, "array"),
             Self::None => write!(f, "none"),
             Self::Void => write!(f, "void"),

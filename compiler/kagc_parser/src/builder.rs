@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use kagc_comp_unit::CompilationUnit;
+use kagc_comp_unit::{file_pool::FilePoolIdx, CompilationUnit};
 use kagc_ctx::CompilerCtx;
 use kagc_token::Token;
 
@@ -12,7 +12,8 @@ pub struct ParserBuilder {
     ctx: Option<Rc<RefCell<CompilerCtx>>>,
     shared_pctx: Option<Rc<RefCell<SharedParserCtx>>>,
     tokens: Option<Rc<Vec<Token>>>,
-    current_token: Option<Token>
+    current_token: Option<Token>,
+    current_file: usize
 }
 
 impl ParserBuilder {
@@ -21,12 +22,18 @@ impl ParserBuilder {
             ctx: None,
             shared_pctx: None,
             tokens: None,
-            current_token: None
+            current_token: None,
+            current_file: 0
         }
     }
 
     pub fn context(mut self, ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         self.ctx = Some(ctx);
+        self
+    }
+
+    pub fn file(mut self, file_id: FilePoolIdx) -> Self {
+        self.current_file = file_id;
         self
     }
 
@@ -60,7 +67,8 @@ impl ParserBuilder {
             self.ctx.unwrap(), 
             self.shared_pctx.unwrap(),
             self.tokens.unwrap(),
-            self.current_token.unwrap()
+            self.current_token.unwrap(),
+            self.current_file
         )
     }
 }

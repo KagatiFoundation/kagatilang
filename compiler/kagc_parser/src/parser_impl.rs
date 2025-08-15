@@ -27,7 +27,9 @@ use std::{cell::RefCell, collections::HashMap};
 use std::rc::Rc;
 
 use kagc_ast::{record::*, *};
+use kagc_comp_unit::file_pool::FilePoolIdx;
 use kagc_ctx::CompilerCtx;
+use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::*;
 use kagc_scope::scope::ScopeType;
 use kagc_span::span::{SourcePos, Span};
@@ -46,6 +48,8 @@ use kagc_types::{
 type ParseResult2<'a> = Result<AST, Box<BErr>>;
 
 type TokenMatch<'a> = Result<&'a Token, Box<BErr>>;
+
+type ParsingResult = Result<AST, Box<Diagnostic>>;
 
 /// Represents an invalid function ID.
 ///
@@ -104,7 +108,9 @@ pub struct Parser {
     /// Label generator that is going to be used by string literals only.
     _str_label_: usize,
 
-    var_offsets: HashMap<String, usize>
+    var_offsets: HashMap<String, usize>,
+
+    current_file: FilePoolIdx
 }
 
 impl Parser {
@@ -114,7 +120,8 @@ impl Parser {
         ctx: Rc<RefCell<CompilerCtx>>, 
         shared_pctx: Rc<RefCell<SharedParserCtx>>,
         tokens: Rc<Vec<Token>>,
-        current: Token
+        current: Token,
+        current_file: usize
     ) -> Self {
         Self {
             tokens,
@@ -127,7 +134,8 @@ impl Parser {
             ctx,
             shared_pctx,
             _str_label_: 0,
-            var_offsets: HashMap::new()
+            var_offsets: HashMap::new(),
+            current_file
         }
     }
 
@@ -280,7 +288,7 @@ impl Parser {
 
         let meta = NodeMeta::new(
             Span::new(
-                0,
+                self.current_file,
                 SourcePos { 
                     line: start_tok.line, 
                     column: start_tok.column 
@@ -325,7 +333,7 @@ impl Parser {
         let end_tok = self.token_match(TokenKind::T_RBRACE)?.pos; // match '}'
         let meta = NodeMeta::new(
             Span::new(
-                0,
+                self.current_file,
                 SourcePos { 
                     line: start_tok.line, 
                     column: start_tok.column 
@@ -603,7 +611,7 @@ impl Parser {
         if self.current_token.kind == TokenKind::T_SEMICOLON {
             let meta = NodeMeta::new(
                 Span::new(
-                    0,
+                    self.current_file,
                     pos,
                     pos
                 ),
@@ -628,7 +636,7 @@ impl Parser {
             let return_expr: AST = self.parse_record_or_expr()?;
             let meta = NodeMeta::new(
                 Span::new(
-                    0,
+                    self.current_file,
                     pos,
                     return_expr.meta.span.end
                 ),
@@ -731,11 +739,9 @@ impl Parser {
     fn parse_if_stmt(&mut self) -> ParseResult2 {
         let cond_ast: AST = self.parse_conditional_stmt(TokenKind::KW_IF)?;
 
-        let if_scope = self.ctx.borrow_mut().enter_new_scope(ScopeType::If);
-
+        let if_scope = self.ctx.borrow_mut().enter_new_scope(ScopeType::If); // enter if's scope
         let if_true_ast: AST = self.parse_single_stmt()?;
-
-        self.ctx.borrow_mut().exit_scope();
+        self.ctx.borrow_mut().exit_scope(); // exit
 
         let mut if_false_ast: Option<AST> = None;
         if self.current_token.kind == TokenKind::KW_ELSE {
@@ -1004,7 +1010,7 @@ impl Parser {
         let span_end = self.tokens[self.current - 1].pos;
         let meta = NodeMeta::new(
             Span::new(
-                0, 
+                self.current_file, 
                 SourcePos { line: 
                     span_start.line, 
                     column: span_start.column 
@@ -1103,7 +1109,7 @@ impl Parser {
         let span_end = right.meta.span;
 
         let combined_span = Span {
-            file_id: 0,
+            file_id: self.current_file,
             start: span_start.start,
             end: span_end.end
         };
@@ -1137,7 +1143,7 @@ impl Parser {
         };
         let single_token_meta = NodeMeta::new(
             Span::new(
-                0,
+                self.current_file,
                 start_pos,
                 start_pos
             ),
@@ -1308,7 +1314,7 @@ impl Parser {
 
         let meta = NodeMeta::new(
             Span::new(
-                0,
+                self.current_file,
                 SourcePos { 
                     line: start_token.pos.line, 
                     column: start_token.pos.column 
@@ -1410,7 +1416,7 @@ impl Parser {
             LitTypeVariant::None,
             NodeMeta::new(
                 Span::new(
-                    0,
+                    self.current_file,
                     start_pos,
                     end_pos
                ),

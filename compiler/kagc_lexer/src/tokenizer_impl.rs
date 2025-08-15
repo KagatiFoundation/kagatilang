@@ -114,10 +114,10 @@ impl Tokenizer {
                         tokens.push(token);
                     } 
                 },
-                TokenizationResult::Error(err_type, pos) => {
+                TokenizationResult::Error(err_type, _) => {
                     match err_type {
                         ErrorType::UnterminatedString => {
-                            kagc_errors::error(pos, "missing terminating '\"' character");
+                            panic!("missing terminating '\"' character");
                         },
                         _ => {
                             panic!("{:?}", err_type);

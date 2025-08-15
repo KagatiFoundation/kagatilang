@@ -23,6 +23,7 @@ SOFTWARE.
 */
 
 pub mod source;
+pub mod file_pool;
 
 mod comp_unit;
 pub use comp_unit::*;

@@ -25,6 +25,7 @@ SOFTWARE.
 use std::collections::HashSet;
 
 use itertools::Itertools;
+use kagc_comp_unit::file_pool::{FilePool, FilePoolIdx};
 use kagc_const::pool::ConstPool;
 use kagc_scope::{manager::*, scope::*};
 use kagc_symbol::{
@@ -38,6 +39,7 @@ use kagc_symbol::{
 };
 use kagc_types::record::RecordType;
 
+// Scope metadata
 #[derive(Debug)]
 struct __CompilerScope {
     typ: ScopeType,
@@ -46,7 +48,7 @@ struct __CompilerScope {
 
 #[derive(Debug)]
 pub struct CompilerCtx {
-    /// Functions information table.
+    /// Functions' information table.
     pub func_table: FunctionInfoTable,
 
     pub current_function: usize,
@@ -63,7 +65,11 @@ pub struct CompilerCtx {
 
     user_created_types: HashSet<String>,
 
-    pub const_pool: ConstPool
+    pub const_pool: ConstPool,
+
+    pub file_pool: FilePool,
+
+    pub current_file: FilePoolIdx
 }
 
 impl CompilerCtx {
@@ -84,7 +90,9 @@ impl CompilerCtx {
             scope_mgr,
             record_registery: RecordRegistery::default(),
             user_created_types: HashSet::new(),
-            const_pool: ConstPool::default()
+            const_pool: ConstPool::default(),
+            file_pool: FilePool::default(),
+            current_file: 0 // 0 = no file
         }
     }
 

@@ -351,7 +351,17 @@ pub struct NodeMeta {
 impl NodeMeta {
     pub fn none() -> Self {
         Self {
-            span: Span::new(0, SourcePos{column: 1, line: 1}, SourcePos { line: 0, column: 0 }),
+            span: Span::new(
+                0, 
+                SourcePos{
+                    column: 1, 
+                    line: 1
+                }, 
+                SourcePos { 
+                    line: 0, 
+                    column: 0 
+                }
+            ),
             notes: vec![]
         }
     }

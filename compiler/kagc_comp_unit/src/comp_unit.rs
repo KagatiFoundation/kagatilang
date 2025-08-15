@@ -32,9 +32,35 @@ use crate::source::{
     SourceFile
 };
 
+/// Represents a single source file's state throughout the compilation pipeline.
+///
+/// A `CompilationUnit` encapsulates all the intermediate data derived from
+/// processing a single source file, from its raw source code to the parsed
+/// abstract syntax trees (ASTs).
+///
+/// It is created from a [`SourceFile`] and is gradually enriched as the compiler
+/// advances through its stages:
+///
+/// 1. **Loading** – The raw file contents are read into `source`.
+/// 2. **Lexing** – The source text is tokenized into `tokens`.
+/// 3. **Parsing** – Tokens are transformed into an AST representation (`asts`).
+/// 4. **Semantic Analysis** – The ASTs are type-checked and linked with imported units.
+/// 5. **Code Generation** – Lowered IR or machine code is generated from the validated AST.
+///
+/// A `CompilationUnit` also stores:
+/// - `meta_id` – An internal unique identifier for bookkeeping.
+/// - `imports` – A list of modules or files this unit depends on.
+/// - `stage` – Tracks how far along in the compilation process this unit is.
+/// - `tokens` – The tokenized form of the source, shared via `Rc` for reuse.
+/// - `asts` – The parsed representation of this unit (and optionally its imports).
+///
+/// Multiple `CompilationUnit`s are managed together by the compiler to support
+/// multi-file projects, incremental compilation, and dependency resolution.
 #[derive(Debug, Clone)]
 pub struct CompilationUnit {
     pub source: SourceFile,
+
+    pub meta_id: usize,
 
     pub imports: Vec<Import>,
 
@@ -42,20 +68,18 @@ pub struct CompilationUnit {
 
     pub tokens: Option<Rc<Vec<Token>>>,
 
-    pub asts: Vec<AST>
+    pub asts: Vec<AST>,
 }
 
 impl CompilationUnit {
-    pub fn from_source(source: SourceFile) -> CompilationUnit {
+    pub fn from_source(source: SourceFile, meta_id: usize) -> CompilationUnit {
         Self {
             source,
-
+            meta_id,
             stage: ParsingStage::Loaded,
-
             tokens: None,
-
             imports: vec![],
-            asts: vec![]
+            asts: vec![],
         }
     }
 

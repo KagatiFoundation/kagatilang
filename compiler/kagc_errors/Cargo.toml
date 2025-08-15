@@ -8,3 +8,6 @@ itertools = "0.13.0"
 lazy_static = "1.4.0"
 
 kagc_token = { path = "../kagc_token" }
+kagc_ast = { path = "../kagc_ast" }
+kagc_span = { path = "../kagc_span" }
+kagc_comp_unit = { path = "../kagc_comp_unit" }

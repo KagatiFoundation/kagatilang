@@ -4,7 +4,7 @@ use std::{
     rc::Rc
 };
 
-use kagc_comp_unit::{source::*, *};
+use kagc_comp_unit::{file_pool::FileMeta, source::*, *};
 
 use kagc_ctx::CompilerCtx;
 use kagc_ir::ir_asm::aarch64::Aarch64IRToASM;
@@ -14,8 +14,14 @@ use kagc_lowering::{
     aarch64::aarch64_lowerer::Aarch64CodeGen, 
     CodeGen
 };
-use kagc_parser::{builder::ParserBuilder, SharedParserCtx};
-use kagc_sema::{resolver::Resolver, SemanticAnalyzer};
+use kagc_parser::{
+    builder::ParserBuilder, 
+    SharedParserCtx
+};
+use kagc_sema::{
+    resolver::Resolver, 
+    SemanticAnalyzer
+};
 use kagc_target::asm::aarch64::Aarch64RegManager2;
 
 #[derive(Debug, Clone)]
@@ -70,15 +76,14 @@ impl Compiler {
 
         for unit_file in &self.compiler_order {
             if let Some(unit) = self.units.get_mut(unit_file) {
+                // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
+                // know which file is currently being processed
+                self.ctx.borrow_mut().current_file = unit.meta_id;
                 resolv.resolve(&mut unit.asts);
                 analyzer.start_analysis(&mut unit.asts);
                 final_irs.extend(lowerer.gen_ir(&mut unit.asts));
             }
         }
-
-        // let mut cg1 = IRToWASM {};
-        // let code = cg1.gen_wasm(&mut final_irs);
-        // println!("{code}");
 
         // IR to Aarch64 ASM generator
         let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm.clone());
@@ -93,8 +98,14 @@ impl Compiler {
         }
 
         let file = ImportResolver::resolve(file_path)?;
-        let mut unit = CompilationUnit::from_source(file);
-    
+        let file_pool_idx = self.ctx.borrow_mut().file_pool.insert(
+            FileMeta { 
+                name: file.name.clone(), 
+                abs_path: file.path.clone() 
+            }
+        );
+
+        let mut unit = CompilationUnit::from_source(file, file_pool_idx.unwrap());
         let mut lexer = Tokenizer::new();
         let tokens = lexer.tokenize(unit.source.content.clone());
     
@@ -105,6 +116,7 @@ impl Compiler {
             .context(self.ctx.clone())
             .shared_context(self.shared_pctx.clone())
             .compile_unit(&mut unit)
+            .file(unit.meta_id)
             .build();
 
         let asts = parser.parse();
