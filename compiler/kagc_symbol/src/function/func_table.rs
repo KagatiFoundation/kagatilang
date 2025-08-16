@@ -30,7 +30,7 @@ use crate::registery::Registry;
 
 use super::FunctionInfo;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct FunctionInfoTable {
     functions: HashMap<String, FunctionInfo>,
 }

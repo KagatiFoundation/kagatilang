@@ -24,13 +24,12 @@ SOFTWARE.
 
 pub mod compiler;
 
-use std::{cell::RefCell, io::Error, rc::Rc};
+use std::io::Error;
 
 use compiler::Compiler;
-use kagc_ctx::CompilerCtx;
 
 fn main() -> Result<(), Error> {
-    let mut comp = Compiler::new(Rc::new(RefCell::new(CompilerCtx::new())));
+    let mut comp = Compiler::new();
     // comp.compile("/Users/rigelstar/kagc/lib/std/net.kag")
     comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.kag")
 }

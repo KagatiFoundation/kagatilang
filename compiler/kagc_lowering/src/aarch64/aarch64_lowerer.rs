@@ -74,14 +74,14 @@ impl CodeGen for Aarch64CodeGen {
         self.reg_manager.borrow_mut().reset();
 
         let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
-            self.ctx.borrow_mut().enter_scope(func_decl.scope_id);
+            self.ctx.borrow_mut().scope.enter_scope(func_decl.scope_id);
             (func_decl.func_id, func_decl.scope_id)
         } else {
             panic!("Expected FuncStmt but found {:?}", ast);
         };
 
         let func_name: String = self.get_func_name(func_id).expect("Function name error!");
-        if let Some(finfo) = self.ctx.borrow().func_table.lookup(&func_name.as_str()) {
+        if let Some(finfo) = self.ctx.borrow().scope.lookup_fn_by_name(func_name.as_str()) {
             self.current_function = Some(finfo.clone());
         }
 
@@ -95,7 +95,7 @@ impl CodeGen for Aarch64CodeGen {
                         body: vec![],
                         class: func_info.storage_class,
                         is_leaf: true,
-                        scope_id: self.ctx.borrow().live_scope_id(),
+                        scope_id: self.ctx.borrow().scope.live_scope_id(),
                         id: func_id
                     }
                 )]
@@ -131,7 +131,9 @@ impl CodeGen for Aarch64CodeGen {
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
-        let params: Vec<IRLitType> = self.ctx.borrow()
+        let params: Vec<IRLitType> = self.ctx
+                                    .borrow()
+                                    .scope
                                     .collect_params(func_scope)
                                     .iter()
                                     .map(|&e| {
@@ -167,7 +169,7 @@ impl CodeGen for Aarch64CodeGen {
         // get out of function
         self.current_function = None;
         // exit function's scope
-        let func_scope: usize = self.ctx.borrow_mut().exit_scope();
+        let func_scope: usize = self.ctx.borrow_mut().scope.exit_scope();
         self.label_id = fn_ctx.next_label;
         let calls_fns: bool = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
 
@@ -417,7 +419,7 @@ impl CodeGen for Aarch64CodeGen {
 
     fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
-            self.ctx.borrow_mut().enter_scope(if_stmt.scope_id);
+            self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
         }
 
         // Label for jumping to the 'else' block if the condition is false
@@ -457,7 +459,7 @@ impl CodeGen for Aarch64CodeGen {
         output.extend(self.gen_ir_label(label_if_false)?);
 
         // end `if` scope
-        self.ctx.borrow_mut().exit_scope();
+        self.ctx.borrow_mut().scope.exit_scope();
 
         // else block
         if let Some(right_ast) = ast.right.as_mut() {
@@ -562,11 +564,11 @@ impl Aarch64CodeGen {
 
     fn get_func_name(&mut self, index: usize) -> Option<String> {
         let ctx_borrow = self.ctx.borrow();
-        ctx_borrow.lookup_fn(index).map(|func| func.name.clone())
+        ctx_borrow.scope.lookup_fn(index).map(|func| func.name.clone())
     }
 
     fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Symbol> {
         let ctx_borrow = self.ctx.borrow();
-        ctx_borrow.deep_lookup(sym_name).cloned()
+        ctx_borrow.scope.deep_lookup(sym_name).cloned()
     }
 }

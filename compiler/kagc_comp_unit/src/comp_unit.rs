@@ -68,7 +68,7 @@ pub struct CompilationUnit {
 
     pub tokens: Option<Rc<Vec<Token>>>,
 
-    pub asts: Vec<AST>,
+    pub asts: Vec<AST>
 }
 
 impl CompilationUnit {

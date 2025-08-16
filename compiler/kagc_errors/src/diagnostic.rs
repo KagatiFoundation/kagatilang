@@ -22,8 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use kagc_comp_unit::{file_pool::FilePool, CompilationUnit};
-use kagc_span::span::Span;
+use kagc_comp_unit::{
+    file_pool::{
+        FilePool, 
+        FilePoolIdx
+    }, 
+    CompilationUnit
+};
+use kagc_span::span::{SourcePos, Span};
+use kagc_token::Token;
 
 #[derive(Debug)]
 pub enum Severity {
@@ -43,23 +50,39 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn report(&self, file_pool: &FilePool, compilation_units: &[CompilationUnit]) {
+    pub fn from_single_token(tok: &Token, file: FilePoolIdx, msg: &str, severity: Severity) -> Self {
+        let start_pos = tok.pos;
+        let lexeme = tok.lexeme.clone();
+        let total_span = Span::new(
+            file, 
+            SourcePos {
+                line: start_pos.line,
+                column: start_pos.column
+            },
+            SourcePos {
+                line: start_pos.line,
+                column: start_pos.column + lexeme.len()
+            }
+        );
+        Self {
+            code: None,
+            message: msg.to_string(),
+            severity,
+            primary_span: total_span,
+            secondary_spans: vec![],
+            notes: vec![]
+        }
+    }
+
+    pub fn report(&self, file_pool: &FilePool, unit: &CompilationUnit) {
         let file_meta = file_pool.get(self.primary_span.file_id)
             .expect("File not found in pool");
 
-        let cu = compilation_units.iter()
-            .find(|cu| cu.meta_id == self.primary_span.file_id)
-            .expect("CompilationUnit not found");
-
-        let source_lines: Vec<&str> = cu.source.content.lines().collect();
+        let source_lines: Vec<&str> = unit.source.content.lines().collect();
         let line_num = self.primary_span.start.line;
         let col_num = self.primary_span.start.column;
 
-        eprintln!(
-            "{:#?}: {}",
-            self.severity,
-            self.message
-        );
+        eprintln!("{:#?}: {}", self.severity, self.message);
         eprintln!(
             " --> {}:{}:{}",
             file_meta.abs_path,
@@ -67,16 +90,8 @@ impl Diagnostic {
             col_num + 1
         );
         eprintln!("  |");
-        eprintln!(
-            "{: >3} | {}",
-            line_num + 1,
-            source_lines[line_num]
-        );
-        eprintln!(
-            "    | {:>width$}^",
-            "",
-            width = col_num
-        );
+        eprintln!("{: >3} | {}", line_num + 1, source_lines[line_num]);
+        eprintln!("    | {:>width$}^", "", width = col_num);
     }
 }
 
@@ -98,9 +113,9 @@ impl DiagnosticBag {
         self.diagnostics.iter().any(|d| matches!(d.severity, Severity::Error))
     }
 
-    pub fn report_all(&self, file_pool: &FilePool, compilation_units: &[CompilationUnit]) {
+    pub fn report_all(&self, file_pool: &FilePool, unit: &CompilationUnit) {
         for diag in &self.diagnostics {
-            diag.report(file_pool, compilation_units);
+            diag.report(file_pool, unit);
         }
     }
 

@@ -10,7 +10,6 @@ use kagc_const::pool::{
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::{
     function::*, 
-    registery::Registry, 
     *
 };
 use kagc_token::Token;
@@ -114,7 +113,7 @@ impl Resolver {
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt_mut() {
             // switch to function's scope
             let mut ctx_borrow = self.ctx.borrow_mut();
-            let _ = ctx_borrow.enter_scope(func_decl.scope_id);
+            let _ = ctx_borrow.scope.enter_scope(func_decl.scope_id);
 
             let function_id: Option<usize> = {
                 let sym = Symbol::new(
@@ -123,7 +122,7 @@ impl Resolver {
                     SymbolType::Function,
                     func_decl.storage_class,
                 );
-                let insert_pos: Option<usize> = ctx_borrow.root_scope_mut().declare(sym);
+                let insert_pos: Option<usize> = ctx_borrow.scope.root_scope_mut().declare(sym);
                 insert_pos
             };
 
@@ -144,10 +143,6 @@ impl Resolver {
             // what the function ID is
             func_decl.func_id = function_id;
 
-            func_decl.locals.iter().for_each(|local| {
-                
-            });
-
             let func_info: FunctionInfo = FunctionInfo::new(
                 func_decl.name.clone(),
                 function_id,
@@ -159,7 +154,7 @@ impl Resolver {
             );
 
             // create a new FunctionInfo
-            ctx_borrow.func_table.declare(func_info);
+            ctx_borrow.scope.declare_fn(func_info);
 
             // drop context borrow
             drop(ctx_borrow);
@@ -169,7 +164,7 @@ impl Resolver {
             }
 
             // exit the function's scope
-            self.ctx.borrow_mut().exit_scope();
+            self.ctx.borrow_mut().scope.exit_scope();
             return Ok(function_id);
         }
         panic!("Not a function declaration statement!");
@@ -191,7 +186,7 @@ impl Resolver {
             let _ = self.validate_and_process_expr(left, &stmt.sym_name)?;
         }
 
-        stmt.func_id = self.ctx.borrow_mut().current_function;
+        stmt.func_id = self.ctx.borrow_mut().scope.current_fn();
 
         let sym = Symbol::create(
             stmt.sym_name.clone(),
@@ -204,7 +199,7 @@ impl Resolver {
             stmt.func_id,
         );
 
-        let id = self.ctx.borrow_mut().declare(sym).ok_or({
+        let id = self.ctx.borrow_mut().scope.declare(sym).ok_or({
             SAError::SymbolAlreadyDefined { sym_name: stmt.sym_name.clone(), token: Token::none() }
         })?;
 
@@ -315,7 +310,7 @@ impl Resolver {
 
     fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {
         let ctx_borrow = self.ctx.borrow_mut();
-        let rec = ctx_borrow.lookup_record(rec_name).ok_or_else(|| {
+        let rec = ctx_borrow.scope.lookup_record(rec_name).ok_or_else(|| {
             SAError::RecordError(
                 SARecordError::UndefinedRecord {
                     record_name: rec_name.to_string(),
@@ -365,7 +360,7 @@ impl Resolver {
                     }
                 }).collect::<Vec<RecordFieldType>>()
             };
-            if self.ctx.borrow_mut().create_record(record_entry).is_none() {
+            if self.ctx.borrow_mut().scope.create_record(record_entry).is_none() {
                 return Err(
                     SAError::RecordError(
                         SARecordError::DuplicateRecord { 

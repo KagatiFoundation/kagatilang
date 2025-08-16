@@ -4,9 +4,13 @@ use std::{
     rc::Rc
 };
 
-use kagc_comp_unit::{file_pool::FileMeta, source::*, *};
+use kagc_comp_unit::{
+    file_pool::FileMeta, 
+    source::*, 
+    *
+};
 
-use kagc_ctx::CompilerCtx;
+use kagc_ctx::{builder::CompilerCtxBuilder, CompilerCtx};
 use kagc_ir::ir_asm::aarch64::Aarch64IRToASM;
 use kagc_lexer::Tokenizer;
 
@@ -17,6 +21,11 @@ use kagc_lowering::{
 use kagc_parser::{
     builder::ParserBuilder, 
     SharedParserCtx
+};
+use kagc_scope::{
+    ctx::builder::ScopeCtxBuilder, 
+    manager::ScopeManager, 
+    scope::Scope
 };
 use kagc_sema::{
     resolver::Resolver, 
@@ -36,9 +45,20 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let scope_ctx = ScopeCtxBuilder::new()
+            .scope_manager({
+                let mut scope_mgr: ScopeManager = ScopeManager::default();
+                scope_mgr.push((0, Scope::default())); // root scope
+                scope_mgr
+            })
+            .build();
+
+        let ctx = CompilerCtxBuilder::new(scope_ctx).build();
+
         Self {
-            ctx: ctx.clone(),
+            ctx: Rc::new(RefCell::new(ctx)),
             compiler_order: vec![],
             units: HashMap::new(),
             shared_pctx: Rc::new(RefCell::new(SharedParserCtx::default()))
@@ -78,7 +98,7 @@ impl Compiler {
             if let Some(unit) = self.units.get_mut(unit_file) {
                 // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
                 // know which file is currently being processed
-                self.ctx.borrow_mut().current_file = unit.meta_id;
+                self.ctx.borrow_mut().files.current = unit.meta_id;
                 resolv.resolve(&mut unit.asts);
                 analyzer.start_analysis(&mut unit.asts);
                 final_irs.extend(lowerer.gen_ir(&mut unit.asts));
@@ -98,7 +118,7 @@ impl Compiler {
         }
 
         let file = ImportResolver::resolve(file_path)?;
-        let file_pool_idx = self.ctx.borrow_mut().file_pool.insert(
+        let file_pool_idx = self.ctx.borrow_mut().files.insert(
             FileMeta { 
                 name: file.name.clone(), 
                 abs_path: file.path.clone() 

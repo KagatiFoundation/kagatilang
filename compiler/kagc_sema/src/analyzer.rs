@@ -26,7 +26,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{function::INVALID_FUNC_ID, registery::Registry, Symbol, SymbolType};
+use kagc_symbol::{function::INVALID_FUNC_ID, Symbol, SymbolType};
 use kagc_token::Token;
 use kagc_types::{is_type_coalescing_possible, LitTypeVariant};
 
@@ -114,7 +114,7 @@ impl SemanticAnalyzer {
     fn analyze_func_call_stmt(&mut self, func_call: &mut FuncCallStmt) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
-        if let Some(live_scope) = ctx_borrow.live_scope() {
+        if let Some(live_scope) = ctx_borrow.scope.live_scope() {
             if let Some(func_sym) = live_scope.lookup(&func_call.symbol_name) {
                 if func_sym.sym_type != SymbolType::Function {
                     return Err(
@@ -188,9 +188,9 @@ impl SemanticAnalyzer {
     fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr) -> SAResult {
         let ctx_borrow = self.ctx.borrow_mut();
 
-        if let Some(rec_sym) = ctx_borrow.deep_lookup(&field_access.rec_alias) {
+        if let Some(rec_sym) = ctx_borrow.scope.deep_lookup(&field_access.rec_alias) {
             if let SymbolType::Record { name: rec_name } = &rec_sym.sym_type {
-                if let Some(rec) = ctx_borrow.lookup_record(rec_name) {
+                if let Some(rec) = ctx_borrow.scope.lookup_record(rec_name) {
                     if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_chain[0]) {
                         field_access.rel_stack_off = field.rel_stack_off;
                         field_access.result_type = LitTypeVariant::from(field.typ);
@@ -209,7 +209,7 @@ impl SemanticAnalyzer {
     fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
-        if let Some(ident) = ctx_borrow.deep_lookup(&ident_expr.sym_name) {
+        if let Some(ident) = ctx_borrow.scope.deep_lookup(&ident_expr.sym_name) {
             ident_expr.result_type = ident.lit_type;
             Ok(ident.lit_type)
         }
@@ -230,7 +230,7 @@ impl SemanticAnalyzer {
     fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
-        let func_sym_type = if let Some(func_sym) = ctx_borrow.deep_lookup(&func_call.symbol_name) {
+        let func_sym_type = if let Some(func_sym) = ctx_borrow.scope.deep_lookup(&func_call.symbol_name) {
             if func_sym.sym_type != SymbolType::Function {
                 return Err(
                     SAError::TypeError(
@@ -253,7 +253,7 @@ impl SemanticAnalyzer {
             );
         };
 
-        let func_detail = ctx_borrow.func_table.lookup(&func_call.symbol_name.as_str()).unwrap();
+        let func_detail = ctx_borrow.scope.lookup_fn_by_name(func_call.symbol_name.as_str()).unwrap();
         func_call.id = func_detail.func_id;
         let func_param_types = func_detail.param_types.clone();
 
@@ -317,7 +317,7 @@ impl SemanticAnalyzer {
             let ctx_borrow = self.ctx.borrow();
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
-            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.lookup_fn(ctx_borrow.current_function).unwrap().return_type;
+            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.scope.lookup_fn(ctx_borrow.scope.current_fn()).unwrap().return_type;
 
             drop(ctx_borrow);
             
@@ -358,7 +358,7 @@ impl SemanticAnalyzer {
                     )
                 );
             }  
-            ret_stmt.func_id = self.ctx.borrow().current_function;
+            ret_stmt.func_id = self.ctx.borrow().scope.current_fn();
             return Ok(found_fn_ret_type);
         }
         panic!("Not a return statement!");
@@ -372,11 +372,12 @@ impl SemanticAnalyzer {
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt() {
             let mut ctx_borrow = self.ctx.borrow_mut();
             let func_ret_type = ctx_borrow
+                .scope
                 .root_scope()
                 .lookup(&func_decl.name)
                 .map(|func_sym| func_sym.lit_type);
 
-            ctx_borrow.current_function = func_decl.func_id;
+            ctx_borrow.scope.update_current_func(func_decl.func_id);
 
             if func_ret_type.is_none() {
                 return Err(
@@ -390,7 +391,7 @@ impl SemanticAnalyzer {
             // unwrap the return type
             let func_ret_type: LitTypeVariant = func_ret_type.unwrap();
             // switch to function's scope
-            ctx_borrow.enter_scope(func_decl.scope_id);
+            ctx_borrow.scope.enter_scope(func_decl.scope_id);
             drop(ctx_borrow);
 
             if let Some(func_body) = &mut node.left {
@@ -398,9 +399,9 @@ impl SemanticAnalyzer {
             }
 
             // exit function's scope
-            self.ctx.borrow_mut().exit_scope();
+            self.ctx.borrow_mut().scope.exit_scope();
             // invalidate function id
-            self.ctx.borrow_mut().current_function = INVALID_FUNC_ID;
+            self.ctx.borrow_mut().scope.update_current_func(INVALID_FUNC_ID);
             return Ok(func_ret_type);
         }
         panic!("Not a function declaration statement!");
@@ -410,9 +411,9 @@ impl SemanticAnalyzer {
         if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
             let var_value_type: LitTypeVariant = self.analyze_expr(node.left.as_mut().unwrap())?;
             let mut ctx_borrow = self.ctx.borrow_mut();
-            let curr_func_id = ctx_borrow.current_function;
+            let curr_func_id = ctx_borrow.scope.current_fn();
 
-            if let Some(var_sym) = ctx_borrow.deep_lookup_mut(&var_decl.sym_name) {
+            if let Some(var_sym) = ctx_borrow.scope.deep_lookup_mut(&var_decl.sym_name) {
                 let var_type = Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type)?;
                 var_sym.func_id = Some(curr_func_id);
                 var_sym.lit_type = var_type;
@@ -478,7 +479,7 @@ impl SemanticAnalyzer {
         }
 
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &node.kind {
-            self.ctx.borrow_mut().enter_scope(if_stmt.scope_id);
+            self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
 
             // every 'if' has an expression attached with it in its
             // left branch
@@ -502,7 +503,7 @@ impl SemanticAnalyzer {
                 self.analyze_node(else_body)?;
             }
 
-            self.ctx.borrow_mut().exit_scope();
+            self.ctx.borrow_mut().scope.exit_scope();
             return Ok(cond_res);
         }
         Ok(LitTypeVariant::None)
