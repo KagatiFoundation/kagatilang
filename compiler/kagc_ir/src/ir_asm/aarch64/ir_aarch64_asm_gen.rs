@@ -31,9 +31,8 @@ use std::{
 
 use kagc_const::pool::{ConstEntry, KagcConst};
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{StorageClass, Symbol};
+use kagc_symbol::StorageClass;
 use kagc_target::{asm::aarch64::*, reg::*};
-use kagc_types::{LitType, LitTypeVariant};
 
 use crate::{
     ir_asm::ir_asm_gen::*, 
@@ -287,48 +286,6 @@ impl Aarch64IRToASM {
             }
         }
         output_str
-    }
-
-    fn _dump_global_with_alignment(symbol: &Symbol) -> String {
-        let def_val: String = if let Some(dv) = &symbol.default_value {
-            dv.to_string()
-        } 
-        else { 
-            "0".to_string() 
-        };
-
-        match symbol.lit_type {
-            LitTypeVariant::I32 => format!("{}: .align 4\n\t.word {}", symbol.name, def_val),
-
-            LitTypeVariant::U8 => format!("{}:\t.byte {}", symbol.name, def_val),
-
-            LitTypeVariant::Str => {
-                let label_id: i32 = if let Some(lit_val) = &symbol.default_value {
-                    if let LitType::I32(__id) = lit_val {
-                        *__id
-                    }
-                    else {
-                        panic!("Not a valid label id for string literal '{}'", symbol.default_value.as_ref().unwrap())
-                    }
-                } 
-                else {
-                    panic!("No label id provided for string literal");
-                };
-
-                format!("{}:\t.quad .LB_{}", symbol.name, label_id)
-            },
-
-            _ => panic!("Symbol's size is not supported right now: '{:?}'", symbol),
-        }
-    }
-    
-    fn _alloc_data_space(size: usize) -> String {
-        match size {
-            1 => ".byte 0".to_string(),
-            4 => ".word 0".to_string(),
-            8 => ".quad 0".to_string(),
-            _ => panic!("Not possible to generate space for size: {}", size),
-        }
     }
 }
 

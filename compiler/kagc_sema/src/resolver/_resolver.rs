@@ -229,7 +229,7 @@ impl Resolver {
                     };
 
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
-                        KagcConst::Str(raw_value), 
+                        KagcConst::Str(raw_value),
                         self.curr_func_id
                     );
 
@@ -289,6 +289,10 @@ impl Resolver {
                 let _ = self.resolve_literal_constant(&mut arg.1, false, "")?;
             }
             return Ok(0xFFFFFFFF);
+        }
+        else if let Expr::Binary(bin) = expr {
+            let _ = self.resolve_literal_constant(&mut bin.left, parent_is_record, symbol_name);
+            let _ = self.resolve_literal_constant(&mut bin.right, parent_is_record, symbol_name);
         }
         Ok(0xFFFFFFFF)
     }

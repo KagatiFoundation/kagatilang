@@ -53,6 +53,7 @@ impl Compiler {
                 scope_mgr.push((0, Scope::default())); // root scope
                 scope_mgr
             })
+            .scope_id_counter(1) // since zero(0) is for the root scope
             .build();
 
         let ctx = CompilerCtxBuilder::new(scope_ctx).build();
@@ -140,6 +141,12 @@ impl Compiler {
             .build();
 
         let asts = parser.parse();
+
+        if self.ctx.borrow().diagnostics.has_errors() {
+            self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().files, &unit);
+            std::process::exit(1)
+        }
+
         unit.asts.extend(asts);
 
         let imports = unit.extract_imports();

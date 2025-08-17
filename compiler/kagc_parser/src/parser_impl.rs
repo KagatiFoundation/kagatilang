@@ -146,9 +146,9 @@ impl Parser {
             if let Ok(stmt) = stmt_parse_result {
                 nodes.push(stmt);
             } 
-            else if let Some(parse_error) = stmt_parse_result.err() {
-                // panic!()
-                panic!("{parse_error:#?}")
+            else if let Err(parse_error) = stmt_parse_result {
+                self.ctx.borrow_mut().diagnostics.push(*parse_error);
+                break;
             }
         }
         nodes
@@ -206,14 +206,16 @@ impl Parser {
             }
         };
 
-        match curr_tok_kind {
-            TokenKind::KW_LET
-            | TokenKind::KW_RETURN
-            | TokenKind::KW_BREAK
-            | TokenKind::T_IDENTIFIER => {
-                _ = self.token_match(TokenKind::T_SEMICOLON)?;
-            },
-            _ => ()
+        if result.is_ok() {
+            match curr_tok_kind {
+                TokenKind::KW_LET
+                | TokenKind::KW_RETURN
+                | TokenKind::KW_BREAK
+                | TokenKind::T_IDENTIFIER => {
+                    _ = self.token_match(TokenKind::T_SEMICOLON)?;
+                },
+                _ => ()
+            }
         }
         result
     }
@@ -1117,7 +1119,10 @@ impl Parser {
             Span::new(
                 self.current_file,
                 start_pos,
-                start_pos
+                SourcePos { 
+                    line: start_pos.line, 
+                    column: start_pos.column + current_token.lexeme.len()
+                }
             ),
             vec![]
         );
@@ -1233,7 +1238,7 @@ impl Parser {
             },
             _ => {
                 let diag = Diagnostic::from_single_token(
-                    &self.current_token, 
+                    &self.tokens[self.current - 2], 
                     self.current_file, 
                     "unexpected token",
                     Severity::Error

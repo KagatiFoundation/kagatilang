@@ -23,14 +23,14 @@ SOFTWARE.
 */
 
 use kagc_comp_unit::{
-    file_pool::{
-        FilePool, 
-        FilePoolIdx
-    }, 
+    ctx::FileCtx, 
+    file_pool::FilePoolIdx, 
     CompilationUnit
 };
 use kagc_span::span::{SourcePos, Span};
 use kagc_token::Token;
+
+use crate::code::ErrCode;
 
 #[derive(Debug)]
 pub enum Severity {
@@ -41,12 +41,12 @@ pub enum Severity {
 
 #[derive(Debug)]
 pub struct Diagnostic {
-    pub code: Option<String>,
-    pub severity: Severity,
-    pub primary_span: Span,
-    pub secondary_spans: Vec<(Span, String)>,
-    pub message: String,
-    pub notes: Vec<String>,
+    pub code:               Option<ErrCode>,
+    pub severity:           Severity,
+    pub primary_span:       Span,
+    pub secondary_spans:    Vec<(Span, String)>,
+    pub message:            String,
+    pub notes:              Vec<String>,
 }
 
 impl Diagnostic {
@@ -74,24 +74,36 @@ impl Diagnostic {
         }
     }
 
-    pub fn report(&self, file_pool: &FilePool, unit: &CompilationUnit) {
-        let file_meta = file_pool.get(self.primary_span.file_id)
+    pub fn report(&self, file_ctx: &FileCtx, unit: &CompilationUnit) {
+        let file_meta = file_ctx.get(self.primary_span.file_id)
             .expect("File not found in pool");
 
+        // split the file content into lines
         let source_lines: Vec<&str> = unit.source.content.lines().collect();
-        let line_num = self.primary_span.start.line;
-        let col_num = self.primary_span.start.column;
+        let line_num = self.primary_span.start.line;   // 1-based
+        let col_num = self.primary_span.start.column;  // 0-based
+        let span_len = self.primary_span.end.column - col_num; // length of the token
 
-        eprintln!("{:#?}: {}", self.severity, self.message);
-        eprintln!(
-            " --> {}:{}:{}",
-            file_meta.abs_path,
-            line_num + 1,
-            col_num + 1
-        );
+         // ANSI color codes as variables
+        let color_red = "\x1b[31m";
+        let color_reset = "\x1b[0m";
+
+        // print severity and message
+        eprintln!("{color_red}{:?}{color_reset}: {}", self.severity, self.message);
+
+        // print file path with line and column
+        eprintln!(" --> {}:{}:{}", file_meta.abs_path, line_num, col_num + 1);
+
+        // separator
         eprintln!("  |");
-        eprintln!("{: >3} | {}", line_num + 1, source_lines[line_num]);
-        eprintln!("    | {:>width$}^", "", width = col_num);
+
+        // print the source line
+        let source_line = source_lines.get(line_num - 1).unwrap_or(&"");
+        eprintln!("{: >4} | {}", line_num, source_line);
+
+        // print caret repeated to match token length
+        let caret_line = " ".repeat(col_num) + &"^".repeat(span_len.max(1));
+        eprintln!("     | {}", caret_line);
     }
 }
 
@@ -113,7 +125,7 @@ impl DiagnosticBag {
         self.diagnostics.iter().any(|d| matches!(d.severity, Severity::Error))
     }
 
-    pub fn report_all(&self, file_pool: &FilePool, unit: &CompilationUnit) {
+    pub fn report_all(&self, file_pool: &FileCtx, unit: &CompilationUnit) {
         for diag in &self.diagnostics {
             diag.report(file_pool, unit);
         }

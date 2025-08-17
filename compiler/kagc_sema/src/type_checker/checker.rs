@@ -23,10 +23,13 @@ SOFTWARE.
 */
 
 use kagc_ast::*;
+use kagc_errors::code::ErrCode;
+use kagc_errors::diagnostic::Diagnostic;
+use kagc_errors::diagnostic::Severity;
 use kagc_symbol::*;
 use kagc_types::*;
 
-use crate::{errors::*, typedefs::SAResult};
+use crate::SAResult;
 
 pub struct TypeChecker;
 
@@ -38,7 +41,7 @@ impl TypeChecker {
     /// type, and ensures the assigned expression's type matches the declared or 
     /// inferred type. If there's a type mismatch that cannot be reconciled, an 
     /// error is returned.
-    pub fn type_check_var_decl_stmt(var_decl_sym: &mut Symbol, expr_type: LitTypeVariant) -> SAResult {
+    pub fn type_check_var_decl_stmt(var_decl_sym: &mut Symbol, expr_type: LitTypeVariant, meta: &NodeMeta) -> SAResult {
         // This has do be done because variables might be defined without 
         // explicit type annotation. For example, 'let a = 5;'. Thus, the 
         // symbol table has to be updated with this new type information.
@@ -55,17 +58,20 @@ impl TypeChecker {
             var_decl_sym.lit_type != expr_type 
             && !is_type_coalescing_possible(expr_type, var_decl_sym.lit_type) 
         {
-            return Err(SAError::TypeError(
-                SATypeError::AssignmentTypeMismatch { 
-                    expected: var_decl_sym.lit_type, 
-                    found: expr_type
-                }
-            ));
+            let diag = Diagnostic {
+                code: Some(ErrCode::TYP2104),
+                severity: Severity::Error,
+                primary_span: meta.span,
+                secondary_spans: vec![],
+                message: format!("expected type `{}`, found `{}`", var_decl_sym.lit_type, expr_type),
+                notes: vec![]
+            };
+            return Err(diag);
         }
         Ok(expr_type)
     }
 
-    pub fn check_bin_expr_type_compatability(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation) -> SAResult {
+    pub fn check_bin_expr_type_compatability(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation, meta: &NodeMeta) -> SAResult {
         match op {
             ASTOperation::AST_ADD
             | ASTOperation::AST_SUBTRACT
@@ -87,7 +93,15 @@ impl TypeChecker {
                         return SAResult::Ok(a); // both sizes are equal; return any
                     }
                 }
-                panic!()
+                let diag = Diagnostic {
+                    code: Some(ErrCode::TYP2103),
+                    severity: Severity::Error,
+                    primary_span: meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{}' is not compatible with '{}'", a, b),
+                    notes: vec![]
+                };
+                Err(diag)
             },
             ASTOperation::AST_GTHAN
             | ASTOperation::AST_LTHAN 
@@ -99,27 +113,11 @@ impl TypeChecker {
                     Ok(LitTypeVariant::I32)
                 }
                 else {
-                    Err(
-                        SAError::TypeError(
-                            SATypeError::IncompatibleTypes { 
-                                a, 
-                                b, 
-                                operation: op
-                            }
-                        )
-                    )
+                    panic!()
                 }
             },
             _ => {
-                Err(
-                    SAError::TypeError(
-                        SATypeError::IncompatibleTypes { 
-                            a, 
-                            b, 
-                            operation: op
-                        }
-                    )
-                )
+                panic!()
             }
         }
     }

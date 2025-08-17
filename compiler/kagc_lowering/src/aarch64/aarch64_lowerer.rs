@@ -35,7 +35,6 @@ use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
-use kagc_symbol::registery::Registry;
 use kagc_symbol::*;
 use kagc_target::reg::*;
 use kagc_target::asm::aarch64::Aarch64RegManager2;
@@ -46,10 +45,6 @@ use crate::fn_ctx::FnCtx;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
 use crate::CodeGen;
-
-lazy_static::lazy_static! {
-    static ref CMP_CONDS_LIST: Vec<&'static str> = vec!["ne", "eq", "ge", "le", "lt", "gt"];
-}
 
 pub struct Aarch64CodeGen {
     reg_manager: Rc<RefCell<Aarch64RegManager2>>,

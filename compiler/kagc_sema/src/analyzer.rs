@@ -26,15 +26,17 @@ use std::{cell::RefCell, rc::Rc};
 
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
-use kagc_symbol::{function::INVALID_FUNC_ID, Symbol, SymbolType};
-use kagc_token::Token;
+use kagc_errors::code::ErrCode;
+use kagc_errors::diagnostic::Severity;
+use kagc_errors::diagnostic::Diagnostic;
+use kagc_symbol::Symbol;
+use kagc_symbol::{function::INVALID_FUNC_ID, SymbolType};
+
 use kagc_types::{is_type_coalescing_possible, LitTypeVariant};
 
-use crate::{
-    errors::*, 
-    type_checker::TypeChecker, 
-    typedefs::SAResult
-};
+use crate::type_checker::TypeChecker;
+
+pub type SAResult = Result<LitTypeVariant, Diagnostic>;
 
 pub struct SemanticAnalyzer {
     pub ctx: Rc<RefCell<CompilerCtx>>,
@@ -52,15 +54,11 @@ impl SemanticAnalyzer {
     /// This starts an analysis process for the given list of nodes. 
     /// This function panics if it encounters any form of error.
     pub fn start_analysis(&mut self, nodes: &mut [AST]) {
-        let mut errors: Vec<SAError> = vec![];
         for node in nodes {
-            let result: SAResult = self.analyze_node(node);
-            if let Err(err) = result {
-                errors.push(err);
+            if let Err(err) = self.analyze_node(node) {
+                self.ctx.borrow_mut().diagnostics.push(err);
             }
         }
-
-        errors.iter().for_each(|err| err.dump());
     }
 
     fn analyze_node(&mut self, node: &mut AST) -> SAResult {
@@ -101,41 +99,11 @@ impl SemanticAnalyzer {
 
     fn analyze_fn_call(&mut self, func_call: &mut AST) -> SAResult {
         if let ASTKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut func_call.kind {
-            self.analyze_func_call_expr(func_call_expr)
-        }
-        else if let ASTKind::StmtAST(Stmt::FuncCall(func_call_stmt)) = &mut func_call.kind {
-            self.analyze_func_call_stmt(func_call_stmt)
+            self.analyze_func_call_expr(func_call_expr, &func_call.meta)
         }
         else {
             panic!()
         }
-    }
-
-    fn analyze_func_call_stmt(&mut self, func_call: &mut FuncCallStmt) -> SAResult {
-        let ctx_borrow = self.ctx.borrow();
-
-        if let Some(live_scope) = ctx_borrow.scope.live_scope() {
-            if let Some(func_sym) = live_scope.lookup(&func_call.symbol_name) {
-                if func_sym.sym_type != SymbolType::Function {
-                    return Err(
-                        SAError::TypeError(
-                            SATypeError::NonCallable { 
-                                sym_name: func_sym.name.clone() 
-                            }
-                        )
-                    );
-                }
-
-                func_call.result_type = func_sym.lit_type;
-                return Ok(func_sym.lit_type);
-            }
-        }
-        Err(
-            SAError::UndefinedSymbol { 
-                sym_name: func_call.symbol_name.clone(), 
-                token: Token::none() 
-            }
-        )
     }
 
     fn analyze_expr(&mut self, ast: &mut AST) -> SAResult {
@@ -144,7 +112,7 @@ impl SemanticAnalyzer {
         }
 
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
-            let result_type = self.analyze_and_mutate_expr(expr)?;
+            let result_type = self.analyze_and_mutate_expr(expr, &ast.meta)?;
             ast.result_type = result_type;
             return Ok(result_type);
         }
@@ -152,15 +120,15 @@ impl SemanticAnalyzer {
         panic!()
     }
 
-    fn analyze_and_mutate_expr(&mut self, expr: &mut Expr) -> SAResult {
+    fn analyze_and_mutate_expr(&mut self, expr: &mut Expr, meta: &NodeMeta) -> SAResult {
         match expr {
             Expr::LitVal(litexpr) => self.analyze_lit_expr(litexpr),
             
-            Expr::Binary(binexpr) => self.analyze_bin_expr(binexpr),
+            Expr::Binary(binexpr) => self.analyze_bin_expr(binexpr, meta),
 
-            Expr::Ident(identexpr) => self.analyze_ident_expr(identexpr),
+            Expr::Ident(identexpr) => self.analyze_ident_expr(identexpr, meta),
 
-            Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr),
+            Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr, meta),
 
             Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr),
 
@@ -172,16 +140,18 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn analyze_bin_expr(&mut self, bin_expr: &mut BinExpr) -> SAResult {
-        let left_type: LitTypeVariant = self.analyze_and_mutate_expr(&mut bin_expr.left)?;
-        let right_type: LitTypeVariant = self.analyze_and_mutate_expr(&mut bin_expr.right)?;
+    fn analyze_bin_expr(&mut self, bin_expr: &mut BinExpr, meta: &NodeMeta) -> SAResult {
+        let left_type: LitTypeVariant = self.analyze_and_mutate_expr(&mut bin_expr.left, meta)?;
+        let right_type: LitTypeVariant = self.analyze_and_mutate_expr(&mut bin_expr.right, meta)?;
 
         let expr_type: LitTypeVariant = TypeChecker::check_bin_expr_type_compatability(
             left_type, 
             right_type, 
-            bin_expr.operation
+            bin_expr.operation,
+            meta
         )?;
 
+        bin_expr.result_type = expr_type;
         Ok(expr_type)
     }
 
@@ -206,20 +176,22 @@ impl SemanticAnalyzer {
         Ok(LitTypeVariant::Record)
     }
 
-    fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr) -> SAResult {
+    fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
-
         if let Some(ident) = ctx_borrow.scope.deep_lookup(&ident_expr.sym_name) {
             ident_expr.result_type = ident.lit_type;
             Ok(ident.lit_type)
         }
         else {
-            Err(
-                SAError::UndefinedSymbol { 
-                    sym_name: ident_expr.sym_name.clone(), 
-                    token: Token::none() 
-                }
-            )
+            let diag = Diagnostic {
+                code: Some(ErrCode::SEM2001),
+                severity: Severity::Error,
+                primary_span: meta.span,
+                secondary_spans: vec![],
+                message: format!("undefined symbol '{}'", ident_expr.sym_name),
+                notes: vec![]
+            };
+            Err(diag)
         }
     }
 
@@ -227,30 +199,35 @@ impl SemanticAnalyzer {
     /// 
     /// This analysis is done to check if the arguments to this 
     /// function call are valid.
-    fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr) -> SAResult {
+    fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
 
         let func_sym_type = if let Some(func_sym) = ctx_borrow.scope.deep_lookup(&func_call.symbol_name) {
             if func_sym.sym_type != SymbolType::Function {
-                return Err(
-                    SAError::TypeError(
-                        SATypeError::NonCallable { 
-                            sym_name: func_sym.name.clone() 
-                        }
-                    )
-                );
+                let diag = Diagnostic {
+                    code: Some(ErrCode::TYP2101),
+                    severity: Severity::Error,
+                    primary_span: meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{}' is not callable", func_sym.name),
+                    notes: vec![]
+                };
+                return Err(diag);
             }
             else {
                 func_sym.lit_type
             }
         }
         else {
-            return Err(
-                SAError::UndefinedSymbol { 
-                    sym_name: func_call.symbol_name.clone(), 
-                    token: Token::none() 
-                }
-            );
+            let diag = Diagnostic {
+                code: Some(ErrCode::SEM2001),
+                severity: Severity::Error,
+                primary_span: meta.span,
+                secondary_spans: vec![],
+                message: format!("undefined symbol '{}'", func_call.symbol_name),
+                notes: vec![]
+            };
+            return Err(diag);
         };
 
         let func_detail = ctx_borrow.scope.lookup_fn_by_name(func_call.symbol_name.as_str()).unwrap();
@@ -259,35 +236,40 @@ impl SemanticAnalyzer {
 
         drop(ctx_borrow);
 
-        self.check_func_call_args(&mut func_call.args[..], &func_param_types)?;            
+        self.check_func_call_args(&mut func_call.args[..], &func_param_types, meta)?;            
 
         func_call.result_type = func_sym_type;
         Ok(func_sym_type)        
     }
 
     /// Check if the function arguments match the parameter types
-    fn check_func_call_args(&mut self, args: &mut [(usize, Expr)], param_types: &[LitTypeVariant]) -> SAResult {
+    fn check_func_call_args(&mut self, args: &mut [(usize, Expr)], param_types: &[LitTypeVariant], meta: &NodeMeta) -> SAResult {
         if args.len() != param_types.len() {
-            return Err(
-                SAError::ArgLengthMismatch { 
-                    expected: param_types.len(),
-                    found: args.len()
-                }
-            );
+            let diag = Diagnostic {
+                code: Some(ErrCode::TYP2102),
+                severity: Severity::Error,
+                primary_span: meta.span,
+                secondary_spans: vec![],
+                message: format!("argument length mismatch: expected '{}' but found '{}'", param_types.len(), args.len()),
+                notes: vec![]
+            };
+            return Err(diag);
         }
 
+        // 
         for (idx, param_type) in param_types.iter().enumerate() {
-            let expr_res: LitTypeVariant = self.analyze_and_mutate_expr(&mut args[idx].1)?;
+            let expr_res: LitTypeVariant = self.analyze_and_mutate_expr(&mut args[idx].1, meta)?;
             let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res, *param_type);
             if !assignment_ok {
-                return Err(
-                    SAError::TypeError(
-                        SATypeError::TypeMismatch { 
-                            expected: *param_type, 
-                            found: expr_res 
-                        }
-                    )
-                );
+                let diag = Diagnostic {
+                    code: Some(ErrCode::TYP2103),
+                    severity: Severity::Error,
+                    primary_span: meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{}' is not compatible with '{}'", param_type, expr_res),
+                    notes: vec![]
+                };
+                return Err(diag);
             }
         }
         Ok(LitTypeVariant::None) // placeholder; doesn't affect anything
@@ -329,34 +311,20 @@ impl SemanticAnalyzer {
                 LitTypeVariant::Void
             };
 
-            if expected_fn_ret_type.is_void() 
-                && (found_fn_ret_type.is_none() || !found_fn_ret_type.is_void()) {
-                return Err(
-                    SAError::TypeError(
-                        SATypeError::ReturnType(
-                            SAReturnTypeError::ExpectedNoReturnValue { 
-                                found: found_fn_ret_type
-                            }
-                        )
-                    )
-                );
-            }
-
             let ret_typ_mismatch: bool = 
                 !expected_fn_ret_type.is_void() && found_fn_ret_type.is_none() ||
                 ((expected_fn_ret_type != found_fn_ret_type) && !TypeChecker::is_type_coalesciable(found_fn_ret_type, expected_fn_ret_type));
 
             if ret_typ_mismatch {
-                return Err(
-                    SAError::TypeError(
-                        SATypeError::ReturnType(
-                            SAReturnTypeError::TypeMismatch { 
-                                expected: expected_fn_ret_type, 
-                                found: found_fn_ret_type 
-                            }
-                        )
-                    )
-                );
+                let diag = Diagnostic {
+                    code: Some(ErrCode::TYP2103),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{}' is not compatible with '{}'", found_fn_ret_type, expected_fn_ret_type),
+                    notes: vec![]
+                };
+                return Err(diag);
             }  
             ret_stmt.func_id = self.ctx.borrow().scope.current_fn();
             return Ok(found_fn_ret_type);
@@ -380,12 +348,15 @@ impl SemanticAnalyzer {
             ctx_borrow.scope.update_current_func(func_decl.func_id);
 
             if func_ret_type.is_none() {
-                return Err(
-                    SAError::UndefinedSymbol { 
-                        sym_name: func_decl.name.clone(), 
-                        token: Token::none() 
-                    }
-                );
+                let diag = Diagnostic {
+                    code: Some(ErrCode::SEM2001),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: vec![],
+                    message: format!("undefined symbol '{}'", func_decl.name),
+                    notes: vec![]
+                };
+                return Err(diag);
             };
 
             // unwrap the return type
@@ -414,18 +385,21 @@ impl SemanticAnalyzer {
             let curr_func_id = ctx_borrow.scope.current_fn();
 
             if let Some(var_sym) = ctx_borrow.scope.deep_lookup_mut(&var_decl.sym_name) {
-                let var_type = Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type)?;
+                let var_type = Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
                 var_sym.func_id = Some(curr_func_id);
                 var_sym.lit_type = var_type;
                 node.result_type = var_type;
                 return Ok(var_type);
             }
-            return Err(
-                SAError::UndefinedSymbol { 
-                    sym_name: var_decl.sym_name.clone(), 
-                    token: Token::none() 
-                }
-            );
+            let diag = Diagnostic {
+                code: Some(ErrCode::SEM2001),
+                severity: Severity::Error,
+                primary_span: node.meta.span,
+                secondary_spans: vec![],
+                message: format!("undefined symbol '{}'", var_decl.sym_name),
+                notes: vec![]
+            };
+            return Err(diag);
         }
         panic!("Not a var declaration statement");
     }
@@ -437,7 +411,7 @@ impl SemanticAnalyzer {
     /// type, and ensures the assigned expression's type matches the declared or 
     /// inferred type. If there's a type mismatch that cannot be reconciled, an 
     /// error is returned.
-    pub fn check_and_mutate_var_decl_stmt(var_decl_sym: &mut Symbol, expr_type: LitTypeVariant) -> SAResult {
+    pub fn check_and_mutate_var_decl_stmt(var_decl_sym: &mut Symbol, expr_type: LitTypeVariant, meta: &NodeMeta) -> SAResult {
         if var_decl_sym.lit_type == LitTypeVariant::None {
             match expr_type {
                 // implicitly convert no-type-annotated byte-type into an integer
@@ -463,12 +437,15 @@ impl SemanticAnalyzer {
             var_decl_sym.lit_type != expr_type 
             && !is_type_coalescing_possible(expr_type, var_decl_sym.lit_type) 
         {
-            return Err(SAError::TypeError(
-                SATypeError::AssignmentTypeMismatch { 
-                    expected: var_decl_sym.lit_type, 
-                    found: expr_type
-                }
-            ));
+            let diag = Diagnostic {
+                code: Some(ErrCode::TYP2104),
+                severity: Severity::Error,
+                primary_span: meta.span,
+                secondary_spans: vec![],
+                message: format!("expected type `{}`, found `{}`", var_decl_sym.lit_type, expr_type),
+                notes: vec![]
+            };
+            return Err(diag);
         }
         Ok(expr_type)
     }
@@ -485,14 +462,15 @@ impl SemanticAnalyzer {
             // left branch
             let cond_res: LitTypeVariant = self.analyze_expr(node.left.as_mut().unwrap())?;
             if cond_res != LitTypeVariant::I32 {
-                return Err(
-                    SAError::TypeError(
-                        SATypeError::TypeMismatch { 
-                            expected: LitTypeVariant::I32, 
-                            found: cond_res
-                        }
-                    )
-                );
+                let diag = Diagnostic {
+                    code: Some(ErrCode::TYP2103),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{}' is not compatible with '{}'", cond_res, LitTypeVariant::I32),
+                    notes: vec![]
+                };
+                return Err(diag);
             }
 
             if let Some(if_body) = &mut node.mid {
