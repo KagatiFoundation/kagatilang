@@ -653,7 +653,7 @@ impl Aarch64IRToASM {
     }
     
     fn allocate_register(&mut self, sz: RegSize) -> AllocedReg {
-        assert!(sz != 0);
+        assert_ne!(sz, 0);
         let mut reg_mgr = self.reg_manager.borrow_mut();
         let reg = reg_mgr.allocate_register(sz);
         assert!(reg.size != 0);
@@ -661,7 +661,7 @@ impl Aarch64IRToASM {
     }
     
     fn allocate_specific_register(&mut self, reg: RegIdx, sz: RegSize) -> AllocedReg {
-        assert!(sz != 0);
+        assert_ne!(sz, 0);
         let mut reg_mgr = self.reg_manager.borrow_mut();
         let reg = reg_mgr.allocate_register_with_idx(sz, reg, AllocStrategy::Spill);
         assert!(reg.size != 0);

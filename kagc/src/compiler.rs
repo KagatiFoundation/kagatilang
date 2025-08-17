@@ -102,6 +102,12 @@ impl Compiler {
                 self.ctx.borrow_mut().files.current = unit.meta_id;
                 resolv.resolve(&mut unit.asts);
                 analyzer.start_analysis(&mut unit.asts);
+
+                if self.ctx.borrow().diagnostics.has_errors() {
+                    self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().files, unit);
+                    std::process::exit(1)
+                }
+
                 final_irs.extend(lowerer.gen_ir(&mut unit.asts));
             }
         }

@@ -235,7 +235,6 @@ impl Resolver {
 
                     lit_expr.value = LitType::PoolStr(pool_idx);
                     lit_expr.result_type = LitTypeVariant::PoolStr;
-
                     return Ok(pool_idx);
                 },
                 LitTypeVariant::I32
@@ -260,7 +259,6 @@ impl Resolver {
                         KagcConst::Int(raw_value as i64), 
                         self.curr_func_id
                     );
-
                     return Ok(pool_idx);
                 },
                 _ => return Ok(0)

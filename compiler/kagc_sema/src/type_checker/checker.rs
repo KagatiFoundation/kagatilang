@@ -71,12 +71,13 @@ impl TypeChecker {
         Ok(expr_type)
     }
 
-    pub fn check_bin_expr_type_compatability(a: LitTypeVariant, b: LitTypeVariant, op: ASTOperation, meta: &NodeMeta) -> SAResult {
+    pub fn check_bin_expr_type_compatability(
+        a: LitTypeVariant, b: LitTypeVariant, 
+        op: ASTOperation,   meta: &NodeMeta
+    ) -> SAResult {
         match op {
-            ASTOperation::AST_ADD
-            | ASTOperation::AST_SUBTRACT
-            | ASTOperation::AST_MULTIPLY
-            | ASTOperation::AST_DIVIDE => {
+            ASTOperation::AST_ADD | ASTOperation::AST_SUBTRACT |
+            ASTOperation::AST_MULTIPLY | ASTOperation::AST_DIVIDE => {
                 // arithmetic operations require both of the expressions to be integer types(for now)
                 if a.is_int() && b.is_int() {
                     let a_size: usize = a.size();
@@ -130,12 +131,14 @@ impl TypeChecker {
             ASTOperation::AST_NEQ
         ];
 
-        if compare_ops.iter().any(|cop| *cop == op) {
+        if compare_ops.contains(&op) {
             [
                 a == b,
                 is_type_coalescing_possible(a, b),
                 is_type_coalescing_possible(b, a)
-            ].iter().any(|c| *c)
+            ]
+            .iter()
+            .any(|c| *c)
         }
         else {
             false
