@@ -25,6 +25,7 @@ out
 examples/
 build/
 **/main.dSYM
+**/*.a
 
 # MacOS files
 **/.DS_Store

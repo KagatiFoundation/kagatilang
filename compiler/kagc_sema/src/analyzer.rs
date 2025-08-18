@@ -132,7 +132,7 @@ impl SemanticAnalyzer {
 
             Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr),
 
-            Expr::RecordFieldAccess(recfieldexpr) => self.analyze_record_field_access_expr(recfieldexpr),
+            Expr::RecordFieldAccess(recfieldexpr) => self.analyze_record_field_access_expr(recfieldexpr, meta),
             
             Expr::Null => Ok(LitTypeVariant::Null),
 
@@ -155,21 +155,32 @@ impl SemanticAnalyzer {
         Ok(expr_type)
     }
 
-    fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr) -> SAResult {
+    fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow_mut();
 
         if let Some(rec_sym) = ctx_borrow.scope.deep_lookup(&field_access.rec_alias) {
             if let SymbolType::Record { name: rec_name } = &rec_sym.sym_type {
                 if let Some(rec) = ctx_borrow.scope.lookup_record(rec_name) {
-                    if let Some(field) = rec.fields.iter().find(|field| field.name == field_access.field_chain[0]) {
+                    if let Some(field) = rec.fields.iter().find(|&field| field.name == field_access.field_chain[0]) {
                         field_access.rel_stack_off = field.rel_stack_off;
                         field_access.result_type = LitTypeVariant::from(field.typ);
                         return Ok(LitTypeVariant::from(field.typ));
                     }
                 }
             }
+            else {
+                panic!("not a record type");
+            }
         }
-        panic!()
+        let diag = Diagnostic {
+            code: Some(ErrCode::SEM2001),
+            severity: Severity::Error,
+            primary_span: meta.span,
+            secondary_spans: vec![],
+            message: format!("type '{}' cannot be resolved", field_access.rec_name),
+            notes: vec![]
+        };
+        Err(diag)
     }
 
     fn analyze_rec_creation_expr(&mut self, _rec_expr: &mut RecordCreationExpr) -> SAResult {

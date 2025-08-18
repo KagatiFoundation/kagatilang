@@ -415,7 +415,8 @@ impl Parser {
         if self.current_token.kind != TokenKind::T_RPAREN {
             loop {
                 if let Ok(param) = self.parse_parameter() {
-                    let sym: Symbol = Symbol::create(
+                    let record_type = self.tokens[self.current - 1].lexeme.clone();
+                    let mut sym: Symbol = Symbol::create(
                         param.name.clone(), 
                         param.lit_type, 
                         SymbolType::Variable, 
@@ -425,6 +426,12 @@ impl Parser {
                         None,
                         self.current_function_id,
                     );
+
+                    if sym.lit_type == LitTypeVariant::Record {
+                        sym.sym_type = SymbolType::Record { 
+                            name: record_type 
+                        };
+                    }
 
                     func_param_types.push(sym.lit_type);
                     let local_pos = self.add_symbol_local(sym.clone());

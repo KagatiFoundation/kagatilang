@@ -149,6 +149,7 @@ impl LitTypeVariant {
 
             // 8 bytes
             Self::I64
+            | Self::Record
             | Self::RawStr
             | Self::PoolStr
             | Self::Str
