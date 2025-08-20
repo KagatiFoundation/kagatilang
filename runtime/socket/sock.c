@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
-#include "typedefs.h"
+#include "../typedefs.h"
 
 struct sockaddr_in address;
 socklen_t addrlen;

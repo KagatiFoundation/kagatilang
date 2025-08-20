@@ -1,5 +1,5 @@
 BUILD_PATH=..
-SRCS=$(wildcard *.c)
+SRCS=$(shell find . -name '*.c')
 OBJS=$(SRCS:.c=.o)
 OPTS_1=-c -Wall -Werror -fPIC
 OPTS_2=-shared
@@ -20,9 +20,6 @@ libkag.so: $(OBJS) | $(BUILD_PATH)
 
 %.o: %.c
 	$(CC) $(OPTS_1) -o $@ $<
-
-# $(BUILD_PATH):
-# mkdir -p $(BUILD_PATH)
 
 .PHONY: clean
 clean:
