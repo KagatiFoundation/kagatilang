@@ -83,13 +83,11 @@ pub trait IRToASM {
 
                     IRInstr::Jump { label_id } => self.gen_ir_jump_asm(*label_id),
 
-                    IRInstr::CallStart => self.start_func_call_proc(),
-
-                    IRInstr::CallEnd => self.stop_func_call_proc(),
-
                     IRInstr::CondJump { label_id, operation, op1, op2, .. } => self.gen_cond_jmp_asm(op1, op2, *operation, *label_id),
 
-                    IRInstr::MemAlloc { dest, src, size } => self.gen_ir_mem_alloc(dest, src, *size)
+                    IRInstr::MemAlloc { dest, src, size } => self.gen_ir_mem_alloc(dest, src, *size),
+                    
+                    IRInstr::MemCpy { dest, src, size } => self.gen_ir_mem_cpy(dest, src, *size)
                 }
             },
         }
@@ -110,6 +108,9 @@ pub trait IRToASM {
 
     /// Allocate memory
     fn gen_ir_mem_alloc(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String;
+
+    /// Allocate memory
+    fn gen_ir_mem_cpy(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String;
 
     /// Generates AArch64 assembly for an addition operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.

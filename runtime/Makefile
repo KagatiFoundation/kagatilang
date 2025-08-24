@@ -9,14 +9,7 @@ CC=gcc
 all: libkag.so
 
 libkag.so: $(OBJS) | $(BUILD_PATH)
-	$(CC) $(OPTS_2) -o $(BUILD_PATH)/$@ $(OBJS) -L. -lraylib \
-    -framework CoreFoundation \
-    -framework CoreGraphics \
-    -framework AppKit \
-    -framework OpenGL \
-    -framework IOKit \
-    -framework CoreVideo \
-    -framework Cocoa
+	$(CC) $(OPTS_2) -o $(BUILD_PATH)/$@ $(OBJS)
 
 %.o: %.c
 	$(CC) $(OPTS_1) -o $@ $<

@@ -11,9 +11,9 @@ extern "C" {
  * Garbage collector object
  */
 typedef struct gc_object {
-    int                 ref_count;
-    size_t              size;
-    size_t              num_children;
+    uint64_t            ref_count;
+    uint64_t            size;
+    uint64_t            num_children;
     struct gc_object**  children;
     char*               data;
 } gc_object_t;

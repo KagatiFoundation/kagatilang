@@ -5,7 +5,7 @@ if [ "$1" = "build" ]; then
 
 elif [ "$1" = "run" ]; then
     RUST_BACKTRACE=1 KAGC_PATH=/Users/rigelstar/kagc/lib cargo run --bin kagc > main.S
-    gcc -o out main.S -L. -lkag -lraylib
+    gcc -o out main.S -L. -lkag
     export DYLD_LIBRARY_PATH=./:$DYLD_LIBRARY_PATH
     ./out
 else

@@ -106,6 +106,12 @@ pub enum IRInstr {
         label_id: usize
     },
 
+    /*
+        The following instructions are used by the compiler to
+        utilize garbage collection feature.
+    */
+
+    /// Grabage Collector's allocation instruction
     MemAlloc {
         /// Destination to load the allocated raw address into
         dest: IRLitType,
@@ -117,11 +123,17 @@ pub enum IRInstr {
         size: usize
     },
 
-    /// Function call start
-    CallStart,
+    /// Grabage Collector's copy instruction
+    MemCpy {
+        /// Destination to load the allocated raw address into
+        dest: IRLitType,
 
-    /// Function call end
-    CallEnd
+        /// This field is always IRLitType::Reg
+        src: IRLitType,
+
+        /// How much to copy
+        size: usize
+    }
 }
 
 impl IRInstr {
@@ -151,6 +163,8 @@ impl IRInstr {
             },
 
             Self::MemAlloc { dest, .. } => Some(dest.clone()),
+            
+            Self::MemCpy { dest, .. } => Some(dest.clone()),
 
             _ => None
         }

@@ -490,29 +490,39 @@ impl CodeGen for Aarch64CodeGen {
         let alloc_tmp = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 2;
 
+        // allocate memory for the global var
         let gc_alloc = IRInstr::MemAlloc { 
             dest: IRLitType::ExtendedTemp { 
                 id:alloc_tmp, 
                 size: 8 
-            }, 
+            }, // where to store the pointer returned by gc allocation function 
             src: IRLitType::Reg { 
                 temp: alloc_tmp + 1, 
                 idx: 0, 
                 size: 8
-            }, 
+            }, // 
             size: str_size.unwrap()
         };
 
         let lit_val_tmp: usize = fn_ctx.temp_counter;
         fn_ctx.temp_counter += 1;
 
+        let glob_value = IRInstr::LoadGlobal { 
+            pool_idx: idx, 
+            dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 8 } // always use 8 bytes to load string literals into the stack
+        };
+
+        let mov_to_heap = IRInstr::MemCpy { 
+            dest: gc_alloc.dest().unwrap(), 
+            src: glob_value.dest().unwrap(), 
+            size: str_size.unwrap() 
+        };
+
         Ok(
             vec![
-                IRInstr::LoadGlobal { 
-                    pool_idx: idx, 
-                    dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 8 } // always use 8 bytes to load string literals into the stack
-                },
                 gc_alloc,
+                glob_value,
+                mov_to_heap
             ]
         )
     }

@@ -37,12 +37,20 @@ pub enum  RegWidth {
     QWORD
 }
 
-pub const INVALID_REG_IDX: usize = 0xFFFFFFFF;
+/// Indicates invalid register index.
+pub const INVALID_REG_IDX: usize =  0xFFFFFFFF;
 
 /// Indicating no register was produced from an code generation operation.
-pub const NO_REG: usize = 0xFFFFFFFF;
+pub const NO_REG: usize =           0xFFFFFFFF;
 
-pub const EARLY_RETURN: usize = 0xEEEEEEEE;
+/// Indicates early return
+pub const EARLY_RETURN: usize =     0xEEEEEEEE;
+
+/// 8-bytes
+pub const REG_SIZE_8: usize =       0x8;
+
+/// 4-bytes
+pub const REG_SIZE_4: usize =       0x4;
 
 /// Defines the allocation strategy for registers,  
 /// determining whether spilling to memory is allowed.

@@ -580,13 +580,39 @@ impl IRToASM for Aarch64IRToASM {
     }
 
     fn gen_ir_mem_alloc(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String {
-        let mut output = "".to_string(); // call the heap allocator
+        let mut output = "".to_string();
 
         // load the parameter
         let x0 = self.allocate_specific_register(0, 4);
         output.push_str(&format!("MOV {}, {:#x}\nBL _kgc_alloc\n", x0.name(), size));
 
-        output.push_str(&self.gen_ir_mov_asm(dest, src));
+        // move the memory address to the 'dest' register
+        output.push_str(&format!("{}\n", self.gen_ir_mov_asm(dest, src)));
+
+        let dst_reg = self.resolve_register(dest).1.name();
+        /* 
+            Offset the destination register by 32 bytes. But why 32? Let me explain.
+        */
+        output.push_str(&format!("LDR {}, [{}, {:#x}]\n", dst_reg, dst_reg, 32));
+        output
+    }
+
+    fn gen_ir_mem_cpy(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String {
+        let mut output = "".to_string();
+
+        // destination
+        let x0 = self.allocate_specific_register(0, REG_SIZE_8);
+        output.push_str(&format!("MOV {}, {}\n", x0.name(), self.resolve_register(dest).1.name()));
+
+        // source
+        let x1 = self.allocate_specific_register(1, REG_SIZE_8);
+        output.push_str(&format!("MOV {}, {}\n", x1.name(), self.resolve_register(src).1.name()));
+
+        // size
+        let w2 = self.allocate_specific_register(2, REG_SIZE_4);
+        output.push_str(&format!("MOV {}, {:#x}\n", w2.name(), size));
+
+        output.push_str("BL _kgc_memcpy\n");
         output
     }
 }
