@@ -28,11 +28,13 @@ use std::cell::RefMut;
 use std::rc::Rc;
 use std::vec;
 
+use itertools::all;
 use kagc_ast::*;
 use kagc_ctx::*;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
+use kagc_ir::ir_types::IRLitVal;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::*;
@@ -98,31 +100,12 @@ impl CodeGen for Aarch64CodeGen {
         }
 
         let store_class: StorageClass = func_info.storage_class;
-        let mut stack_off: usize = 0;
         let mut virtual_reg: usize = 0;
 
         let mut fn_body: Vec<IR> = vec![];
 
-        // Setting up function context
-        let mut fn_ctx: FnCtx = FnCtx {
-            stack_offset: stack_off,
-
-            // local temporary counter starts at 0
-            temp_counter: 0,
-
-            // register information
-            reg_counter: None,
-            force_reg_use: false,
-
-            // early return information
-            early_return: false,
-
-            parent_ast_kind: ASTOperation::AST_FUNCTION,
-            prev_ast_kind: None,
-
-            next_label: self.label_id,
-            force_label_use: 0,
-        };
+        // Setting up function's context
+        let mut fn_ctx: FnCtx = FnCtx::new(self.label_id);
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
@@ -137,10 +120,14 @@ impl CodeGen for Aarch64CodeGen {
 
                                         let param_tmp: usize = fn_ctx.temp_counter;
                                         fn_ctx.temp_counter += 1;
-                                        let reg: IRLitType = IRLitType::Reg{ temp: param_tmp, idx: virtual_reg, size: reg_sz };
+
+                                        let reg: IRLitType = IRLitType::Reg{ 
+                                            temp: param_tmp, 
+                                            idx: virtual_reg, 
+                                            size: reg_sz 
+                                        };
                                         
                                         virtual_reg += 1;
-                                        stack_off += 1;
                                         reg
                                     }).collect();
 
@@ -163,8 +150,10 @@ impl CodeGen for Aarch64CodeGen {
 
         // get out of function
         self.current_function = None;
+
         // exit function's scope
         let func_scope: usize = self.ctx.borrow_mut().scope.exit_scope();
+        
         self.label_id = fn_ctx.next_label;
         let calls_fns: bool = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
 
@@ -207,17 +196,19 @@ impl CodeGen for Aarch64CodeGen {
                 return Ok(result);
             }
             else {
+                let var_stack_off = fn_ctx.next_stack_off();
                 let decl_ir: IR = IR::VarDecl(
                     IRVarDecl {
                         sym_name: var_decl.sym_name.clone(),
                         class: var_sym.class,
-                        offset: Some(fn_ctx.stack_offset),
+                        offset: Some(var_stack_off),
                         value: last_instr.dest().unwrap()
                     }
                 );
 
-                // increment the stack offset after use
-                fn_ctx.stack_offset += 1;
+                // remember the variables stack offset
+                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
+
                 result.push(decl_ir);
                 return Ok(result);
             }
@@ -232,14 +223,18 @@ impl CodeGen for Aarch64CodeGen {
         fn_ctx.temp_counter += 1;
 
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
+        let sym_off = fn_ctx.var_offsets.get(&ident_expr.sym_name);
 
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
         Ok(vec![
             IRInstr::Load {
-                dest: IRLitType::ExtendedTemp { id: lit_val_tmp, size: reg_sz },
-                addr: IRAddr::StackOff(sym.local_offset as usize)
+                dest: IRLitType::ExtendedTemp { 
+                    id: lit_val_tmp, 
+                    size: reg_sz
+                },
+                addr: IRAddr::StackOff(*sym_off.unwrap())
             }
         ])
     }
@@ -488,40 +483,79 @@ impl CodeGen for Aarch64CodeGen {
         }
 
         let alloc_tmp = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 2;
+        fn_ctx.temp_counter += 4;
 
         // allocate memory for the global var
-        let gc_alloc = IRInstr::MemAlloc { 
-            dest: IRLitType::ExtendedTemp { 
-                id:alloc_tmp, 
-                size: 8 
-            }, // where to store the pointer returned by gc allocation function 
+        let gc_alloc = IRInstr::MemAlloc { size: str_size.unwrap() };
+
+        // STR instruction's stack offset
+        let store_off = fn_ctx.next_stack_off();
+
+        // store the allocated memory's address on the stack
+        let store_mem_addr = IRInstr::Store { 
             src: IRLitType::Reg { 
-                temp: alloc_tmp + 1, 
+                temp: alloc_tmp, 
                 idx: 0, 
-                size: 8
-            }, // 
-            size: str_size.unwrap()
+                size: REG_SIZE_8
+            }, 
+            addr: IRAddr::StackOff(store_off)
         };
 
-        let lit_val_tmp: usize = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 1;
+        // Load the `data` section from the `gc_object_t` object in the memory.
+        // It is at the 32 bytes offset.
+        let load_data_sec = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: alloc_tmp + 1, 
+                size: REG_SIZE_8
+            }, 
+            addr: IRAddr::StackOff(store_off)
+        };
 
-        let glob_value = IRInstr::LoadGlobal { 
+        /* 
+            Offset the destination register by 32 bytes. But why 32? Let me explain.
+
+            The C struct `gc_object_t` is laid out in memory as follows (on a 64-bit system):
+                - ref_count      (8 bytes)  -> offset 0
+                - size           (8 bytes)  -> offset 8
+                - num_children   (8 bytes)  -> offset 16
+                - children       (8 bytes)  -> offset 24
+                - data           (8 bytes)  -> offset 32
+
+            Since we want to access the `data` field (a pointer to the actual payload),
+            we must add an offset of 32 (0x20) to the base pointer returned by `_kgc_alloc`.
+        */
+        let load_buffer_pointer = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: alloc_tmp + 2,
+                size: REG_SIZE_8 
+            }, 
+            addr: IRAddr::BaseOff(
+                load_data_sec.dest().unwrap(), 
+                4
+            )
+        };
+
+        let load_glob_value = IRInstr::LoadGlobal { 
             pool_idx: idx, 
-            dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 8 } // always use 8 bytes to load string literals into the stack
+            dest: IRLitType::ExtendedTemp{ 
+                id: alloc_tmp + 3, 
+                size: 8 // always use 8 bytes to load string literals into the stack
+            } 
         };
 
         let mov_to_heap = IRInstr::MemCpy { 
-            dest: gc_alloc.dest().unwrap(), 
-            src: glob_value.dest().unwrap(), 
+            dest: load_buffer_pointer.dest().unwrap(), 
+            src: load_glob_value.dest().unwrap(), 
             size: str_size.unwrap() 
         };
 
         Ok(
             vec![
                 gc_alloc,
-                glob_value,
+                store_mem_addr,
+                load_data_sec,
+                load_buffer_pointer,
+                load_glob_value,
                 mov_to_heap
             ]
         )

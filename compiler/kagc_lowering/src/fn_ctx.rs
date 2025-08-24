@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use kagc_ast::ASTOperation;
 use kagc_ir::LabelId;
 use kagc_symbol::function::INVALID_FUNC_ID;
@@ -29,26 +31,27 @@ pub struct FnCtx {
 
     pub next_label: LabelId,
 
-    pub force_label_use: LabelId
+    pub force_label_use: LabelId,
+
+    pub var_offsets: HashMap<String, StackOffset>
 }
 
-impl Default for FnCtx {
-    fn default() -> Self {
-        Self { 
+impl FnCtx {
+    pub fn new(next_label: LabelId) -> Self {
+        Self {
             stack_offset: Default::default(), 
             temp_counter: Default::default(), 
             reg_counter: Default::default(), 
             force_reg_use: Default::default(), 
             early_return: Default::default(), 
             prev_ast_kind: None,
-            parent_ast_kind: ASTOperation::AST_NONE,
-            next_label: 0,
-            force_label_use: INVALID_FUNC_ID
+            parent_ast_kind: ASTOperation::AST_FUNCTION,
+            next_label,
+            force_label_use: 0,
+            var_offsets: HashMap::new()
         }
     }
-}
 
-impl FnCtx {
     pub fn force_reg_use(&mut self, reg: RegIdx) {
         self.force_reg_use = true;
         self.reg_counter = Some(reg);
@@ -82,5 +85,11 @@ impl FnCtx {
 
     pub fn reset_label_hint(&mut self) {
         self.force_label_use = INVALID_FUNC_ID;
+    }
+
+    pub fn next_stack_off(&mut self) -> StackOffset {
+        let so = self.stack_offset;
+        self.stack_offset += 1;
+        so
     }
 }

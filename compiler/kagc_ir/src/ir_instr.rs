@@ -114,10 +114,10 @@ pub enum IRInstr {
     /// Grabage Collector's allocation instruction
     MemAlloc {
         /// Destination to load the allocated raw address into
-        dest: IRLitType,
+        // dest: IRLitType,
 
         /// This field is always IRLitType::Reg
-        src: IRLitType,
+        // src: IRLitType,
 
         /// How much memory to allocate
         size: usize
@@ -161,8 +161,6 @@ impl IRInstr {
                     IRAddr::BaseOff(base, _) => Some(base.clone()),
                 }
             },
-
-            Self::MemAlloc { dest, .. } => Some(dest.clone()),
             
             Self::MemCpy { dest, .. } => Some(dest.clone()),
 

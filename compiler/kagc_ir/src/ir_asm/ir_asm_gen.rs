@@ -85,7 +85,8 @@ pub trait IRToASM {
 
                     IRInstr::CondJump { label_id, operation, op1, op2, .. } => self.gen_cond_jmp_asm(op1, op2, *operation, *label_id),
 
-                    IRInstr::MemAlloc { dest, src, size } => self.gen_ir_mem_alloc(dest, src, *size),
+                    // Garbage collection operations
+                    IRInstr::MemAlloc { size, .. } => self.gen_ir_mem_alloc(*size),
                     
                     IRInstr::MemCpy { dest, src, size } => self.gen_ir_mem_cpy(dest, src, *size)
                 }
@@ -107,7 +108,7 @@ pub trait IRToASM {
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], return_type: &Option<IRLitType>) -> String;
 
     /// Allocate memory
-    fn gen_ir_mem_alloc(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String;
+    fn gen_ir_mem_alloc(&mut self, size: usize) -> String;
 
     /// Allocate memory
     fn gen_ir_mem_cpy(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String;

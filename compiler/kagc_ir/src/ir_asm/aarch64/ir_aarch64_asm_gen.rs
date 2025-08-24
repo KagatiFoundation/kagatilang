@@ -166,6 +166,9 @@ impl Aarch64IRToASM {
             else if let IR::Instr(IRInstr::Store { .. }) = ir {
                 stack_size += 8;
             }
+            else if let IR::Instr(IRInstr::MemAlloc { .. }) = ir {
+                stack_size += 8; // to store the allocated memory's address
+            }
         }
     
         Some(Aarch64IRToASM::align_to_16(stack_size))
@@ -579,21 +582,13 @@ impl IRToASM for Aarch64IRToASM {
         output_str
     }
 
-    fn gen_ir_mem_alloc(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String {
+    fn gen_ir_mem_alloc(&mut self, size: usize) -> String {
         let mut output = "".to_string();
 
         // load the parameter
         let x0 = self.allocate_specific_register(0, 4);
         output.push_str(&format!("MOV {}, {:#x}\nBL _kgc_alloc\n", x0.name(), size));
 
-        // move the memory address to the 'dest' register
-        output.push_str(&format!("{}\n", self.gen_ir_mov_asm(dest, src)));
-
-        let dst_reg = self.resolve_register(dest).1.name();
-        /* 
-            Offset the destination register by 32 bytes. But why 32? Let me explain.
-        */
-        output.push_str(&format!("LDR {}, [{}, {:#x}]\n", dst_reg, dst_reg, 32));
         output
     }
 

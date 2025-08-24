@@ -42,7 +42,11 @@ pub trait CodeGen {
     fn gen_ir(&mut self, nodes: &mut [AST]) -> Vec<IR> {
         let mut output: Vec<IR> = vec![];
         for node in nodes {
-            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(node, &mut FnCtx::default(), ASTOperation::AST_NONE);
+            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(
+                node, 
+                &mut FnCtx::new(0), 
+                ASTOperation::AST_NONE
+            );
             if node_ir.is_ok() {
                 output.extend(node_ir.ok().unwrap());
             }
@@ -166,17 +170,20 @@ pub trait CodeGen {
         let reg_sz = rec_field.value.result_type().to_reg_size();
 
         let load_field_val = IRInstr::Load { 
-            dest: IRLitType::ExtendedTemp{ id: tmp_id, size: reg_sz }, 
-            addr: IRAddr::BaseOff(rec_mem_loc.clone(), rec_field.offset as i32)
+            dest: IRLitType::ExtendedTemp{ 
+                id: tmp_id, 
+                size: reg_sz 
+            }, 
+            addr: IRAddr::BaseOff(
+                rec_mem_loc.clone(), 
+                rec_field.offset as i32
+            )
         };
 
         let store_field_val = IRInstr::Store { 
             src: IRLitType::ExtendedTemp{ id: tmp_id, size: reg_sz },
             addr: IRAddr::StackOff(rec_field.offset)
         };
-
-        // increment stack offset for each record field
-        fn_ctx.stack_offset += 1;
 
         output.push(load_field_val);
         output.push(store_field_val);
@@ -247,17 +254,39 @@ pub trait CodeGen {
         }
 
         let bin_expr_type: IRInstr = match bin_expr.operation {
-            ASTOperation::AST_ADD => self.lower_add_to_ir(dest_extd_temp(fn_ctx, bin_expr.result_type), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
-            ASTOperation::AST_SUBTRACT => self.lower_sub_to_ir(dest_extd_temp(fn_ctx, bin_expr.result_type), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
-            ASTOperation::AST_MULTIPLY => self.lower_mul_to_ir(dest_extd_temp(fn_ctx, bin_expr.result_type), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
-            ASTOperation::AST_DIVIDE => self.lower_div_to_ir(dest_extd_temp(fn_ctx, bin_expr.result_type), left_dest.dest().unwrap(), right_dest.dest().unwrap()),
+            ASTOperation::AST_ADD => {
+                self.lower_add_to_ir(
+                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    left_dest.dest().unwrap(), 
+                    right_dest.dest().unwrap()
+                )
+            },
+            ASTOperation::AST_SUBTRACT => {
+                self.lower_sub_to_ir(
+                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    left_dest.dest().unwrap(), 
+                    right_dest.dest().unwrap()
+                )
+            },
+            ASTOperation::AST_MULTIPLY => {
+                self.lower_mul_to_ir(
+                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    left_dest.dest().unwrap(), 
+                    right_dest.dest().unwrap()
+                )
+            },
+            ASTOperation::AST_DIVIDE => {
+                self.lower_div_to_ir(
+                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    left_dest.dest().unwrap(), 
+                    right_dest.dest().unwrap()
+                )
+            },
 
-            ASTOperation::AST_GTHAN
-            | ASTOperation::AST_LTHAN
-            | ASTOperation::AST_LTEQ
-            | ASTOperation::AST_GTEQ
-            | ASTOperation::AST_NEQ
-            | ASTOperation::AST_EQEQ => {
+            ASTOperation::AST_GTHAN | ASTOperation::AST_LTHAN   | 
+            ASTOperation::AST_LTEQ  | ASTOperation::AST_GTEQ    | 
+            ASTOperation::AST_NEQ   | ASTOperation::AST_EQEQ => 
+            {
                 let parent_ast_kind: ASTOperation = fn_ctx.parent_ast_kind;
                 if (parent_ast_kind == ASTOperation::AST_IF) || (parent_ast_kind == ASTOperation::AST_WHILE) {
                     self.gen_ir_cmp_and_jump(

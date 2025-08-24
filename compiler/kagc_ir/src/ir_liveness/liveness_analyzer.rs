@@ -168,7 +168,12 @@ impl LivenessAnalyzer {
                             Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_reg()),
                             Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_reg())
                         ].iter().any(|c| *c)
-                    }
+                    },
+
+                    IRInstr::MemCpy { dest, src, .. } => {
+                        Self::uses_temp_in_ir_lit(dest, temp_lookup) 
+                        || Self::uses_temp_in_ir_lit(src, temp_lookup)
+                    },
 
                     _ => false
                 }
