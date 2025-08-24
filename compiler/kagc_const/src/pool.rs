@@ -3,7 +3,11 @@ use std::hash::{Hash, Hasher};
 
 use indexmap::IndexMap;
 
+/// Pool index is used to index items in the const pool.
 pub type PoolIdx = usize;
+
+/// Size of a const pool item
+pub type ConstSize = usize;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OrderedMap<K: Hash + Eq, V>(pub IndexMap<K, V>);
@@ -34,9 +38,16 @@ impl<'a, K: Hash + Eq, V> IntoIterator for &'a OrderedMap<K, V> {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct RecordConst {
+    /// Record's name
     pub type_name: String,
+
+    /// Variable's name
     pub alias: String,
+
+    /// Name and the pool index of fields
     pub fields: OrderedMap<String, PoolIdx>,
+
+    /// How to align the record: platform dependent
     pub alignment: usize
 }
 
@@ -74,6 +85,30 @@ impl ConstPool {
             self.index_by_value.insert(constant, idx);
             idx
         }
+    }
+
+    pub fn size(&self, idx: PoolIdx) -> Option<ConstSize> {
+        if let Some(item) = self.get(idx) {
+            return match &item.value {
+                KagcConst::Str(value) => Some(value.len() + 1 /* +1 for null byte */),
+                KagcConst::Int(_) => Some(4),
+                KagcConst::Bool(_) => Some(1),
+
+                KagcConst::Record(record_const) => {
+                    let mut computed = 0;
+                    for (_, item_idx) in record_const.fields.iter() {
+                        if let Some(field_size) = self.size(*item_idx) {
+                            computed += field_size;
+                        }
+                        else {
+                            return None;
+                        }
+                    }
+                    Some(computed)
+                }
+            };
+        }
+        None
     }
 
     pub fn get(&self, index: PoolIdx) -> Option<&ConstEntry> {

@@ -31,6 +31,7 @@ use std::{
 
 use kagc_const::pool::{ConstEntry, KagcConst};
 use kagc_ctx::CompilerCtx;
+use kagc_gc::HeapLivenessAnalyer;
 use kagc_symbol::StorageClass;
 use kagc_target::{asm::aarch64::*, reg::*};
 
@@ -262,7 +263,13 @@ impl Aarch64IRToASM {
                 output_str.push_str(&format!("\t.xword .L.str.{c_item_index}\n"));
             }
             else {
-                output_str.push_str(&format!(".L.str.{}:\n\t.asciz \"{}\"\n", c_item_index, str_value));
+                output_str.push_str(
+                    &format!(
+                        ".L.str.{}:\n\t.asciz \"{}\"\n", 
+                        c_item_index, 
+                        str_value
+                    )
+                );
             }
         }
         else if let KagcConst::Int(int_value) = &c_item.value {
@@ -300,6 +307,9 @@ impl IRToASM for Aarch64IRToASM {
 
         // Temporary liveness information of this function
         let temp_liveness: HashMap<usize, LiveRange> = LivenessAnalyzer::analyze_fn_temps(fn_ir);
+
+        // Heap memory manager
+        let _heap_liveness = HeapLivenessAnalyer::analyze();
 
         let stack_size: usize = self.compute_stack_size_fn_ir(fn_ir).unwrap();
 
@@ -567,6 +577,17 @@ impl IRToASM for Aarch64IRToASM {
         output_str.push_str(&format!("CMP {}, {}\n", self.extract_operand(op1), self.extract_operand(op2)));
         output_str.push_str(&format!("{compare_operator} .LB_{label_id}"));
         output_str
+    }
+
+    fn gen_ir_mem_alloc(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String {
+        let mut output = "".to_string(); // call the heap allocator
+
+        // load the parameter
+        let x0 = self.allocate_specific_register(0, 4);
+        output.push_str(&format!("MOV {}, {:#x}\nBL _kgc_alloc\n", x0.name(), size));
+
+        output.push_str(&self.gen_ir_mov_asm(dest, src));
+        output
     }
 }
 

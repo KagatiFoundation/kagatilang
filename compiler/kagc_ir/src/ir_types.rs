@@ -46,18 +46,8 @@ pub enum IRLitType {
         size: RegSize
     },
 
-    /// Experimental
-    /// Allocate a register and associate it with a temporary
-    AllocReg {
-        /// Index of the register to be allocated.
-        reg: RegIdx,
-
-        /// Temporary to associate the allocate register with.
-        temp: TempId
-    },
-
     /// Stack offset
-    StackOff(usize)
+    StackOff(usize),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
@@ -117,8 +107,6 @@ impl IRLitType {
             
             Self::Reg{ idx, .. } => format!("x{}", *idx),
 
-            Self::AllocReg { .. } => "".to_string(),
-
             Self::StackOff(off) => off.to_string(),
 
             Self::ExtendedTemp { id, .. } => id.to_string()
@@ -131,10 +119,6 @@ impl IRLitType {
 
     pub fn is_reg(&self) -> bool {
         matches!(self, Self::Reg { .. })
-    }
-
-    pub fn is_alloc_reg(&self) -> bool {
-        matches!(self, Self::AllocReg { .. })
     }
 
     impl_as_irlit_type!(as_var, Var, Symbol);
@@ -151,13 +135,6 @@ impl IRLitType {
     pub fn as_reg(&self) -> Option<(RegIdx, usize)> {
         match self {
             Self::Reg { idx, size, .. } => Some((*idx, *size)),
-            _ => None
-        }
-    }
-
-    pub fn as_alloc_reg(&self) -> Option<(RegIdx, usize)> {
-        match self {
-            Self::AllocReg { reg, temp } => Some((*reg, *temp)),
             _ => None
         }
     }

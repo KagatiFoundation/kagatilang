@@ -230,20 +230,6 @@ pub trait CodeGen {
         self.gen_ir_load_global_var(idx, fn_ctx)
     }
 
-    fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let lit_val_tmp: usize = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 1;
-
-        Ok(
-            vec![
-                IRInstr::LoadGlobal { 
-                    pool_idx: idx, 
-                    dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 8 } // always use 8 bytes to load string literals into the stack
-                }
-            ]
-        )
-    }
-
     fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
 
@@ -326,6 +312,8 @@ pub trait CodeGen {
     fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
     fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
+
+    fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
     // *** IR CODE GENERATION *** //
     

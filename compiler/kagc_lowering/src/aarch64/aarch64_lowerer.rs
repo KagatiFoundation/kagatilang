@@ -481,6 +481,42 @@ impl CodeGen for Aarch64CodeGen {
         ])
     }
 
+    fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let str_size = self.ctx.borrow().const_pool.size(idx);
+        if str_size.is_none() {
+            panic!("ConstEntry's size cannot be computed for some reason! Panic caused by the index: {idx}");
+        }
+
+        let alloc_tmp = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 2;
+
+        let gc_alloc = IRInstr::MemAlloc { 
+            dest: IRLitType::ExtendedTemp { 
+                id:alloc_tmp, 
+                size: 8 
+            }, 
+            src: IRLitType::Reg { 
+                temp: alloc_tmp + 1, 
+                idx: 0, 
+                size: 8
+            }, 
+            size: str_size.unwrap()
+        };
+
+        let lit_val_tmp: usize = fn_ctx.temp_counter;
+        fn_ctx.temp_counter += 1;
+
+        Ok(
+            vec![
+                IRInstr::LoadGlobal { 
+                    pool_idx: idx, 
+                    dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: 8 } // always use 8 bytes to load string literals into the stack
+                },
+                gc_alloc,
+            ]
+        )
+    }
+
     fn lower_import_to_ir(&self) -> CGRes {
         Ok(vec![])   
     }

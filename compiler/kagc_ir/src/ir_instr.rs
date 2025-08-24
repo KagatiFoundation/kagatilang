@@ -4,7 +4,10 @@ use crate::{ir_types::*, LabelId};
 
 #[derive(Debug, Clone)]
 pub enum IRAddr {
+    /// Absolute stack offset
     StackOff(usize),
+
+    /// Stack offset relative to some register
     BaseOff(IRLitType, i32)
 }
 
@@ -103,6 +106,17 @@ pub enum IRInstr {
         label_id: usize
     },
 
+    MemAlloc {
+        /// Destination to load the allocated raw address into
+        dest: IRLitType,
+
+        /// This field is always IRLitType::Reg
+        src: IRLitType,
+
+        /// How much memory to allocate
+        size: usize
+    },
+
     /// Function call start
     CallStart,
 
@@ -132,9 +146,11 @@ impl IRInstr {
             Self::Store { addr, .. } => {
                 match addr {
                     IRAddr::StackOff(off) => Some(IRLitType::StackOff(*off)),
-                    IRAddr::BaseOff(base, _) => Some(base.clone())
+                    IRAddr::BaseOff(base, _) => Some(base.clone()),
                 }
             },
+
+            Self::MemAlloc { dest, .. } => Some(dest.clone()),
 
             _ => None
         }

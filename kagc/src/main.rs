@@ -31,5 +31,5 @@ use compiler::Compiler;
 fn main() -> Result<(), Error> {
     let mut comp = Compiler::new();
     // comp.compile("/Users/rigelstar/kagc/lib/std/net.kag")
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/main.kag")
+    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/ex1.kag")
 }

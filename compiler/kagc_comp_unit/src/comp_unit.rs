@@ -84,7 +84,7 @@ impl CompilationUnit {
     }
 
     pub fn extract_imports(&self) -> Vec<Import> {
-        let mut imports = vec![];
+        let mut imports = vec![]; 
 
         for ast in &self.asts {
             match ast.operation {

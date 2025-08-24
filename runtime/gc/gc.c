@@ -8,13 +8,20 @@ gc_object_t* kgc_alloc(size_t size) {
         return NULL;
     }
 
-    gc_object_t* obj = (gc_object_t*)malloc(sizeof(gc_object_t));
+    gc_object_t* obj = (gc_object_t*) malloc(sizeof(gc_object_t));
     if (!obj) return NULL;
 
     obj->ref_count = 1;
     obj->size = size;
     obj->num_children = 0;
     obj->children = NULL;
+
+    obj->data = malloc(size);
+    if (!obj->data) {
+        free(obj);
+        return NULL;
+    }
+    
     return obj;
 }
 
@@ -34,6 +41,7 @@ void kgc_release(gc_object_t* obj) {
         }
 
         free(obj->children);
+        free(obj->data);
         free(obj);
     }
 }

@@ -1,0 +1,6 @@
+[package]
+name = "kagc_gc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

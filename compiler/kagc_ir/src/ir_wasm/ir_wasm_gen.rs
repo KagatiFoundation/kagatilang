@@ -1,4 +1,4 @@
-use crate::{ir_asm::ir_asm_gen::IRToASM, ir_instr::{IRAddr, IR}};
+use crate::{ir_asm::ir_asm_gen::IRToASM, ir_instr::{IRAddr, IR}, ir_types::IRLitType};
 
 pub struct IRToWASM {
 
@@ -107,6 +107,10 @@ impl IRToASM for IRToWASM {
     }
 
     fn gen_non_leaf_fn_epl(&self, stack_size: usize) -> String {
+        todo!()
+    }
+    
+    fn gen_ir_mem_alloc(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String {
         todo!()
     }
 }

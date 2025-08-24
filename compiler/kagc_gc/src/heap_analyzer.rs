@@ -22,6 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub enum CtxError {
-    UndefinedSymbol
+pub type HeapRange = (usize, usize);
+
+pub struct HeapLivenessAnalyer;
+
+impl HeapLivenessAnalyer {
+    pub fn analyze() -> Vec<usize> {
+        vec![]
+    }
 }
