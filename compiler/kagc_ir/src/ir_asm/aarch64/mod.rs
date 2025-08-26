@@ -1,4 +1,4 @@
-mod ir_aarch64_asm_gen;
+mod aarch64_gen;
 pub mod stackframe;
 
-pub use ir_aarch64_asm_gen::*;
+pub use aarch64_gen::*;

@@ -31,7 +31,6 @@ use std::{
 
 use kagc_const::pool::{ConstEntry, KagcConst};
 use kagc_ctx::CompilerCtx;
-use kagc_gc::HeapLivenessAnalyer;
 use kagc_symbol::StorageClass;
 use kagc_target::{asm::aarch64::*, reg::*};
 
@@ -39,7 +38,8 @@ use crate::{
     ir_asm::ir_asm_gen::*, 
     ir_instr::*, 
     ir_liveness::*, 
-    ir_types::*, LabelId
+    ir_types::*, 
+    LabelId
 };
 
 #[derive(Debug)]
@@ -71,7 +71,16 @@ impl<KT: Eq + Hash> TempRegMap<KT> {
 struct ComptFnProps {
     pub is_leaf: bool,
     pub stack_size: usize,
+    _next_stack_slot: usize,
     pub liveness_info: HashMap<usize, LiveRange>,
+}
+
+impl ComptFnProps {
+    pub fn next_stack_slot(&mut self) -> usize {
+        let slot = self._next_stack_slot;
+        self._next_stack_slot += 1;
+        slot
+    }
 }
 
 /// Handles the translation of IR (Intermediate Representation) to 
@@ -152,7 +161,7 @@ impl Aarch64IRToASM {
     }
     
     /// Computes the aligned stack size required for a function.
-    fn compute_stack_size_fn_ir(&self, func_ir: &IRFunc) -> Option<usize> {
+    fn pre_compute_fn_stack_size(&self, func_ir: &IRFunc) -> Option<usize> {
         let mut stack_size: usize = func_ir.params.len() * 8; // Each parameter is 8 bytes
     
         if !func_ir.is_leaf {
@@ -171,7 +180,7 @@ impl Aarch64IRToASM {
             }
         }
     
-        Some(Aarch64IRToASM::align_to_16(stack_size))
+        Some(Self::align_to_16(stack_size))
     }
 
     /// Align the given address into an address divisible by 16.
@@ -179,11 +188,16 @@ impl Aarch64IRToASM {
         (value + 16 - 1) & !15
     }
 
-    fn gen_fn_param_asm(&self, param: &IRLitType, stack_size: usize, is_leaf_fn: bool) -> String {
+    fn gen_fn_param_asm(&mut self, param: &IRLitType) -> String {
+        let fn_props = self.get_current_fn_props_mut();
+        let stack_size = fn_props.stack_size;
+        let is_leaf_fn = fn_props.is_leaf;
+        let next_stack_slot = fn_props.next_stack_slot();
+
         match param {
             IRLitType::Reg { idx, size, .. } => {
                 let name = self.reg_manager.borrow().name(*idx, *size);
-                let stack_off: usize = (*idx * 8) + 8;
+                let stack_off: usize = (next_stack_slot * 8) + 8;
                 if is_leaf_fn {
                     format!("STR {name}, [SP, #{}]", stack_size - stack_off)
                 }
@@ -193,20 +207,6 @@ impl Aarch64IRToASM {
             },
             _ => unimplemented!()
         }
-    }
-
-    #[inline]
-    fn advance_ip(&mut self) {
-        self.func_ip += 1;
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        // reset IP before moving into into another function
-        self.func_ip = 0;
-
-        // stay on the global scope; no function available
-        self.switch_to_global_scope();
     }
 
     fn drop_temp(&mut self, temp: usize) {
@@ -297,6 +297,66 @@ impl Aarch64IRToASM {
         }
         output_str
     }
+
+    /// Spill register to stack pointer (SP)
+    fn gen_str_sp(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> String {
+        format!("STR {}, [SP, {:#x}]", reg.name(), stack_size - (slot * 8))
+    }
+
+    /// Load register from stack pointer (SP)
+    fn gen_ldr_sp(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> String {
+        format!("LDR {}, [SP, {:#x}]", reg.name(), stack_size - (slot * 8))
+    }
+
+    /// Spill register to frame pointer (x29)
+    fn gen_str_fp(&self, reg: &AllocedReg, slot: usize) -> String {
+        format!("STR {}, [x29, #-{:#x}]", reg.name(), slot * 8)
+    }
+
+    /// Load register from frame pointer (x29)
+    fn gen_ldr_fp(&self, reg: &AllocedReg, slot: usize) -> String {
+        format!("LDR {}, [x29, #-{:#x}]", reg.name(), slot * 8)
+    }
+
+    fn gen_reg_spill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
+        if reg.status != RegStatus::Spilled {
+            return None;
+        }
+        Some(self.gen_str_sp(reg, stack_size, slot))
+    }
+
+    fn gen_reg_unspill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
+        if reg.status != RegStatus::Spilled {
+            return None;
+        }
+        Some(self.gen_ldr_sp(reg, stack_size, slot))
+    }
+
+    fn get_current_fn_props(&self) -> &ComptFnProps {
+        self.compt_fn_props
+            .as_ref()
+            .expect("Compile time function info not found! Aborting code generation...")
+    }
+
+    fn get_current_fn_props_mut(&mut self) -> &mut ComptFnProps {
+        self.compt_fn_props
+            .as_mut()
+            .expect("Compile time function info not found! Aborting code generation...")
+    }
+
+    #[inline]
+    fn advance_ip(&mut self) {
+        self.func_ip += 1;
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        // reset IP before moving into into another function
+        self.func_ip = 0;
+
+        // stay on the global scope; no function available
+        self.switch_to_global_scope();
+    }
 }
 
 impl IRToASM for Aarch64IRToASM {
@@ -312,9 +372,9 @@ impl IRToASM for Aarch64IRToASM {
         let temp_liveness: HashMap<usize, LiveRange> = LivenessAnalyzer::analyze_fn_temps(fn_ir);
 
         // Heap memory manager
-        let _heap_liveness = HeapLivenessAnalyer::analyze();
+        // let _heap_liveness = HeapLivenessAnalyer::analyze(fn_ir);
 
-        let stack_size: usize = self.compute_stack_size_fn_ir(fn_ir).unwrap();
+        let stack_size: usize = self.pre_compute_fn_stack_size(fn_ir).unwrap();
 
         if fn_ir.is_leaf {
             output_str.push_str(&format!("{}\n", self.gen_leaf_fn_prol(&fn_ir.name, stack_size)));
@@ -323,25 +383,35 @@ impl IRToASM for Aarch64IRToASM {
             output_str.push_str(&format!("{}\n", self.gen_non_leaf_fn_prol(&fn_ir.name, stack_size)));
         }
 
-        for param in &fn_ir.params {
-            output_str.push_str(&format!("{}\n", self.gen_fn_param_asm(param, stack_size, fn_ir.is_leaf)));
-        }
-
         // generate the code for function body
         self.switch_to_func_scope(
             ComptFnProps { 
                 is_leaf: fn_ir.is_leaf, 
                 stack_size,
                 liveness_info: temp_liveness,
+                _next_stack_slot: 0
             }
         );
 
+        for param in &fn_ir.params {
+            output_str.push_str(
+                &format!(
+                    "{}\n", 
+                    self.gen_fn_param_asm(param)
+                )
+            );
+        }
+
+        let mut fn_body_asm = String::new();
+
         for body_ir in &mut fn_ir.body {
-            let body_asm: String = self.gen_asm_from_ir_node(body_ir);
+            let _body_asm: String = self.gen_asm_from_ir_node(body_ir);
             self.try_dropping_all_temps();
             self.advance_ip();
-            output_str.push_str(&format!("{}\n", body_asm.trim()));
+            fn_body_asm.push_str(&format!("{}\n", _body_asm.trim()));
         }
+
+        output_str.push_str(&fn_body_asm);
 
         // reset IP and scope before moving into another function
         self.reset();
@@ -373,12 +443,29 @@ impl IRToASM for Aarch64IRToASM {
         };
 
         // since we are parsing a local variable, the compile-time function props cannot be None
-        let fn_props: &ComptFnProps = self.compt_fn_props.as_ref().unwrap_or_else(|| panic!("Compile time information not available for the function!"));
+        let fn_props: &ComptFnProps = self.compt_fn_props
+            .as_ref()
+            .unwrap_or_else(
+                || panic!("Compile time information not available for the function!")
+            );
+
         if !fn_props.is_leaf {
-            output_str.push_str(&format!("STR {}, [x29, #-{}]", value_reg.name(), (stack_off * 8) + 8));
+            output_str.push_str(
+                &format!(
+                    "STR {}, [x29, #-{}]", 
+                    value_reg.name(), 
+                    (stack_off * 8) + 8
+                )
+            );
         }
         else {
-            output_str.push_str(&format!("STR {}, [SP, #{}]", value_reg.name(), fn_props.stack_size - ((stack_off * 8) + 8)));
+            output_str.push_str(
+                &format!(
+                    "STR {}, [SP, #{}]", 
+                    value_reg.name(), 
+                    fn_props.stack_size - ((stack_off * 8) + 8)
+                )
+            );
         }
         output_str
     }
@@ -419,29 +506,57 @@ impl IRToASM for Aarch64IRToASM {
     }
     
     fn gen_asm_load(&mut self, dest: &IRLitType, addr: &IRAddr) -> String {
-        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
-            (func_props.stack_size, func_props.is_leaf)
-        }
-        else {
-            panic!("Trying to load value from the stack outside of a function!");
-        };
+        let compt_fun = self.get_current_fn_props_mut();
+        let stack_size = compt_fun.stack_size;
+        let is_leaf_fn = compt_fun.is_leaf;
+        let next_stack_slot = compt_fun.next_stack_slot();
 
-        let dest_reg = self.resolve_register(dest);
+        let dest_reg = self.resolve_register(dest).1;
+        let mut output_code = String::new();
+
+        output_code.push_str(
+            &self.gen_reg_spill(
+                &dest_reg, 
+                stack_size,
+                next_stack_slot
+            ).unwrap_or_default()
+        );
+
         match addr {
             IRAddr::StackOff(stack_off) => {
                 let soff: usize = stack_off * 8;
                 if is_leaf_fn {
-                    format!("LDR {}, [SP, #{}]", dest_reg.1.name(), stack_size - soff)
+                    output_code.push_str(
+                        &format!(
+                            "LDR {}, [SP, #{}]", 
+                            dest_reg.name(), 
+                            stack_size - soff
+                        )
+                    );
                 }
                 else {
-                    format!("LDR {}, [x29, #-{}]", dest_reg.1.name(), soff + 8)
+                    output_code.push_str(
+                        &format!(
+                            "LDR {}, [x29, #-{}]", 
+                            dest_reg.name(), 
+                            soff + 8
+                        )
+                    );
                 }
             },
             IRAddr::BaseOff(base, off) => {
                 let src_reg = self.resolve_register(base);
-                format!("LDR {}, [{}, {}]", dest_reg.1.name(), src_reg.1.name(), format_args!("#{}", *off * 8))
+                output_code.push_str(
+                    &format!(
+                        "LDR {}, [{}, {}]", 
+                        dest_reg.name(), 
+                        src_reg.1.name(), 
+                        format_args!("#{}", *off * 8)
+                    )
+                );
             }
         }
+        output_code
     }
 
     fn gen_asm_store(&mut self, src: &IRLitType, addr: &IRAddr) -> String {
@@ -660,8 +775,8 @@ impl Aarch64IRToASM {
         }
     }
 
-    /// Get the compile time register mapping of a IR literal type. 
-    /// Returns temporary ID with it's mapped AllocedReg.
+    /// Get the compile time register mapping of an IR literal type. 
+    /// Returns temporary ID with its mapped AllocedReg.
     fn resolve_register(&mut self, irlit: &IRLitType) -> (TempId, AllocedReg) {
         match irlit {
             IRLitType::ExtendedTemp { id, size } => (*id, self.get_or_allocate_temp_register(*id, *size)),

@@ -107,20 +107,20 @@ pub enum IRInstr {
     },
 
     /*
-        The following instructions are used by the compiler to
+        The instructions after this point are used by the compiler to
         utilize garbage collection feature.
     */
 
     /// Grabage Collector's allocation instruction
     MemAlloc {
-        /// Destination to load the allocated raw address into
-        // dest: IRLitType,
-
-        /// This field is always IRLitType::Reg
-        // src: IRLitType,
-
         /// How much memory to allocate
         size: usize
+    },
+
+    /// Grabage Collector's allocation instruction
+    MemRelease {
+        /// Location where the pointer is stored
+        addr: IRAddr
     },
 
     /// Grabage Collector's copy instruction

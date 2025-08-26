@@ -28,8 +28,6 @@ use crate::{ir_instr::*, ir_types::*, LabelId};
 
 pub(crate) const NO_INSTR: &str = "";
 
-// pub(crate) const NO_OP: &str = "NOP";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IRToASMState {
     Local,
@@ -88,7 +86,9 @@ pub trait IRToASM {
                     // Garbage collection operations
                     IRInstr::MemAlloc { size, .. } => self.gen_ir_mem_alloc(*size),
                     
-                    IRInstr::MemCpy { dest, src, size } => self.gen_ir_mem_cpy(dest, src, *size)
+                    IRInstr::MemCpy { dest, src, size } => self.gen_ir_mem_cpy(dest, src, *size),
+                     
+                    _ => todo!()
                 }
             },
         }

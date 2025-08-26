@@ -22,12 +22,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+use crate::ir_instr::{
+    IRFunc, 
+    IRInstr, 
+    IR
+};
+
 pub type HeapRange = (usize, usize);
 
 pub struct HeapLivenessAnalyer;
 
 impl HeapLivenessAnalyer {
-    pub fn analyze() -> Vec<usize> {
+    pub fn analyze(fn_ir: &IRFunc) -> Vec<usize> {
+        for body_item in &fn_ir.body {
+            match body_item {
+                IR::Instr(instr) => {
+                    match instr {
+                        IRInstr::MemAlloc { .. } => {
+
+                        },
+                        _ => continue
+                    }
+                },
+                _ => unreachable!()
+            }
+        }
         vec![]
     }
 }

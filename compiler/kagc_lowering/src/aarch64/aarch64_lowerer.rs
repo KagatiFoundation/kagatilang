@@ -28,13 +28,11 @@ use std::cell::RefMut;
 use std::rc::Rc;
 use std::vec;
 
-use itertools::all;
 use kagc_ast::*;
 use kagc_ctx::*;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
-use kagc_ir::ir_types::IRLitVal;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::*;

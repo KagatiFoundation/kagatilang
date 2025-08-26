@@ -24,7 +24,6 @@ SOFTWARE.
 
 pub mod aarch64;
 pub mod errors;
-pub mod x86;
 pub mod typedefs;
 pub mod fn_ctx;
 
