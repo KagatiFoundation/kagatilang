@@ -192,17 +192,20 @@ impl Aarch64IRToASM {
         let fn_props = self.get_current_fn_props_mut();
         let stack_size = fn_props.stack_size;
         let is_leaf_fn = fn_props.is_leaf;
-        let next_stack_slot = fn_props.next_stack_slot();
 
         match param {
             IRLitType::Reg { idx, size, .. } => {
-                let name = self.reg_manager.borrow().name(*idx, *size);
-                let stack_off: usize = (next_stack_slot * 8) + 8;
+                let reg = AllocedReg { 
+                    size: *size, 
+                    width: if *size == 8 { RegWidth::QWORD } else { RegWidth::WORD }, 
+                    idx: *idx, 
+                    status: RegStatus::Alloced
+                };
                 if is_leaf_fn {
-                    format!("STR {name}, [SP, #{}]", stack_size - stack_off)
+                    self.gen_str_sp(&reg, stack_size, *idx)
                 }
                 else {
-                    format!("STR {name}, [x29, #-{stack_off}]")
+                    self.gen_str_fp(&reg, *idx)
                 }
             },
             _ => unimplemented!()
@@ -300,22 +303,50 @@ impl Aarch64IRToASM {
 
     /// Spill register to stack pointer (SP)
     fn gen_str_sp(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> String {
-        format!("STR {}, [SP, {:#x}]", reg.name(), stack_size - (slot * 8))
+        let stack_off = stack_size - (slot * 8);
+        let dest_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
+            format!("[SP, {stack_off:#x}]")
+        }
+        else {
+            "[SP]".to_string()
+        };
+        format!("STR {}, {dest_addr}\n", reg.name())
     }
 
     /// Load register from stack pointer (SP)
     fn gen_ldr_sp(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> String {
-        format!("LDR {}, [SP, {:#x}]", reg.name(), stack_size - (slot * 8))
+        let stack_off = stack_size - (slot * 8);
+        let src_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
+            format!("[SP, {stack_off:#x}]")
+        }
+        else {
+            "[SP]".to_string()
+        };
+        format!("LDR {}, {src_addr}\n", reg.name())
     }
 
     /// Spill register to frame pointer (x29)
     fn gen_str_fp(&self, reg: &AllocedReg, slot: usize) -> String {
-        format!("STR {}, [x29, #-{:#x}]", reg.name(), slot * 8)
+        let stack_off = slot * 8;
+        let dest_addr = if stack_off != 0 { // if not at the beginning of the frame pointer
+            format!("[x29, -{stack_off:#x}]")
+        }
+        else {
+            "[x29]".to_string()
+        };
+        format!("STR {}, {dest_addr}\n", reg.name())
     }
 
     /// Load register from frame pointer (x29)
     fn gen_ldr_fp(&self, reg: &AllocedReg, slot: usize) -> String {
-        format!("LDR {}, [x29, #-{:#x}]", reg.name(), slot * 8)
+        let stack_off = slot * 8;
+        let src_addr = if stack_off != 0 { // if not at the beginning of the frame pointer
+            format!("[x29, -{stack_off:#x}]")
+        }
+        else {
+            "[x29]".to_string()
+        };
+        format!("LDR {}, {src_addr}\n", reg.name())
     }
 
     fn gen_reg_spill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
@@ -432,40 +463,17 @@ impl IRToASM for Aarch64IRToASM {
     fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &IRVarDecl) -> String {
         let mut output_str: String = "".to_string();
 
-        let stack_off: usize = vdecl_ir.offset.unwrap_or_else(|| panic!("Local variables must have stack offset!"));
+        let value_reg = self.resolve_register(&vdecl_ir.value).1;
 
-        let value_reg: AllocedReg = match &vdecl_ir.value {
-            IRLitType::ExtendedTemp { id, .. } => {
-                let temp_reg: AllocedReg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
-                temp_reg
-            }
-            _ => todo!()
-        };
-
-        // since we are parsing a local variable, the compile-time function props cannot be None
-        let fn_props: &ComptFnProps = self.compt_fn_props
-            .as_ref()
-            .unwrap_or_else(
-                || panic!("Compile time information not available for the function!")
-            );
+        let fn_props = self.get_current_fn_props_mut();
+        let stack_size = fn_props.stack_size;
+        let var_stack_off = vdecl_ir.offset.unwrap();
 
         if !fn_props.is_leaf {
-            output_str.push_str(
-                &format!(
-                    "STR {}, [x29, #-{}]", 
-                    value_reg.name(), 
-                    (stack_off * 8) + 8
-                )
-            );
+            output_str.push_str(&self.gen_str_fp(&value_reg, var_stack_off));
         }
         else {
-            output_str.push_str(
-                &format!(
-                    "STR {}, [SP, #{}]", 
-                    value_reg.name(), 
-                    fn_props.stack_size - ((stack_off * 8) + 8)
-                )
-            );
+            output_str.push_str(&self.gen_str_sp(&value_reg, stack_size, var_stack_off));
         }
         output_str
     }
@@ -524,22 +532,20 @@ impl IRToASM for Aarch64IRToASM {
 
         match addr {
             IRAddr::StackOff(stack_off) => {
-                let soff: usize = stack_off * 8;
                 if is_leaf_fn {
                     output_code.push_str(
-                        &format!(
-                            "LDR {}, [SP, #{}]", 
-                            dest_reg.name(), 
-                            stack_size - soff
+                        &self.gen_ldr_sp(
+                            &dest_reg, 
+                            stack_size, 
+                            *stack_off
                         )
                     );
                 }
                 else {
                     output_code.push_str(
-                        &format!(
-                            "LDR {}, [x29, #-{}]", 
-                            dest_reg.name(), 
-                            soff + 8
+                        &self.gen_ldr_fp(
+                            &dest_reg, 
+                            *stack_off
                         )
                     );
                 }
@@ -560,27 +566,28 @@ impl IRToASM for Aarch64IRToASM {
     }
 
     fn gen_asm_store(&mut self, src: &IRLitType, addr: &IRAddr) -> String {
-        let (stack_size, is_leaf_fn) = if let Some(func_props) = &self.compt_fn_props {
-            (func_props.stack_size, func_props.is_leaf)
-        }
-        else {
-            panic!("Trying to load value from the stack outside of a function!");
-        };
+        let compt_fun = self.get_current_fn_props_mut();
+        let stack_size = compt_fun.stack_size;
+        let is_leaf_fn = compt_fun.is_leaf;
 
-        let src_reg = self.resolve_register(src);
+        let src_reg = self.resolve_register(src).1;
         match addr {
             IRAddr::StackOff(stack_off) => {
-                let soff: usize = (stack_off * 8) + 8;
                 if is_leaf_fn {
-                    format!("STR {}, [SP, #{}]", src_reg.1.name(), stack_size - soff)
+                    self.gen_str_sp(&src_reg, stack_size, *stack_off)
                 }
                 else {
-                    format!("STR {}, [x29, #-{}]", src_reg.1.name(), soff)
+                    self.gen_str_fp(&src_reg, *stack_off)
                 }
             },
             IRAddr::BaseOff(base, off) => {
-                let dest_reg = self.resolve_register(base);
-                format!("STR {}, [{}, {}]", src_reg.1.name(), dest_reg.1.name(), format_args!("#-{}", off * 8))
+                let dest_reg = self.resolve_register(base).1;
+                format!(
+                    "STR {}, [{}, {}]", 
+                    src_reg.name(), 
+                    dest_reg.name(), 
+                    format_args!("#-{}", off * 8)
+                )
             }
         }
     }
@@ -698,12 +705,23 @@ impl IRToASM for Aarch64IRToASM {
     }
 
     fn gen_ir_mem_alloc(&mut self, size: usize) -> String {
+        let compt_props = self.get_current_fn_props_mut();
+        let stack_size = compt_props.stack_size;
+        let next_slot = compt_props.next_stack_slot();
+
         let mut output = "".to_string();
 
         // load the parameter
         let x0 = self.allocate_specific_register(0, 4);
-        output.push_str(&format!("MOV {}, {:#x}\nBL _kgc_alloc\n", x0.name(), size));
+        output.push_str(
+            &self.gen_reg_spill(
+                &x0, 
+                stack_size, 
+                next_slot
+            ).unwrap_or_default()
+        );
 
+        output.push_str(&format!("MOV {}, {:#x}\nBL _kgc_alloc\n", x0.name(), size));
         output
     }
 
@@ -729,19 +747,33 @@ impl IRToASM for Aarch64IRToASM {
 
 impl Aarch64IRToASM {
     fn gen_ir_bin_op_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType, operation: &str) -> String {
-        let dest_reg = self.resolve_register(dest);
-        let reg_name: String = dest_reg.1.name();
+        let compt_props = self.get_current_fn_props_mut();
+        let stack_size = compt_props.stack_size;
+        let next_slot = compt_props.next_stack_slot();
+
+        let dest_reg = self.resolve_register(dest).1;
+        let reg_name: String = dest_reg.name();
 
         let op1: String = self.extract_operand(op1);
         let op2: String = self.extract_operand(op2);
 
-        format!(
-            "{} {}, {}, {}",
-            operation,
-            reg_name, 
-            op1, 
-            op2
-        ) 
+        let mut output = "".to_string();
+        output.push_str(
+            &self.gen_reg_spill(
+                &dest_reg, 
+                stack_size, 
+                next_slot
+            ).unwrap_or_default()
+        );
+
+        output.push_str(
+            &format!(
+                "{} {}, {}, {}",
+                operation, reg_name, 
+                op1, op2
+            )
+        );
+        output
     }
 
     /// Extract the IRLitType as an operand(String)

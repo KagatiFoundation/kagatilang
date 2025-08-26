@@ -124,6 +124,8 @@ impl CodeGen for Aarch64CodeGen {
                                             idx: virtual_reg, 
                                             size: reg_sz 
                                         };
+
+                                        fn_ctx.next_stack_off();
                                         
                                         virtual_reg += 1;
                                         reg
