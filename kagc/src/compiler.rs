@@ -94,10 +94,10 @@ impl Compiler {
         let mut resolv = Resolver::new(self.ctx.clone());
 
         // Register manager for Aarch64
-        let rm = Rc::new(RefCell::new(Aarch64RegManager2::new()));
+        let rm = Aarch64RegManager2::new();
 
         // AST to IR generator
-        let mut lowerer = Aarch64CodeGen::new(rm.clone(), self.ctx.clone());
+        let mut lowerer = Aarch64CodeGen::new(self.ctx.clone());
 
         let mut final_irs = vec![];
 
@@ -119,7 +119,7 @@ impl Compiler {
         }
 
         // IR to Aarch64 ASM generator
-        let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm.clone());
+        let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm);
         let code = cg.gen_asm(&mut final_irs);
         println!("{code}");
         Ok(())

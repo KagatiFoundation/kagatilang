@@ -114,7 +114,11 @@ pub enum IRInstr {
     /// Grabage Collector's allocation instruction
     MemAlloc {
         /// How much memory to allocate
-        size: usize
+        size: usize,
+
+        /// Destination where the address of newly allocated memory's
+        /// address lives
+        dest: IRLitType
     },
 
     /// Grabage Collector's allocation instruction
@@ -125,14 +129,7 @@ pub enum IRInstr {
 
     /// Grabage Collector's copy instruction
     MemCpy {
-        /// Destination to load the allocated raw address into
-        dest: IRLitType,
-
-        /// This field is always IRLitType::Reg
-        src: IRLitType,
-
-        /// How much to copy
-        size: usize
+        dest: IRLitType
     }
 }
 
@@ -161,9 +158,11 @@ impl IRInstr {
                     IRAddr::BaseOff(base, _) => Some(base.clone()),
                 }
             },
-            
-            Self::MemCpy { dest, .. } => Some(dest.clone()),
 
+            Self::MemCpy { dest } => Some(dest.clone()),
+            
+            Self::MemAlloc { dest, .. } => Some(dest.clone()),
+            
             _ => None
         }
     }

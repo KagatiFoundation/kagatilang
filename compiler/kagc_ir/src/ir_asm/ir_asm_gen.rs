@@ -86,7 +86,7 @@ pub trait IRToASM {
                     // Garbage collection operations
                     IRInstr::MemAlloc { size, .. } => self.gen_ir_mem_alloc(*size),
                     
-                    IRInstr::MemCpy { dest, src, size } => self.gen_ir_mem_cpy(dest, src, *size),
+                    IRInstr::MemCpy { .. } => self.gen_ir_mem_cpy(),
                      
                     _ => todo!()
                 }
@@ -111,7 +111,7 @@ pub trait IRToASM {
     fn gen_ir_mem_alloc(&mut self, size: usize) -> String;
 
     /// Allocate memory
-    fn gen_ir_mem_cpy(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String;
+    fn gen_ir_mem_cpy(&mut self) -> String;
 
     /// Generates AArch64 assembly for an addition operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use kagc_ast::ASTOperation;
-use kagc_ir::LabelId;
+use kagc_ir::{ir_types::TempId, LabelId};
 use kagc_symbol::function::INVALID_FUNC_ID;
 use kagc_target::reg::RegIdx;
 
@@ -40,7 +40,7 @@ impl FnCtx {
     pub fn new(next_label: LabelId) -> Self {
         Self {
             stack_offset: Default::default(), 
-            temp_counter: Default::default(), 
+            temp_counter: 0, 
             reg_counter: Default::default(), 
             force_reg_use: Default::default(), 
             early_return: Default::default(), 
@@ -85,6 +85,12 @@ impl FnCtx {
 
     pub fn reset_label_hint(&mut self) {
         self.force_label_use = INVALID_FUNC_ID;
+    }
+
+    pub fn next_temp(&mut self) -> TempId {
+        let nt = self.temp_counter;
+        self.temp_counter += 1;
+        nt
     }
 
     pub fn next_stack_off(&mut self) -> StackOffset {

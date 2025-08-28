@@ -94,6 +94,14 @@ impl Aarch64RegManager2 {
             width
         }
     }
+
+    pub fn is_caller_saved(idx: RegIdx) -> bool {
+        idx <= 17
+    }
+
+    pub fn caller_saved_regs() -> Vec<RegIdx> {
+        (0..=17).collect()
+    }
 }
 
 impl RegManager2 for Aarch64RegManager2 {
@@ -135,8 +143,13 @@ impl RegManager2 for Aarch64RegManager2 {
     }
 
     fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg {
-        assert!((0..=32).contains(&idx));
-        assert!(idx != 29 || idx != 30, "x29 and x30 registers are reserved; cannot use them");
+        if !(0..=32).contains(&idx) {
+            panic!("Index '{idx}' is not a valid register index!");
+        }
+
+        if idx == 29 || idx == 30 {
+            panic!("x29 and x30 registers are reserved; cannot use them");
+        }
         
         if self.available_registers[idx] {
             self.available_registers[idx] = false;
@@ -258,7 +271,6 @@ impl RegManager2 for Aarch64RegManager2 {
             if self.register_map.contains_key(&i) {
                 return self.spill_and_mark_available(i, alloc_size);
             }
-
             panic!("No general-purpose registers available and stack is full!");
         }
         else {
@@ -313,5 +325,102 @@ impl RegManager2 for Aarch64RegManager2 {
 
     fn is_free(&self, idx: usize) -> bool {
         !self.register_map.contains_key(&idx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::asm::aarch64::*;
+
+    fn setup_manager() -> Aarch64RegManager2 {
+        Aarch64RegManager2::new()
+    }
+
+    #[test]
+    fn test_allocate_register_basic() {
+        let mut mgr = setup_manager();
+        let reg = mgr.allocate_register(8);
+        assert_eq!(reg.size, 8);
+        assert_eq!(reg.width, RegWidth::QWORD);
+        assert_eq!(reg.status, RegStatus::Alloced);
+
+        assert!(mgr.register_map.contains_key(&reg.idx));
+        assert!(!mgr.available_registers[reg.idx]);
+    }
+
+    #[test]
+    fn test_allocate_param_register_basic() {
+        let mut mgr = setup_manager();
+        let reg = mgr.allocate_param_register(4);
+        assert_eq!(reg.size, 4);
+        assert_eq!(reg.width, RegWidth::WORD);
+        assert_eq!(reg.status, RegStatus::Alloced);
+
+        assert!(mgr.register_map.contains_key(&reg.idx));
+        assert!(!mgr.available_registers[reg.idx]);
+        assert!(reg.idx < 8); // param regs
+    }
+
+    #[test]
+    fn test_allocate_specific_register() {
+        let mut mgr = setup_manager();
+        let reg = mgr.allocate_register_with_idx(8, 10, AllocStrategy::NoSpill);
+        assert_eq!(reg.idx, 10);
+        assert_eq!(reg.size, 8);
+        assert_eq!(reg.width, RegWidth::QWORD);
+        assert!(!mgr.is_free(10));
+    }
+
+    #[test]
+    fn test_free_register() {
+        let mut mgr = setup_manager();
+        let reg = mgr.allocate_register(8);
+        mgr.free_register(reg.idx);
+
+        assert!(mgr.is_free(reg.idx));
+        assert!(mgr.available_registers[reg.idx]);
+        assert!(!mgr.register_map.contains_key(&reg.idx));
+    }
+
+    #[test]
+    fn test_spill_and_restore_register() {
+        let mut mgr = setup_manager();
+        let reg1 = mgr.allocate_register(8);
+
+        let reg2 = mgr.spill_register(8, Some(reg1.idx));
+        assert_eq!(reg1.idx, reg2.idx); // spilled + reused
+        assert!(mgr.is_free(reg1.idx));
+
+        mgr.spilled_stack.push_back(reg1.idx);
+        let restored = mgr.restore_register();
+        assert_eq!(restored, reg1.idx);
+    }
+
+    #[test]
+    fn test_reset_manager() {
+        let mut mgr = setup_manager();
+        let reg = mgr.allocate_register(8);
+        assert!(!mgr.is_free(reg.idx));
+
+        mgr.reset();
+        for i in 0..32 {
+            assert!(mgr.is_free(i));
+        }
+        assert!(mgr.register_map.is_empty());
+        assert!(mgr.spilled_stack.is_empty());
+    }
+
+    #[test]
+    fn test_name_generation() {
+        let mgr = setup_manager();
+        assert_eq!(mgr.name(5, 8), "x5");
+        assert_eq!(mgr.name(5, 4), "w5");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_reserved_register_allocation_panics() {
+        let mut mgr = setup_manager();
+        mgr.allocate_register_with_idx(8, 29, AllocStrategy::NoSpill); // x29 is reserved; cannot use it
     }
 }

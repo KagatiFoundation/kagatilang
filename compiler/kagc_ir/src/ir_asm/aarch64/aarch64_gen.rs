@@ -25,7 +25,6 @@ SOFTWARE.
 use std::{
     cell::RefCell, 
     collections::HashMap, 
-    hash::Hash, 
     rc::Rc
 };
 
@@ -42,25 +41,34 @@ use crate::{
     LabelId
 };
 
-#[derive(Debug)]
-struct TempRegMap<KT: Eq + Hash> {
-    pub reg_map: HashMap<KT, AllocedReg>
+#[derive(Debug, Default)]
+pub struct TempRegMap {
+    pub reg_map: HashMap<TempId, AllocedReg>
 }
 
-impl<KT: Eq + Hash> Default for TempRegMap<KT> {
-    fn default() -> Self {
-        Self {
-            reg_map: HashMap::new()
-        }
-    }
-}
-
-impl<KT: Eq + Hash> TempRegMap<KT> {
-    pub fn drop(&mut self, key: &KT) -> Option<AllocedReg> {
+impl TempRegMap {
+    pub fn drop(&mut self, key: &TempId) -> Option<AllocedReg> {
         self.reg_map.remove(key)
     }
-}
 
+    /// Get temporary ID associated with the given register.
+    pub fn find_temp_by_reg(&self, reg_idx: RegIdx) -> Option<TempId> {
+        self.reg_map
+            .iter()
+            .find(|(_, reg)| {
+                reg.idx == reg_idx
+            })
+            .map(|(temp, _)| *temp)
+    }
+
+    pub fn find_reg_by_temp(&self, temp_id: TempId) -> Option<&AllocedReg> {
+        self.reg_map.get(&temp_id)
+    }
+
+    pub fn clear_mappings(&mut self) {
+        self.reg_map.clear();
+    }
+}
 
 /// Represents properties of a compiled function.
 /// 
@@ -97,11 +105,11 @@ impl ComptFnProps {
 pub struct Aarch64IRToASM {
     pub ctx: Rc<RefCell<CompilerCtx>>,
 
-    reg_manager: Rc<RefCell<Aarch64RegManager2>>,
+    reg_manager: Aarch64RegManager2,
 
     compt_fn_props: Option<ComptFnProps>,
 
-    temp_reg_map: TempRegMap<usize>,
+    temp_reg_map: TempRegMap,
 
     /// Instruction Pointer:
     /// IP is used to track the execution of instructions inside 
@@ -114,7 +122,7 @@ pub struct Aarch64IRToASM {
 
 impl Aarch64IRToASM {
     #[allow(clippy::new_without_default)]
-    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, rm: Rc<RefCell<Aarch64RegManager2>>) -> Self {
+    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, rm: Aarch64RegManager2) -> Self {
         Self {
             ctx,
             reg_manager: rm,
@@ -212,11 +220,20 @@ impl Aarch64IRToASM {
         }
     }
 
+    fn is_temp_alive_after(&self, temp: TempId, n_instrs: usize) -> bool {
+        let compt_props = self.get_current_fn_props();
+        let (start, end) = compt_props.liveness_info
+            .get(&temp)
+            .unwrap_or_else(|| panic!("Untracked temp id '{temp}'"));
+
+        (*start + *end) <= (self.func_ip + n_instrs)
+    }
+
     fn drop_temp(&mut self, temp: usize) {
         let freed_reg: Option<AllocedReg> = self.temp_reg_map.drop(&temp);
 
         if let Some(reg) = freed_reg {
-            self.reg_manager.borrow_mut().free_register(reg.idx);
+            self.reg_manager.free_register(reg.idx);
         }
     }
 
@@ -387,6 +404,9 @@ impl Aarch64IRToASM {
 
         // stay on the global scope; no function available
         self.switch_to_global_scope();
+
+        // clear temp-reg mappings
+        self.temp_reg_map.clear_mappings();
     }
 }
 
@@ -725,20 +745,14 @@ impl IRToASM for Aarch64IRToASM {
         output
     }
 
-    fn gen_ir_mem_cpy(&mut self, dest: &IRLitType, src: &IRLitType, size: usize) -> String {
+    fn gen_ir_mem_cpy(&mut self) -> String {
         let mut output = "".to_string();
 
-        // destination
-        let x0 = self.allocate_specific_register(0, REG_SIZE_8);
-        output.push_str(&format!("MOV {}, {}\n", x0.name(), self.resolve_register(dest).1.name()));
-
-        // source
-        let x1 = self.allocate_specific_register(1, REG_SIZE_8);
-        output.push_str(&format!("MOV {}, {}\n", x1.name(), self.resolve_register(src).1.name()));
-
-        // size
-        let w2 = self.allocate_specific_register(2, REG_SIZE_4);
-        output.push_str(&format!("MOV {}, {:#x}\n", w2.name(), size));
+        for reg in Aarch64RegManager2::caller_saved_regs() {
+            if let Some(temp) = self.temp_reg_map.find_temp_by_reg(reg) {
+                let alive = self.is_temp_alive_after(temp, 1);
+            }
+        }
 
         output.push_str("BL _kgc_memcpy\n");
         output
@@ -843,7 +857,7 @@ impl Aarch64IRToASM {
     
     fn allocate_register(&mut self, sz: RegSize) -> AllocedReg {
         assert_ne!(sz, 0);
-        let mut reg_mgr = self.reg_manager.borrow_mut();
+        let reg_mgr = &mut self.reg_manager;
         let reg = reg_mgr.allocate_register(sz);
         assert!(reg.size != 0);
         reg
@@ -851,7 +865,7 @@ impl Aarch64IRToASM {
     
     fn allocate_specific_register(&mut self, reg: RegIdx, sz: RegSize) -> AllocedReg {
         assert_ne!(sz, 0);
-        let mut reg_mgr = self.reg_manager.borrow_mut();
+        let reg_mgr = &mut self.reg_manager;
         let reg = reg_mgr.allocate_register_with_idx(sz, reg, AllocStrategy::Spill);
         assert!(reg.size != 0);
         reg

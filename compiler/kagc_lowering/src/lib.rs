@@ -27,13 +27,14 @@ pub mod errors;
 pub mod typedefs;
 pub mod fn_ctx;
 
-use std::cell::RefMut;
-
 use errors::CodeGenErr;
 use fn_ctx::FnCtx;
 use kagc_ast::*;
-use kagc_ir::{ir_instr::*, ir_types::*, LabelId};
-use kagc_target::reg::*;
+use kagc_ir::{
+    ir_instr::*, 
+    ir_types::*, 
+    LabelId
+};
 use kagc_types::*;
 use typedefs::*;
 
@@ -163,9 +164,7 @@ pub trait CodeGen {
 
     fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, rec_mem_loc: IRLitType, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut output = vec![];
-        let tmp_id: usize = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 1;
-
+        let tmp_id: usize = fn_ctx.next_temp();
         let reg_sz = rec_field.value.result_type().to_reg_size();
 
         let load_field_val = IRInstr::Load { 
@@ -194,14 +193,17 @@ pub trait CodeGen {
         let load_rec_into_stack = IRInstr::LoadGlobal { 
             pool_idx: rec_creation.pool_idx,
             dest: {
-                let tmp_id: usize = fn_ctx.temp_counter;
-                fn_ctx.temp_counter += 1;
-                IRLitType::ExtendedTemp{ id: tmp_id, size: 8 } // always use 8 bytes to load records into the stack
+                IRLitType::ExtendedTemp{ 
+                    id: fn_ctx.next_temp(), 
+                    size: 8 // always use 8 bytes to load records into the stack
+                } 
             }
         };
 
-        let rec_dest = load_rec_into_stack.dest();
-        output.push(load_rec_into_stack);
+        let load_rec_into_stack = self.gen_ir_load_global_var(rec_creation.pool_idx, fn_ctx)?;
+
+        let rec_dest = load_rec_into_stack.last().unwrap().dest();
+        output.extend(load_rec_into_stack);
 
         for field in &mut rec_creation.fields {
             let field_output = self.lower_rec_field_assign_to_ir(field, rec_dest.clone().unwrap(), fn_ctx)?;
@@ -211,9 +213,13 @@ pub trait CodeGen {
     }
 
     fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let lit_val_tmp: usize = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 1;
-        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(IRLitVal::Null), 8)])
+        Ok(vec![
+            IRInstr::mov_into_temp(
+                fn_ctx.next_temp(), 
+                IRLitType::Const(IRLitVal::Null),
+                8
+            )
+        ])
     }
 
     fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
@@ -227,9 +233,13 @@ pub trait CodeGen {
             _ => todo!(),
         };
 
-        let lit_val_tmp: usize = fn_ctx.temp_counter;
-        fn_ctx.temp_counter += 1;
-        Ok(vec![IRInstr::mov_into_temp(lit_val_tmp, IRLitType::Const(ir_lit), reg_size)])
+        Ok(vec![
+            IRInstr::mov_into_temp(
+                fn_ctx.next_temp(), 
+                IRLitType::Const(ir_lit),
+                reg_size
+            )
+        ])
     }
 
     fn gen_ir_load_str(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
@@ -246,10 +256,8 @@ pub trait CodeGen {
         let right_dest: &IRInstr = right_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
 
         fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IRLitType {
-            let dest_temp: usize = fn_ctx.temp_counter;
-            fn_ctx.temp_counter += 1;
             let reg_sz = result_type.to_reg_size();
-            IRLitType::ExtendedTemp { id: dest_temp, size: reg_sz }
+            IRLitType::ExtendedTemp { id: fn_ctx.next_temp(), size: reg_sz }
         }
 
         let bin_expr_type: IRInstr = match bin_expr.operation {
@@ -344,8 +352,6 @@ pub trait CodeGen {
     fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
     // *** IR CODE GENERATION *** //
-    
-    fn reg_manager(&self) -> RefMut<dyn RegManager2>;
  
     fn emit(&self, code: &str) {
         println!("{code}");

@@ -170,10 +170,9 @@ impl LivenessAnalyzer {
                         ].iter().any(|c| *c)
                     },
 
-                    IRInstr::MemCpy { dest, src, .. } => {
-                        Self::uses_temp_in_ir_lit(dest, temp_lookup) 
-                        || Self::uses_temp_in_ir_lit(src, temp_lookup)
-                    },
+                    IRInstr::MemCpy { dest } => {
+                        Self::uses_temp_in_ir_lit(dest, temp_lookup)
+                    }
 
                     _ => false
                 }
