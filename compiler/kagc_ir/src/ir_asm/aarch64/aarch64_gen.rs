@@ -272,7 +272,6 @@ impl Aarch64IRToASM {
         }
 
         let mut output_str: String = String::new();
-        output_str.push_str(".data\n.align 3\n");
         for (index, c_item) in self.ctx.borrow().const_pool.iter_enumerated() {
             output_str.push_str(&self.dump_const(index, c_item, false));
         }
@@ -288,7 +287,7 @@ impl Aarch64IRToASM {
             else {
                 output_str.push_str(
                     &format!(
-                        ".L.str.{}:\n\t.asciz \"{}\"\n", 
+                        ".section __TEXT,__cstring\n.L.str.{}:\n\t.asciz \"{}\"\n", 
                         c_item_index, 
                         str_value
                     )
@@ -303,7 +302,7 @@ impl Aarch64IRToASM {
         else if let KagcConst::Record(rec) = &c_item.value {
             output_str.push_str(
                 &format!(
-                    ".align {}\n.L__const.{}.{}:\n", 
+                    ".section __DATA,__const\n.align {}\n.L__const.{}.{}:\n", 
                     rec.alignment, 
                     c_item.origin_func.unwrap(), 
                     rec.alias.clone()

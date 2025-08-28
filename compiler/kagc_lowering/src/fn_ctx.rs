@@ -7,33 +7,38 @@ use kagc_target::reg::RegIdx;
 
 use crate::typedefs::*;
 
-/// Holds function-specific context during AST to IR conversion.
+/// Holds function-specific context during AST-to-IR conversion.
 #[derive(Debug)]
 pub struct FnCtx {
-    /// Tracks the next available stack slot.
+    /// Next available stack slot for local variables.
     pub stack_offset: StackOffset,
 
-    /// Tracks the next available temporary variable ID.
+    /// Counter for generating fresh temporary variable IDs.
     pub temp_counter: TempCounter,
 
-    /// Preferred register for allocation, if available.
+    /// Optional preferred register for allocation.
     pub reg_counter: Option<RegIdx>,
 
-    /// Indicates that the next value should use `reg_counter` instead of a temporary.
+    /// Forces the next value to use `reg_counter` instead of a temporary.
     pub force_reg_use: bool,
 
-    /// Indicates whether the next return statement is an early return or not.
+    /// Marks whether the next return is an early return.
     pub early_return: bool,
 
+    /// Kind of the previous AST operation processed.
     pub prev_ast_kind: Option<ASTOperation>,
 
+    /// Kind of the parent AST operation.
     pub parent_ast_kind: ASTOperation,
 
+    /// Counter for generating unique labels.
     pub next_label: LabelId,
 
+    /// Forces the use of a specific label ID.
     pub force_label_use: LabelId,
 
-    pub var_offsets: HashMap<String, StackOffset>
+    /// Maps variable names to their stack offsets.
+    pub var_offsets: HashMap<String, StackOffset>,
 }
 
 impl FnCtx {

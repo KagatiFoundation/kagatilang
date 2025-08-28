@@ -28,6 +28,38 @@ use crate::ir_instr::{
     IR
 };
 
+/// Byte offset of the `data` field in the `gc_object_t` struct.
+///
+/// On a 64-bit system, the `gc_object_t` layout is as follows:
+/// ```text
+/// ref_count      (8 bytes)  -> offset 0
+/// size           (8 bytes)  -> offset 8
+/// num_children   (8 bytes)  -> offset 16
+/// children       (8 bytes)  -> offset 24
+/// data           (8 bytes)  -> offset 32
+/// ```
+///
+/// This constant represents the **raw byte offset** of the `data` pointer within
+/// the struct. It can be used directly in assembly memory instructions.
+pub const GCOBJECT_BUFFER_OFF: usize = 32; // bytes
+
+/// Index of the `data` field in the `gc_object_t` struct.
+///
+/// On a 64-bit system, the `gc_object_t` layout is as follows:
+/// ```text
+/// ref_count      (8 bytes)  -> index 0
+/// size           (8 bytes)  -> index 1
+/// num_children   (8 bytes)  -> index 2
+/// children       (8 bytes)  -> index 3
+/// data           (8 bytes)  -> index 4
+/// ```
+///
+/// This constant represents the **field index** of the `data` pointer within
+/// the struct. To compute the byte offset in assembly, multiply by the size
+/// of each field (8 bytes on 64-bit systems):
+/// `offset_in_bytes = GCOBJECT_BUFFER_IDX * 8`.
+pub const GCOBJECT_BUFFER_IDX: usize = 4;
+
 pub type HeapRange = (usize, usize);
 
 pub struct HeapLivenessAnalyer;

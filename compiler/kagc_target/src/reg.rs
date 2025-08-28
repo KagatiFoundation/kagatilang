@@ -46,11 +46,11 @@ pub const NO_REG: usize =           0xFFFFFFFF;
 /// Indicates early return
 pub const EARLY_RETURN: usize =     0xEEEEEEEE;
 
-/// 8-bytes
-pub const REG_SIZE_8: usize =       0x8;
+/// Size of a 64-bit register (8 bytes).
+pub const REG_SIZE_8: usize = 0x8;
 
-/// 4-bytes
-pub const REG_SIZE_4: usize =       0x4;
+/// Size of a 32-bit register (4 bytes).
+pub const REG_SIZE_4: usize = 0x4;
 
 /// Defines the allocation strategy for registers,  
 /// determining whether spilling to memory is allowed.

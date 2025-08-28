@@ -29,6 +29,7 @@ use std::vec;
 
 use kagc_ast::*;
 use kagc_ctx::*;
+use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
@@ -194,7 +195,7 @@ impl CodeGen for Aarch64CodeGen {
                     }
                 );
 
-                // remember the variables stack offset
+                // remember the variable's stack offset
                 fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
 
                 result.push(decl_ir);
@@ -464,10 +465,16 @@ impl CodeGen for Aarch64CodeGen {
         let reg_sz = access.result_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
+        // The record's stack offset
+        let rec_stack_off = fn_ctx
+            .var_offsets
+            .get(&access.rec_alias)
+            .unwrap_or_else(|| panic!("what the fck bro"));
+
         Ok(vec![
             IRInstr::Load { 
                 dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: reg_sz }, 
-                addr: IRAddr::StackOff(access.rel_stack_off)
+                addr: IRAddr::StackOff(*rec_stack_off + access.rel_stack_off)
             }
         ])
     }
@@ -527,7 +534,7 @@ impl CodeGen for Aarch64CodeGen {
             }, 
             addr: IRAddr::BaseOff(
                 load_data_sec.dest().unwrap(), 
-                4
+                GCOBJECT_BUFFER_IDX as i32
             )
         };
 
@@ -585,6 +592,24 @@ impl CodeGen for Aarch64CodeGen {
             dest: load_buffer_pointer.dest().unwrap()
         };
 
+        let load_buffer_pointer_again = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: fn_ctx.next_temp(), 
+                size: REG_SIZE_8 
+            }, 
+            addr: IRAddr::StackOff(store_off)
+        };
+        let off_by_32 = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: fn_ctx.next_temp(), 
+                size: REG_SIZE_8
+            }, 
+            addr: IRAddr::BaseOff(
+                load_buffer_pointer_again.dest().unwrap(), 
+                GCOBJECT_BUFFER_IDX as i32
+            )
+        };
+
         Ok(
             vec![
                 gc_alloc,
@@ -595,7 +620,9 @@ impl CodeGen for Aarch64CodeGen {
                 prepare_dst_ptr,
                 prepare_src_ptr,
                 prepare_size_ptr,
-                move_to_heap
+                move_to_heap,
+                load_buffer_pointer_again,
+                off_by_32
             ]
         )
     }

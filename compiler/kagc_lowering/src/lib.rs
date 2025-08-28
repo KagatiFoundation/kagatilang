@@ -180,7 +180,7 @@ pub trait CodeGen {
 
         let store_field_val = IRInstr::Store { 
             src: IRLitType::ExtendedTemp{ id: tmp_id, size: reg_sz },
-            addr: IRAddr::StackOff(rec_field.offset)
+            addr: IRAddr::StackOff(fn_ctx.next_stack_off())
         };
 
         output.push(load_field_val);
@@ -190,23 +190,26 @@ pub trait CodeGen {
 
     fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let mut output = vec![];
-        let load_rec_into_stack = IRInstr::LoadGlobal { 
-            pool_idx: rec_creation.pool_idx,
-            dest: {
-                IRLitType::ExtendedTemp{ 
-                    id: fn_ctx.next_temp(), 
-                    size: 8 // always use 8 bytes to load records into the stack
-                } 
-            }
-        };
-
         let load_rec_into_stack = self.gen_ir_load_global_var(rec_creation.pool_idx, fn_ctx)?;
 
         let rec_dest = load_rec_into_stack.last().unwrap().dest();
         output.extend(load_rec_into_stack);
 
+        // Stack offset for the record variable in the current function frame.
+        //
+        // After allocating a record, `rec_base` stores the stack slot where the
+        // record pointer will be saved. This allows the variable name (`rec_alias`)
+        // to be mapped to a stable location, so that future instructions can
+        // load the record pointer from the stack when accessing or assigning fields.
+        let rec_base = fn_ctx.stack_offset;
+        fn_ctx.var_offsets.insert(rec_creation.rec_alias.clone(), rec_base);
+
         for field in &mut rec_creation.fields {
-            let field_output = self.lower_rec_field_assign_to_ir(field, rec_dest.clone().unwrap(), fn_ctx)?;
+            let field_output = self.lower_rec_field_assign_to_ir(
+                field, 
+                rec_dest.clone().unwrap(), 
+                fn_ctx
+            )?;
             output.extend(field_output);
         }
         Ok(output)
