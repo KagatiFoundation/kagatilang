@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
-typedef int32_t Bich_Int;
+/** 
+ * 64-bit signed integer type used as the default integer in Kagati.
+ * Currently, this is the only integer type supported by the language.
+ */
+typedef int64_t Kg_Int;
 
 #endif

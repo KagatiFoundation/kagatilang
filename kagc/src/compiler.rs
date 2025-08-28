@@ -78,10 +78,10 @@ impl Compiler {
 
     pub fn compile(&mut self, entry_file: &str) -> Result<(), std::io::Error> {
         // Garbage collection code
-        let gc_unit = self.compile_unit_recursive("internal/kgc")?.unwrap();
-        let gc_unit_path = gc_unit.source.path.clone();
-        self.units.insert(gc_unit.source.path.to_string(), gc_unit);
-        self.compiler_order.push(gc_unit_path);
+        // let gc_unit = self.compile_unit_recursive("internal/kgc")?.unwrap();
+        // let gc_unit_path = gc_unit.source.path.clone();
+        // self.units.insert(gc_unit.source.path.to_string(), gc_unit);
+        // self.compiler_order.push(gc_unit_path);
 
         let unit = self.compile_unit_recursive(entry_file)?.unwrap();
         self.units.insert(entry_file.to_string(), unit);
