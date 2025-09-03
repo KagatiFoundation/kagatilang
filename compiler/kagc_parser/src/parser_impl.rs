@@ -35,7 +35,6 @@ use kagc_span::span::{SourcePos, Span};
 use kagc_symbol::{function::*, *};
 use kagc_token::*;
 use kagc_types::{
-    builtins::obj::TypeId, 
     record::RecordFieldType, 
     LitType, 
     LitTypeVariant
@@ -340,7 +339,9 @@ impl Parser {
                     )
                 ), 
                 ASTOperation::AST_RECORD_DECL,
-                LitTypeVariant::Record,
+                LitTypeVariant::Record {
+                    name: id_token.lexeme.clone()
+                },
                 meta
             )
         )
@@ -372,7 +373,7 @@ impl Parser {
 
         Ok(
             RecordField { 
-                typ: TypeId::from(id_type), 
+                typ: id_type, 
                 name: id_token.lexeme.clone(), 
                 default_value: None 
             }
@@ -418,7 +419,7 @@ impl Parser {
                     let record_type = self.tokens[self.current - 1].lexeme.clone();
                     let mut sym: Symbol = Symbol::create(
                         param.name.clone(), 
-                        param.lit_type, 
+                        param.lit_type.clone(), 
                         SymbolType::Variable, 
                         param.lit_type.size(), 
                         StorageClass::PARAM, 
@@ -427,14 +428,14 @@ impl Parser {
                         self.current_function_id,
                     );
 
-                    if sym.lit_type == LitTypeVariant::Record {
+                    if let LitTypeVariant::Record{ name } = &sym.lit_type {
                         sym.sym_type = SymbolType::Record { 
-                            name: record_type 
+                            name: name.clone()
                         };
                     }
 
-                    func_param_types.push(sym.lit_type);
-                    let local_pos = self.add_symbol_local(sym.clone());
+                    func_param_types.push(sym.lit_type.clone());
+                    let local_pos = self.add_symbol_local(sym);
                     func_locals.push(local_pos);
                 }
 
@@ -512,7 +513,7 @@ impl Parser {
                 stack_off: stack_offset as usize,
                 name: id_token.lexeme.clone(),
                 scope_id: func_scope_id,
-                return_type: TypeId::from(func_return_type),
+                return_type: func_return_type.clone(),
                 storage_class: func_storage_class,
                 locals: func_locals,
                 func_param_types
@@ -608,19 +609,22 @@ impl Parser {
                 ),
                 vec![]
             );
-            Ok(AST::new(
-                ASTKind::StmtAST(
+            let return_ast = AST {
+                kind: ASTKind::StmtAST(
                     Stmt::Return(
                         ReturnStmt {
                             func_id: self.current_function_id,
                         }
                     )
                 ),
-                ASTOperation::AST_RETURN,
-                Some(return_expr),
-                None,
-                LitTypeVariant::None,
-            ))
+                left: Some(Box::new(return_expr)),
+                right: None,
+                mid: None,
+                operation: ASTOperation::AST_RETURN,
+                result_type: LitTypeVariant::None,
+                meta
+            };
+            Ok(return_ast)
         }
     }
 
@@ -796,9 +800,8 @@ impl Parser {
             var_type = self.parse_id_type()?;
 
             // if the declared variable is a record
-            if var_type == LitTypeVariant::Record {
-                let record_name = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-                sym_type = SymbolType::Record { name: record_name.lexeme };
+            if let LitTypeVariant::Record { name: rec_name } = &var_type {
+                sym_type = SymbolType::Record { name: rec_name.clone() };
             }
             else {
                 self.skip_to_next_token();
@@ -859,7 +862,7 @@ impl Parser {
                     symbol_type: sym_type,
                     class: var_class,
                     sym_name: id_token.lexeme.clone(),
-                    value_type: TypeId::from(var_type),
+                    value_type: var_type.clone(),
                     local_offset: local_off,
                     func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
                     default_value
@@ -894,7 +897,11 @@ impl Parser {
             TokenKind::KW_LONG => Ok(LitTypeVariant::I64),
             TokenKind::KW_VOID => Ok(LitTypeVariant::Void),
             TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
-            TokenKind::T_IDENTIFIER => Ok(LitTypeVariant::Record),
+            TokenKind::T_IDENTIFIER => Ok(
+                LitTypeVariant::Record{ 
+                    name: self.current_token.lexeme.to_string() 
+                }
+            ),
             _ => {
                 let diag = Diagnostic::from_single_token(
                     &self.current_token, 
@@ -937,9 +944,13 @@ impl Parser {
         );
 
         Ok(AST::new(
-            ASTKind::StmtAST(Stmt::Assignment(AssignStmt {
-                sym_name: id_token.lexeme.clone()
-            })),
+            ASTKind::StmtAST(
+                Stmt::Assignment(
+                    AssignStmt {
+                        sym_name: id_token.lexeme.clone()
+                    }
+                )
+            ),
             ASTOperation::AST_ASSIGN,
             Some(lvalueid),
             Some(bin_expr_ast_node),
@@ -1027,7 +1038,7 @@ impl Parser {
                     )
                 ),
                 ASTOperation::AST_RECORD_CREATE, 
-                LitTypeVariant::Record, 
+                LitTypeVariant::Record { name: id_token.lexeme.clone() }, 
                 meta
             )
         )
@@ -1320,11 +1331,11 @@ impl Parser {
                 ASTKind::ExprAST(
                     Expr::RecordFieldAccess(
                         RecordFieldAccessExpr { 
-                            rec_name: "".to_string(),
+                            rec_name: "".to_string(), // name will be set by the semantic analyser
                             rec_alias: rec_alias.to_string(), 
                             field_chain,
                             rel_stack_off: field_off,
-                            result_type: LitTypeVariant::None // will be determined at the semantic analysis phase
+                            result_type: LitTypeVariant::None // will be determined by the semantic analyzer
                         }
                     )
                 ),

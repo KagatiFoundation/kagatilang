@@ -31,6 +31,7 @@ use kagc_span::span::{SourcePos, Span};
 use kagc_token::Token;
 
 use crate::code::ErrCode;
+use crate::terminal::*;
 
 #[derive(Debug)]
 pub enum Severity {
@@ -84,12 +85,8 @@ impl Diagnostic {
         let col_num = self.primary_span.start.column;  // 0-based
         let span_len = self.primary_span.end.column - col_num; // length of the token
 
-         // ANSI color codes as variables
-        let color_red = "\x1b[31m";
-        let color_reset = "\x1b[0m";
-
         // print severity and message
-        eprintln!("{color_red}{:?}{color_reset}: {}", self.severity, self.message);
+        eprintln!("{ANSI_COLOR_RED}{:?}{ANSI_COLOR_RESET}: {}", self.severity, self.message);
 
         // print file path with line and column
         eprintln!(" --> {}:{}:{}", file_meta.abs_path, line_num, col_num + 1);

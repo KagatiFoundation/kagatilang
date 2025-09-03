@@ -1,4 +1,4 @@
-use super::obj::TypeId;
+use crate::LitTypeVariant;
 
 /// Trait for types that can be compared based on their variant and equality.
 pub trait BuiltinTypeComparable {
@@ -15,5 +15,5 @@ pub trait BuiltinTypeComparable {
     ///
     /// # Returns
     /// - The `LitTypeVariant` representing the type's variant.
-    fn variant(&self) -> TypeId;
+    fn variant(&self) -> LitTypeVariant;
 }

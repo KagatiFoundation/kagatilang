@@ -28,7 +28,6 @@ pub mod builtins;
 use core::panic;
 use std::{collections::HashMap, fmt::Display};
 
-use builtins::obj::TypeId;
 use lazy_static::lazy_static;
 
 use crate::builtins::obj::RecordObj;
@@ -121,7 +120,7 @@ pub struct LitTypeArray {
     items_type: Box<LitTypeVariant>
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
 pub enum LitTypeVariant {
     #[default] I32,
     I64,
@@ -136,7 +135,9 @@ pub enum LitTypeVariant {
     Array,
     Null,
     None, // placeholder
-    Record
+    Record {
+        name: String
+    }
 }
 
 impl LitTypeVariant {
@@ -149,7 +150,7 @@ impl LitTypeVariant {
 
             // 8 bytes
             Self::I64
-            | Self::Record
+            | Self::Record{..}
             | Self::RawStr
             | Self::PoolStr
             | Self::Str
@@ -174,6 +175,7 @@ impl Display for LitTypeVariant {
             Self::Array => write!(f, "array"),
             Self::None => write!(f, "none"),
             Self::Void => write!(f, "void"),
+            Self::Record{name} => write!(f, "{name}(record)"),
             _ => write!(f, ""),
         }
     }
@@ -217,45 +219,11 @@ impl LitTypeVariant {
         matches!(self, LitTypeVariant::I32 | LitTypeVariant::I16 | LitTypeVariant::I64 | LitTypeVariant::U8)
     }
 
-    pub fn type_id(&self) -> builtins::obj::TypeId {
-        match self {
-            LitTypeVariant::I64 => todo!(),
-            LitTypeVariant::I32 => builtins::obj::TypeId::Int32,
-            LitTypeVariant::I16 => todo!(),
-            LitTypeVariant::U8 => todo!(),
-            LitTypeVariant::F64 => todo!(),
-            LitTypeVariant::F32 => todo!(),
-            LitTypeVariant::Void => builtins::obj::TypeId::Void,
-            LitTypeVariant::Str => builtins::obj::TypeId::Str,
-            LitTypeVariant::PoolStr => builtins::obj::TypeId::Str,
-            LitTypeVariant::RawStr => TypeId::Str,
-            LitTypeVariant::Array => todo!(),
-            LitTypeVariant::Null => builtins::obj::TypeId::Null,
-            LitTypeVariant::Record => builtins::obj::TypeId::Record,
-            LitTypeVariant::None => todo!(),
-        }
-    }
-
     check_lit_type_var_fn_impl!(is_void, Void);
     check_lit_type_var_fn_impl!(is_none, None);
     check_lit_type_var_fn_impl!(is_str, Str);
     check_lit_type_var_fn_impl!(is_int32, I32);
     check_lit_type_var_fn_impl!(is_int8, U8);
-}
-
-impl From<TypeId> for LitTypeVariant {
-    fn from(value: TypeId) -> Self {
-        match value {
-            TypeId::Bool => LitTypeVariant::I32,
-            TypeId::Int32 => LitTypeVariant::I32,
-            TypeId::Int8 => LitTypeVariant::U8,
-            TypeId::Str => LitTypeVariant::PoolStr,
-            TypeId::Null => LitTypeVariant::Null,
-            TypeId::Record => LitTypeVariant::Record,
-            TypeId::Void => LitTypeVariant::Void,
-            TypeId::None => LitTypeVariant::None,
-        }
-    }
 }
 
 impl PartialEq for LitType {
@@ -416,11 +384,11 @@ pub enum TypeConversionError {
 
 lazy_static! {
     pub static ref TYPE_PRECEDENCE: std::collections::HashMap<u8, u8> = {
-        let mut typ: std::collections::HashMap<u8, u8> = HashMap::new();
-        typ.insert(LitTypeVariant::I64 as u8, 3);
-        typ.insert(LitTypeVariant::I32 as u8, 2);
-        typ.insert(LitTypeVariant::I16 as u8, 1);
-        typ.insert(LitTypeVariant::U8 as u8, 0);
+        let typ: std::collections::HashMap<u8, u8> = HashMap::new();
+        // typ.insert(LitTypeVariant::I64 as u8, 3);
+        // typ.insert(LitTypeVariant::I32 as u8, 2);
+        // typ.insert(LitTypeVariant::I16 as u8, 1);
+        // typ.insert(LitTypeVariant::U8 as u8, 0);
         typ
     };
 }

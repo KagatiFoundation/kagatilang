@@ -24,3 +24,4 @@ SOFTWARE.
 
 pub mod diagnostic;
 pub mod code;
+pub mod terminal;

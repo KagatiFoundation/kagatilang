@@ -50,20 +50,20 @@ impl TypeChecker {
                 match expr_type {
                     // implicitly convert no-type-annotated byte-type into an integer
                     LitTypeVariant::U8 => LitTypeVariant::I32,
-                    _ => expr_type
+                    _ => expr_type.clone()
                 }
             }
         }
         if 
-            var_decl_sym.lit_type != expr_type 
-            && !is_type_coalescing_possible(expr_type, var_decl_sym.lit_type) 
+            var_decl_sym.lit_type != expr_type
+            && !is_type_coalescing_possible(expr_type.clone(), var_decl_sym.lit_type.clone()) 
         {
             let diag = Diagnostic {
                 code: Some(ErrCode::TYP2104),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
-                message: format!("expected type `{}`, found `{}`", var_decl_sym.lit_type, expr_type),
+                message: format!("expected type `{}`, found `{}`", var_decl_sym.lit_type, expr_type.clone()),
                 notes: vec![]
             };
             return Err(diag);
@@ -134,7 +134,7 @@ impl TypeChecker {
         if compare_ops.contains(&op) {
             [
                 a == b,
-                is_type_coalescing_possible(a, b),
+                is_type_coalescing_possible(a.clone(), b.clone()),
                 is_type_coalescing_possible(b, a)
             ]
             .iter()
@@ -146,7 +146,7 @@ impl TypeChecker {
     }
 
     pub fn is_coalesciable_both_ways(src: LitTypeVariant, dest: LitTypeVariant) -> bool {
-        TypeChecker::is_type_coalesciable(src, dest) 
+        TypeChecker::is_type_coalesciable(src.clone(), dest.clone()) 
         && TypeChecker::is_type_coalesciable(dest, src)
     }
 
@@ -157,6 +157,12 @@ impl TypeChecker {
             LitTypeVariant::I32 => matches!(dest, LitTypeVariant::I32 | LitTypeVariant::I64),
             LitTypeVariant::RawStr => matches!(dest, LitTypeVariant::PoolStr),
             LitTypeVariant::PoolStr => matches!(dest, LitTypeVariant::RawStr),
+            LitTypeVariant::Record { name: rec_name } => {
+                match dest {
+                    LitTypeVariant::Record { name } => name == rec_name,
+                    _ => false
+                }
+            }
             _ => false
         }
     }

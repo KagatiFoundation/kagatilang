@@ -1,4 +1,4 @@
-use crate::{builtins::obj::TypeId, TypeSized};
+use crate::{LitTypeVariant, TypeSized};
 
 pub type RecordFieldOffset = usize;
 
@@ -36,6 +36,6 @@ impl TypeSized for RecordType {
 #[derive(Debug, Default, Clone)]
 pub struct RecordFieldType {
     pub name: String,
-    pub typ: TypeId,
+    pub typ: LitTypeVariant,
     pub rel_stack_off: usize
 }

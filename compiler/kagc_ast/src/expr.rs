@@ -126,14 +126,14 @@ pub enum Expr {
 impl Expr {
     pub fn result_type(&self) -> LitTypeVariant {
         match self {
-            Expr::Binary(bin_expr) => bin_expr.result_type,
-            Expr::Widen(widen_expr) => widen_expr.result_type,
-            Expr::Ident(ident_expr) => ident_expr.result_type,
-            Expr::LitVal(lit_val_expr) => lit_val_expr.result_type,
-            Expr::Subscript(subscript_expr) => subscript_expr.result_type,
-            Expr::FuncCall(func_call_expr) => func_call_expr.result_type,
-            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.result_type,
-            Expr::RecordCreation(_record_creation_expr) => LitTypeVariant::Record,
+            Expr::Binary(bin_expr) => bin_expr.result_type.clone(),
+            Expr::Widen(widen_expr) => widen_expr.result_type.clone(),
+            Expr::Ident(ident_expr) => ident_expr.result_type.clone(),
+            Expr::LitVal(lit_val_expr) => lit_val_expr.result_type.clone(),
+            Expr::Subscript(subscript_expr) => subscript_expr.result_type.clone(),
+            Expr::FuncCall(func_call_expr) => func_call_expr.result_type.clone(),
+            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.result_type.clone(),
+            Expr::RecordCreation(record_creation_expr) => LitTypeVariant::Record{name: record_creation_expr.name.clone()},
             Expr::RecordFieldAssign(_record_field_assign_expr) => todo!(),
             Expr::Null => todo!(),
         }
@@ -142,62 +142,11 @@ impl Expr {
 
 lazy_static! {
     pub static ref TYPE_PRECEDENCE_EXPR: std::collections::HashMap<u8, u8> = {
-        let mut typ: std::collections::HashMap<u8, u8> = HashMap::new();
-        typ.insert(LitTypeVariant::I64 as u8, 3);
-        typ.insert(LitTypeVariant::I32 as u8, 2);
-        typ.insert(LitTypeVariant::I16 as u8, 1);
-        typ.insert(LitTypeVariant::U8 as u8, 0);
+        let typ: std::collections::HashMap<u8, u8> = HashMap::new();
+        // typ.insert(LitTypeVariant::I64 as u8, 3);
+        // typ.insert(LitTypeVariant::I32 as u8, 2);
+        // typ.insert(LitTypeVariant::I16 as u8, 1);
+        // typ.insert(LitTypeVariant::U8 as u8, 0);
         typ
     };
-}
-
-pub trait FromExpr<T> {
-    type Error;
-
-    fn from_expr(expr: &Expr) -> Result<T, Self::Error>;
-}
-
-impl FromExpr<LitTypeVariant> for LitTypeVariant {
-    type Error = ();
-
-    fn from_expr(expr: &Expr) -> Result<LitTypeVariant, ()> {
-        match expr {
-            Expr::LitVal(lit) => Ok(lit.result_type),
-            Expr::Binary(bin) => {
-                let left_type: LitTypeVariant = LitTypeVariant::from_expr(&bin.left)?;
-                let right_type: LitTypeVariant = LitTypeVariant::from_expr(&bin.right)?;
-    
-                if left_type == LitTypeVariant::Str || right_type == LitTypeVariant::Str {
-                    if bin.operation == ASTOperation::AST_ADD {
-                        return Ok(LitTypeVariant::Str);
-                    } else {
-                        panic!("Type mismatch: {:?} and {:?}", left_type, right_type);
-                    }
-                }
-                if left_type != right_type {
-                    let lprec: Option<&u8> = TYPE_PRECEDENCE.get(&(left_type as u8));
-                    let rprec: Option<&u8> = TYPE_PRECEDENCE.get(&(right_type as u8));
-                    let lp: u8 = if let Some(lp) = lprec {
-                        *lp
-                    } else {
-                        panic!("Type precedence not defined for operation {:?}", left_type);
-                    };
-                    let rp: u8 = if let Some(rp) = rprec {
-                        *rp
-                    } else {
-                        panic!("Type precedence not defined for operation {:?}", right_type);
-                    };
-                    if lp > rp {
-                        return Ok(left_type);
-                    } else {
-                        return Ok(right_type);
-                    }
-                }
-                Ok(left_type)
-            },
-            Expr::Ident(ident) => Ok(ident.result_type),
-            Expr::FuncCall(func_call_expr) => Ok(func_call_expr.result_type),
-            _ => Err(())
-        }
-    }
 }

@@ -150,7 +150,13 @@ impl AST {
         }
     }
 
-    pub fn new(kind: ASTKind, operation: ASTOperation, left: Option<AST>, right: Option<AST>, result_type: LitTypeVariant) -> Self {
+    pub fn new(
+        kind: ASTKind, 
+        operation: ASTOperation, 
+        left: Option<AST>, 
+        right: Option<AST>, 
+        result_type: LitTypeVariant,
+    ) -> Self {
         Self {
             kind,
             operation,
@@ -280,7 +286,7 @@ impl BTypeComparable for AST {
     }
     
     fn variant(&self) -> LitTypeVariant {
-        self.result_type
+        self.result_type.clone()
     }
 }
 
@@ -295,16 +301,16 @@ pub fn are_compatible_for_operation<T: BTypeComparable + TypeSized>(
     right: &T, 
     op: ASTOperation
 ) -> (bool, LitTypeVariant) {
-    let ltype: LitTypeVariant = left.variant();
-    let rtype: LitTypeVariant = right.variant();
+    let ltype: LitTypeVariant = left.variant().clone();
+    let rtype: LitTypeVariant = right.variant().clone();
     if ltype == rtype {
         return (true, ltype);
     }
-    let mut larger_type: LitTypeVariant = ltype;
+    let mut larger_type: LitTypeVariant = ltype.clone();
     let lsize: usize = left.type_size();
     let rsize: usize = right.type_size();
     if rsize > lsize {
-        larger_type = rtype;
+        larger_type = rtype.clone();
     }
     match (ltype, rtype) {
         (LitTypeVariant::I32, LitTypeVariant::U8) |

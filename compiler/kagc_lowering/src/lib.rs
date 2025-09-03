@@ -266,28 +266,28 @@ pub trait CodeGen {
         let bin_expr_type: IRInstr = match bin_expr.operation {
             ASTOperation::AST_ADD => {
                 self.lower_add_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
             },
             ASTOperation::AST_SUBTRACT => {
                 self.lower_sub_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
             },
             ASTOperation::AST_MULTIPLY => {
                 self.lower_mul_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
             },
             ASTOperation::AST_DIVIDE => {
                 self.lower_div_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type), 
+                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )

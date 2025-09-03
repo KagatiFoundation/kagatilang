@@ -118,11 +118,14 @@ impl Resolver {
             let function_id: Option<usize> = {
                 let sym = Symbol::new(
                     func_decl.name.clone(),
-                    LitTypeVariant::from(func_decl.return_type),
+                    func_decl.return_type.clone(),
                     SymbolType::Function,
                     func_decl.storage_class,
                 );
-                let insert_pos: Option<usize> = ctx_borrow.scope.root_scope_mut().declare(sym);
+                let insert_pos: Option<usize> = ctx_borrow
+                    .scope
+                    .root_scope_mut()
+                    .declare(sym);
                 insert_pos
             };
 
@@ -147,7 +150,7 @@ impl Resolver {
                 func_decl.name.clone(),
                 function_id,
                 func_decl.stack_off as i32,
-                LitTypeVariant::from(func_decl.return_type),
+                func_decl.return_type.clone(),
                 func_decl.storage_class,
                 func_decl.locals.clone(),
                 func_decl.func_param_types.clone()
@@ -183,14 +186,14 @@ impl Resolver {
         }
 
         if let Some(left) = &mut node.left {
-            let _ = self.validate_and_process_expr(left, &stmt.sym_name)?;
+            self.validate_and_process_expr(left, &stmt.sym_name)?;
         }
 
         stmt.func_id = self.ctx.borrow_mut().scope.current_fn();
 
         let sym = Symbol::create(
             stmt.sym_name.clone(),
-            LitTypeVariant::from(stmt.value_type),
+            stmt.value_type.clone(),
             stmt.symbol_type.clone(),
             0,
             stmt.class,
@@ -199,16 +202,23 @@ impl Resolver {
             stmt.func_id,
         );
 
-        let id = self.ctx.borrow_mut().scope.declare(sym).ok_or({
-            SAError::SymbolAlreadyDefined { sym_name: stmt.sym_name.clone(), token: Token::none() }
-        })?;
-
+        let id = self.ctx
+            .borrow_mut()
+            .scope
+            .declare(sym)
+            .ok_or({
+                SAError::SymbolAlreadyDefined { 
+                    sym_name: stmt.sym_name.clone(), 
+                    token: Token::none() 
+                }
+            }
+        )?;
         Ok(id)
     }
 
     fn validate_and_process_expr(&mut self, ast: &mut AST, symbol_name: &str) -> ResolverResult {
         if !ast.kind.is_expr() {
-            panic!("Needed an Expr--but found {:#?}", ast);
+            panic!("Expected an Expr--but found {:#?}", ast);
         }
 
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
@@ -357,7 +367,7 @@ impl Resolver {
                 fields: stmt.fields.iter().enumerate().map(|(idx, field)| {
                     RecordFieldType {
                         name: field.name.clone(),
-                        typ: field.typ,
+                        typ: field.typ.clone(),
                         rel_stack_off: idx
                     }
                 }).collect::<Vec<RecordFieldType>>()

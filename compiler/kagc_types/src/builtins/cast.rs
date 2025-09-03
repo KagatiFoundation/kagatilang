@@ -1,5 +1,7 @@
-use super::obj::{KagatiObj, TypeId};
+use crate::LitTypeVariant;
+
+use super::obj::KagatiObj;
 
 pub trait CastTo {
-    fn cast_to(&self, target: TypeId) -> Option<Box<dyn KagatiObj>>;
+    fn cast_to(&self, target: LitTypeVariant) -> Option<Box<dyn KagatiObj>>;
 }

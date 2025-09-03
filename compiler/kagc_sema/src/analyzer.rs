@@ -112,9 +112,8 @@ impl SemanticAnalyzer {
         }
 
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
-            let result_type = self.analyze_and_mutate_expr(expr, &ast.meta)?;
-            ast.result_type = result_type;
-            return Ok(result_type);
+            ast.result_type = self.analyze_and_mutate_expr(expr, &ast.meta)?;
+            return Ok(ast.result_type.clone());
         }
 
         panic!()
@@ -144,32 +143,39 @@ impl SemanticAnalyzer {
         let left_type: LitTypeVariant = self.analyze_and_mutate_expr(&mut bin_expr.left, meta)?;
         let right_type: LitTypeVariant = self.analyze_and_mutate_expr(&mut bin_expr.right, meta)?;
 
-        let expr_type: LitTypeVariant = TypeChecker::check_bin_expr_type_compatability(
+        bin_expr.result_type = TypeChecker::check_bin_expr_type_compatability(
             left_type, 
             right_type, 
             bin_expr.operation,
             meta
         )?;
-
-        bin_expr.result_type = expr_type;
-        Ok(expr_type)
+        Ok(bin_expr.result_type.clone())
     }
 
     fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow_mut();
 
         if let Some(rec_sym) = ctx_borrow.scope.deep_lookup(&field_access.rec_alias) {
-            if let SymbolType::Record { name: rec_name } = &rec_sym.sym_type {
-                if let Some(rec) = ctx_borrow.scope.lookup_record(rec_name) {
+            if let SymbolType::Record { name } = &rec_sym.sym_type {
+                if let Some(rec) = ctx_borrow.scope.lookup_record(name) {
                     if let Some(field) = rec.fields.iter().find(|&field| field.name == field_access.field_chain[0]) {
                         field_access.rel_stack_off = field.rel_stack_off;
-                        field_access.result_type = LitTypeVariant::from(field.typ);
-                        return Ok(LitTypeVariant::from(field.typ));
+                        field_access.result_type = field.typ.clone();
+                        field_access.rec_name = rec.name.clone();
+                        return Ok(field.typ.clone());
                     }
                 }
             }
             else {
-                panic!("not a record type");
+                let diag = Diagnostic {
+                    code: Some(ErrCode::SEM2001),
+                    severity: Severity::Error,
+                    primary_span: meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{}' is not a record type", field_access.rec_name),
+                    notes: vec![]
+                };
+                return Err(diag);
             }
         }
         let diag = Diagnostic {
@@ -183,15 +189,17 @@ impl SemanticAnalyzer {
         Err(diag)
     }
 
-    fn analyze_rec_creation_expr(&mut self, _rec_expr: &mut RecordCreationExpr) -> SAResult {
-        Ok(LitTypeVariant::Record)
+    fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr) -> SAResult {
+        Ok(LitTypeVariant::Record {
+            name: rec_expr.name.clone()
+        })
     }
 
     fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
         if let Some(ident) = ctx_borrow.scope.deep_lookup(&ident_expr.sym_name) {
-            ident_expr.result_type = ident.lit_type;
-            Ok(ident.lit_type)
+            ident_expr.result_type = ident.lit_type.clone();
+            Ok(ident_expr.result_type.clone())
         }
         else {
             let diag = Diagnostic {
@@ -212,7 +220,6 @@ impl SemanticAnalyzer {
     /// function call are valid.
     fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow();
-
         let func_sym_type = if let Some(func_sym) = ctx_borrow.scope.deep_lookup(&func_call.symbol_name) {
             if func_sym.sym_type != SymbolType::Function {
                 let diag = Diagnostic {
@@ -226,7 +233,7 @@ impl SemanticAnalyzer {
                 return Err(diag);
             }
             else {
-                func_sym.lit_type
+                func_sym.lit_type.clone()
             }
         }
         else {
@@ -241,15 +248,23 @@ impl SemanticAnalyzer {
             return Err(diag);
         };
 
-        let func_detail = ctx_borrow.scope.lookup_fn_by_name(func_call.symbol_name.as_str()).unwrap();
+
+        let func_detail = ctx_borrow
+            .scope
+            .lookup_fn_by_name(func_call.symbol_name.as_str())
+            .unwrap();
         func_call.id = func_detail.func_id;
         let func_param_types = func_detail.param_types.clone();
 
         drop(ctx_borrow);
 
-        self.check_func_call_args(&mut func_call.args[..], &func_param_types, meta)?;            
+        self.check_func_call_args(
+            &mut func_call.args[..], 
+            &func_param_types, 
+            meta
+        )?;            
 
-        func_call.result_type = func_sym_type;
+        func_call.result_type = func_sym_type.clone();
         Ok(func_sym_type)        
     }
 
@@ -270,14 +285,14 @@ impl SemanticAnalyzer {
         // 
         for (idx, param_type) in param_types.iter().enumerate() {
             let expr_res: LitTypeVariant = self.analyze_and_mutate_expr(&mut args[idx].1, meta)?;
-            let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res, *param_type);
+            let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res.clone(), param_type.clone());
             if !assignment_ok {
                 let diag = Diagnostic {
                     code: Some(ErrCode::TYP2103),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
-                    message: format!("'{}' is not compatible with '{}'", param_type, expr_res),
+                    message: format!("'{}' is not compatible with '{}'", param_type, expr_res.clone()),
                     notes: vec![]
                 };
                 return Err(diag);
@@ -290,7 +305,7 @@ impl SemanticAnalyzer {
     /// what type of literal value we get, every literal value is 
     /// okay. The using expression might restraint from using it.
     fn analyze_lit_expr(&self, expr: &mut LitValExpr) -> SAResult {
-        Ok(expr.result_type)
+        Ok(expr.result_type.clone())
     }
 
     fn analyze_record_decl_stmt(&mut self, node: &mut AST) -> SAResult {
@@ -298,7 +313,9 @@ impl SemanticAnalyzer {
             panic!("Needed a RecordDeclStmt--but found {node:#?}");
         }
 
-        Ok(LitTypeVariant::Record)
+        Ok(LitTypeVariant::Record {
+            name: "empty 1".to_string()
+        })
     }
 
     fn analyze_return_stmt(&mut self, node: &mut AST) -> SAResult {
@@ -310,7 +327,12 @@ impl SemanticAnalyzer {
             let ctx_borrow = self.ctx.borrow();
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
-            let expected_fn_ret_type: LitTypeVariant = ctx_borrow.scope.lookup_fn(ctx_borrow.scope.current_fn()).unwrap().return_type;
+            let expected_fn_ret_type: LitTypeVariant = ctx_borrow
+                .scope
+                .lookup_fn(ctx_borrow.scope.current_fn())
+                .unwrap()
+                .return_type
+                .clone();
 
             drop(ctx_borrow);
             
@@ -322,9 +344,15 @@ impl SemanticAnalyzer {
                 LitTypeVariant::Void
             };
 
-            let ret_typ_mismatch: bool = 
-                !expected_fn_ret_type.is_void() && found_fn_ret_type.is_none() ||
-                ((expected_fn_ret_type != found_fn_ret_type) && !TypeChecker::is_type_coalesciable(found_fn_ret_type, expected_fn_ret_type));
+            let missing_ret = !expected_fn_ret_type.is_void() && found_fn_ret_type.is_none();
+            let incompatible_ret_chk1 = expected_fn_ret_type != found_fn_ret_type;
+            let incompatible_ret_chk2 = !TypeChecker::is_type_coalesciable(
+                        found_fn_ret_type.clone(), 
+                        expected_fn_ret_type.clone()
+                    );
+
+            let incompatible_ret = incompatible_ret_chk1 && incompatible_ret_chk2;
+            let ret_typ_mismatch = missing_ret || incompatible_ret;
 
             if ret_typ_mismatch {
                 let diag = Diagnostic {
@@ -332,7 +360,11 @@ impl SemanticAnalyzer {
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
-                    message: format!("'{}' is not compatible with '{}'", found_fn_ret_type, expected_fn_ret_type),
+                    message: format!(
+                        "'{}' is not compatible with '{}'", 
+                        found_fn_ret_type, 
+                        expected_fn_ret_type
+                    ),
                     notes: vec![]
                 };
                 return Err(diag);
@@ -354,7 +386,7 @@ impl SemanticAnalyzer {
                 .scope
                 .root_scope()
                 .lookup(&func_decl.name)
-                .map(|func_sym| func_sym.lit_type);
+                .map(|func_sym| func_sym.lit_type.clone());
 
             ctx_borrow.scope.update_current_func(func_decl.func_id);
 
@@ -372,6 +404,7 @@ impl SemanticAnalyzer {
 
             // unwrap the return type
             let func_ret_type: LitTypeVariant = func_ret_type.unwrap();
+
             // switch to function's scope
             ctx_borrow.scope.enter_scope(func_decl.scope_id);
             drop(ctx_borrow);
@@ -396,10 +429,17 @@ impl SemanticAnalyzer {
             let curr_func_id = ctx_borrow.scope.current_fn();
 
             if let Some(var_sym) = ctx_borrow.scope.deep_lookup_mut(&var_decl.sym_name) {
-                let var_type = Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
+                let var_type = Self::check_and_mutate_var_decl_stmt(var_sym, var_value_type.clone(), &node.meta)?;
+                
+                if let LitTypeVariant::Record{ name } = &var_value_type {
+                    var_sym.sym_type = SymbolType::Record { name: name.clone() }
+                }
+                else {
+                }
+
                 var_sym.func_id = Some(curr_func_id);
-                var_sym.lit_type = var_type;
-                node.result_type = var_type;
+                var_sym.lit_type = var_type.clone();
+                node.result_type = var_type.clone();
                 return Ok(var_type);
             }
             let diag = Diagnostic {
@@ -446,7 +486,7 @@ impl SemanticAnalyzer {
         }
         if 
             var_decl_sym.lit_type != expr_type 
-            && !is_type_coalescing_possible(expr_type, var_decl_sym.lit_type) 
+            && !is_type_coalescing_possible(expr_type.clone(), var_decl_sym.lit_type.clone()) 
         {
             let diag = Diagnostic {
                 code: Some(ErrCode::TYP2104),
