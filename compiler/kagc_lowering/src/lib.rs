@@ -144,10 +144,11 @@ pub trait CodeGen {
             panic!("Needed an Expr--but found {ast:#?}");
         }
         
-        let expr = &mut ast
+        let expr = ast
             .kind
             .as_expr_mut()
             .unwrap_or_else(|| panic!("Cannot unwrap an expression for some reason. Aborting..."));
+
         self.__gen_expr(expr, fn_ctx)
     }
 

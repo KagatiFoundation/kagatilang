@@ -1,4 +1,4 @@
-#include "gc_str.h"
+#include "gc/gc_str.h"
 
 gc_object_t* kgc_str_new(const char* s) {
     size_t len = kgc_strlen(s) + 1;

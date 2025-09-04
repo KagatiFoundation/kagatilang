@@ -299,45 +299,23 @@ impl CodeGen for Aarch64CodeGen {
             );
         }
 
-        let preserve_ret_val_instr: Option<IRInstr> = 
+        let mut preserve_ret_val_instr = None; 
         if !func_call_expr.result_type.is_void() && !func_call_expr.result_type.is_none() {
             let reg_sz = func_call_expr.result_type.to_reg_size();
             assert_ne!(reg_sz, 0);
 
-            if use_reg {
-                Some(IRInstr::Mov {
-                    dest: IRLitType::Reg{ 
-                        temp: fn_ctx.next_temp(), 
-                        idx: forced_reg.unwrap(), 
-                        size: reg_sz 
-                    },
-                    src: IRLitType::Reg{ 
-                        temp: fn_ctx.next_temp(), 
-                        idx: 0, 
-                        size: reg_sz 
-                    }
-                })
-            }
-            else {
-                let reg_sz = func_call_expr.result_type.to_reg_size();
-                assert_ne!(reg_sz, 0);
-
-                Some(IRInstr::Mov {
-                    dest: IRLitType::ExtendedTemp{ 
-                        id: fn_ctx.next_temp(), 
-                        size: reg_sz 
-                    },
-                    src: IRLitType::Reg{ 
-                        temp: fn_ctx.next_temp(), 
-                        idx: 0, 
-                        size: reg_sz 
-                    }
-                })
-            }
+            preserve_ret_val_instr = Some(IRInstr::Mov {
+                dest: IRLitType::ExtendedTemp { 
+                    id: fn_ctx.next_temp(), 
+                    size: reg_sz 
+                },
+                src: IRLitType::Reg { 
+                    temp: fn_ctx.next_temp(), 
+                    idx: 0, 
+                    size: reg_sz 
+                }
+            });
         }
-        else {
-            None
-        };
 
         param_instrs.push(IRInstr::Call {
             fn_name: func_call_expr.symbol_name.clone(),
@@ -346,7 +324,7 @@ impl CodeGen for Aarch64CodeGen {
         });
 
         if let Some(preserve_instr) = preserve_ret_val_instr {
-            param_instrs.push(preserve_instr);
+            param_instrs.push(preserve_instr); 
         }
 
         Ok(param_instrs)
@@ -645,7 +623,7 @@ impl CodeGen for Aarch64CodeGen {
                 prepare_size_ptr,
                 move_to_heap,
                 load_buffer_pointer_again,
-                off_by_32
+                // off_by_32
             ]
         )
     }

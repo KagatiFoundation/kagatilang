@@ -1,4 +1,4 @@
-#include "gc.h"
+#include "gc/gc.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -18,6 +18,7 @@ gc_object_t* kgc_alloc(size_t size) {
 
     obj->data = malloc(size);
     if (!obj->data) {
+        puts("invalid data pointer");
         free(obj);
         return NULL;
     }

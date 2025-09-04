@@ -1,2 +1,4 @@
 *.o
 *.a
+test_gc.dSYM/
+test_gc

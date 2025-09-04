@@ -1,19 +1,30 @@
 BUILD_PATH=..
-SRCS=$(shell find . -name '*.c')
+
+INCLUDE_DIR=./include
+SRCS=$(shell find ./src -name '*.c')
+TESTS=$(shell find ./tests -name '*.c')
+
 OBJS=$(SRCS:.c=.o)
-OPTS_1=-c -Wall -Werror -fPIC
-OPTS_2=-shared
+
+CFLAGS_BUILD_1=-c -Wall -Werror -fPIC -I$(INCLUDE_DIR)
+CFLAGS_BUILD_2=-shared
+
 CC=gcc
 
-.PHONY: all
+CFLAGS_TEST = -Wall -Wextra -fsanitize=address -g -I$(INCLUDE_DIR)
+LDFLAGS_TEST = -lpthread -lm
+
+.PHONY: all clean tests
 all: libkag.so
 
 libkag.so: $(OBJS) | $(BUILD_PATH)
-	$(CC) $(OPTS_2) -o $(BUILD_PATH)/$@ $(OBJS)
+	$(CC) $(CFLAGS_BUILD_2) -o $(BUILD_PATH)/$@ $(OBJS)
 
 %.o: %.c
-	$(CC) $(OPTS_1) -o $@ $<
+	$(CC) $(CFLAGS_BUILD_1) -o $@ $<
 
-.PHONY: clean
+tests:
+	$(CC) $(CFLAGS_TEST) $(SRCS) $(TESTS) -o test_gc $(LDFLAGS_TEST)
+
 clean:
-	rm -f *.o $(BUILD_PATH)/libkag.so
+	rm -f $(OBJS) $(BUILD_PATH)/libkag.so test_gc

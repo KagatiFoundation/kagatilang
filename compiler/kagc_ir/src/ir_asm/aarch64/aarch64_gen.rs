@@ -826,7 +826,10 @@ impl Aarch64IRToASM {
         match irlit {
             IRLitType::ExtendedTemp { id, size } => (*id, self.get_or_allocate_temp_register(*id, *size)),
             IRLitType::Reg { idx, size, temp } => (*temp, self.get_or_allocate_specific_register(*idx, *temp, *size)),
-            _ => todo!(),
+            _ => {
+                println!("{irlit:#?}");
+                todo!()
+            }
         }
     }
     

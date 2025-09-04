@@ -10,7 +10,8 @@ use kagc_comp_unit::{
     *
 };
 
-use kagc_ctx::{builder::CompilerCtxBuilder, CompilerCtx};
+use kagc_ctx::builder::CompilerCtxBuilder;
+use kagc_ctx::CompilerCtx;
 use kagc_ir::ir_asm::aarch64::Aarch64IRToASM;
 use kagc_lexer::Tokenizer;
 

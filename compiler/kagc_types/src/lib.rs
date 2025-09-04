@@ -161,6 +161,16 @@ impl LitTypeVariant {
             _ => 0
         }
     }
+
+    pub fn is_gc_alloced(&self) -> bool {
+        matches!(
+            self, 
+            Self::Record { .. }
+            | Self::RawStr
+            | Self::PoolStr
+            | Self::Str
+        )
+    }
 }
 
 impl Display for LitTypeVariant {
