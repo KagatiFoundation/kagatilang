@@ -146,7 +146,11 @@ impl Parser {
                 nodes.push(stmt);
             } 
             else if let Err(parse_error) = stmt_parse_result {
-                self.ctx.borrow_mut().diagnostics.push(*parse_error);
+                self
+                .ctx
+                .borrow_mut()
+                .diagnostics
+                .push(*parse_error);
                 break;
             }
         }
@@ -416,7 +420,6 @@ impl Parser {
         if self.current_token.kind != TokenKind::T_RPAREN {
             loop {
                 if let Ok(param) = self.parse_parameter() {
-                    let record_type = self.tokens[self.current - 1].lexeme.clone();
                     let mut sym: Symbol = Symbol::create(
                         param.name.clone(), 
                         param.lit_type.clone(), 

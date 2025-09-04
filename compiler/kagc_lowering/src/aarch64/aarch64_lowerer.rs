@@ -29,6 +29,9 @@ use std::vec;
 
 use kagc_ast::*;
 use kagc_ctx::*;
+use kagc_errors::code::ErrCode;
+use kagc_errors::diagnostic::Diagnostic;
+use kagc_errors::diagnostic::Severity;
 use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
@@ -59,6 +62,10 @@ pub struct Aarch64CodeGen {
 }
 
 impl CodeGen for Aarch64CodeGen {        
+    fn ctx(&self) -> Rc<RefCell<CompilerCtx>> {
+        self.ctx.clone()
+    }
+
     fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes {
         let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
             self.ctx.borrow_mut().scope.enter_scope(func_decl.scope_id);
@@ -104,8 +111,8 @@ impl CodeGen for Aarch64CodeGen {
             .scope
             .collect_params(func_scope)
             .iter()
-            .map(|&e| {
-                let reg_sz = e.lit_type.to_reg_size();
+            .map(|&sym| {
+                let reg_sz = sym.lit_type.to_reg_size();
                 assert_ne!(reg_sz, 0);
 
                 let param_tmp: usize = fn_ctx.next_temp();
@@ -115,7 +122,9 @@ impl CodeGen for Aarch64CodeGen {
                     size: reg_sz 
                 };
 
-                fn_ctx.next_stack_off();
+                let param_off = fn_ctx.next_stack_off();
+                fn_ctx.var_offsets.insert(sym.name.clone(), param_off);
+
                 virtual_reg += 1;
                 reg
             }).collect();
@@ -175,6 +184,19 @@ impl CodeGen for Aarch64CodeGen {
             let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
             let last_instr = var_decl_val.last().unwrap().clone();
 
+            if last_instr.dest().is_none() {
+                return Err(
+                    Diagnostic {
+                        code: Some(ErrCode::TYP2103),
+                        severity: Severity::Error,
+                        primary_span: ast.left.as_ref().unwrap().meta.span,
+                        secondary_spans: vec![],
+                        message: "'void' type cannot be assigned to a variable".to_string(),
+                        notes: vec![]
+                    }
+                );
+            }
+
             fn_ctx.reset_parent_ast_kind();
 
             let mut result = var_decl_val.into_iter().map(|instr| {
@@ -208,10 +230,11 @@ impl CodeGen for Aarch64CodeGen {
     }
 
     fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let lit_val_tmp: usize = fn_ctx.next_temp();
-
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
-        let sym_off = fn_ctx.var_offsets.get(&ident_expr.sym_name);
+        let sym_off = *fn_ctx
+            .var_offsets
+            .get(&ident_expr.sym_name)
+            .unwrap_or_else(|| panic!("Undefined symbol bug. This mustn't be happening. Aborting..."));
 
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
@@ -219,10 +242,10 @@ impl CodeGen for Aarch64CodeGen {
         Ok(vec![
             IRInstr::Load {
                 dest: IRLitType::ExtendedTemp { 
-                    id: lit_val_tmp, 
+                    id: fn_ctx.next_temp(),
                     size: reg_sz
                 },
-                addr: IRAddr::StackOff(*sym_off.unwrap())
+                addr: IRAddr::StackOff(sym_off)
             }
         ])
     }
@@ -542,7 +565,7 @@ impl CodeGen for Aarch64CodeGen {
             pool_idx: idx, 
             dest: IRLitType::ExtendedTemp{ 
                 id: fn_ctx.next_temp(), 
-                size: 8 // always use 8 bytes to load string literals into the stack
+                size: REG_SIZE_8 // always use 8 bytes to load string literals into the stack
             } 
         };
 

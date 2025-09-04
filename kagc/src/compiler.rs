@@ -98,6 +98,7 @@ impl Compiler {
 
         // AST to IR generator
         let mut lowerer = Aarch64CodeGen::new(self.ctx.clone());
+     
 
         let mut final_irs = vec![];
 
@@ -114,7 +115,16 @@ impl Compiler {
                     std::process::exit(1)
                 }
 
-                final_irs.extend(lowerer.gen_ir(&mut unit.asts));
+                let irs = lowerer.gen_ir(&mut unit.asts);
+                {
+                    let ctx = self.ctx.borrow();
+                    if ctx.diagnostics.has_errors() {
+                        ctx.diagnostics.report_all(&ctx.files, self.units.get(entry_file).unwrap());
+                        std::process::exit(1);
+                    }
+                }
+
+                final_irs.extend(irs);
             }
         }
 
@@ -153,14 +163,15 @@ impl Compiler {
             .build();
 
         let asts = parser.parse();
-
-        if self.ctx.borrow().diagnostics.has_errors() {
-            self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().files, &unit);
-            std::process::exit(1)
+        {
+            let ctx = self.ctx.borrow();
+            if ctx.diagnostics.has_errors() {
+                ctx.diagnostics.report_all(&ctx.files, &unit);
+                std::process::exit(1);
+            }
         }
 
         unit.asts.extend(asts);
-
         let imports = unit.extract_imports();
 
         for import in &imports {

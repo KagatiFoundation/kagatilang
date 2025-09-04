@@ -1,13 +1,12 @@
+use kagc_errors::diagnostic::Diagnostic;
 use kagc_ir::ir_instr::{IRInstr, IR};
 use kagc_target::reg::AllocedReg;
 
-use crate::errors::CodeGenErr;
+pub type CodeGenResult = Result<AllocedReg, Diagnostic>;
 
-pub type CodeGenResult = Result<AllocedReg, CodeGenErr>;
+pub type CGRes = Result<Vec<IR>, Diagnostic>;
 
-pub type CGRes = Result<Vec<IR>, CodeGenErr>;
-
-pub type CGExprEvalRes = Result<Vec<IRInstr>, CodeGenErr>;
+pub type CGExprEvalRes = Result<Vec<IRInstr>, Diagnostic>;
 
 /// Counter for generating unique temporary variable IDs.
 pub type TempCounter = usize;

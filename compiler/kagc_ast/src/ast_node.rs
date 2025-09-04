@@ -350,8 +350,9 @@ impl HasSpan for AST {
 /// (e.g., warnings, hints) relevant to the node.
 #[derive(Clone, Debug)]
 pub struct NodeMeta {
-    pub span: Span,
-    pub notes: Vec<String>,
+    pub span:       Span,
+    pub notes:      Vec<String>,
+    pub gc_alloced: bool
 }
 
 impl NodeMeta {
@@ -368,14 +369,16 @@ impl NodeMeta {
                     column: 0 
                 }
             ),
-            notes: vec![]
+            notes: vec![],
+            gc_alloced: false
         }
     }
 
     pub fn new(span: Span, notes: Vec<String>) -> Self {
         Self {
             span,
-            notes
+            notes,
+            gc_alloced: false
         }
     }
 

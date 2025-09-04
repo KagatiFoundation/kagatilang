@@ -182,13 +182,4 @@ impl Symbol {
     pub fn incr_use(&mut self) {
         self.__use_count += 1;
     }
-
-    pub fn is_garbage_collected(&self) -> bool {
-        matches!(
-            self.lit_type,
-            LitTypeVariant::PoolStr
-            | LitTypeVariant::RawStr
-            | LitTypeVariant::Record { .. }
-        )
-    }
 }

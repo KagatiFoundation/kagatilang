@@ -27,14 +27,14 @@ pub mod errors;
 pub mod typedefs;
 pub mod fn_ctx;
 
-use errors::CodeGenErr;
+use std::{cell::RefCell, rc::Rc};
+
 use fn_ctx::FnCtx;
 use kagc_ast::*;
-use kagc_ir::{
-    ir_instr::*, 
-    ir_types::*, 
-    LabelId
-};
+use kagc_ctx::CompilerCtx;
+use kagc_ir::ir_instr::*;
+use kagc_ir::ir_types::*;
+use kagc_ir::LabelId;
 use kagc_types::*;
 use typedefs::*;
 
@@ -42,13 +42,16 @@ pub trait CodeGen {
     fn gen_ir(&mut self, nodes: &mut [AST]) -> Vec<IR> {
         let mut output: Vec<IR> = vec![];
         for node in nodes {
-            let node_ir: Result<Vec<IR>, CodeGenErr> = self.gen_ir_from_node(
+            let node_ir = self.gen_ir_from_node(
                 node, 
                 &mut FnCtx::new(0), 
                 ASTOperation::AST_NONE
             );
-            if node_ir.is_ok() {
-                output.extend(node_ir.ok().unwrap());
+            if let Ok(irs) = node_ir {
+                output.extend(irs);
+            }
+            else if let Err(e) = node_ir {
+                self.ctx().borrow_mut().diagnostics.push(e);
             }
         }
         output
@@ -117,7 +120,6 @@ pub trait CodeGen {
         panic!()
     }
 
-    // *** IR CODE GENERATION *** //
     fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes;
 
     fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
@@ -142,11 +144,11 @@ pub trait CodeGen {
             panic!("Needed an Expr--but found {ast:#?}");
         }
         
-        if let ASTKind::ExprAST(expr) = &mut ast.kind {
-            return self.__gen_expr(expr, fn_ctx);
-        }
-
-        Err(CodeGenErr::NoContext)
+        let expr = &mut ast
+            .kind
+            .as_expr_mut()
+            .unwrap_or_else(|| panic!("Cannot unwrap an expression for some reason. Aborting..."));
+        self.__gen_expr(expr, fn_ctx)
     }
 
     fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
@@ -321,7 +323,13 @@ pub trait CodeGen {
         Ok(irs)
     }
 
-    fn gen_ir_cmp_and_jump(&mut self, op1: IRLitType, op2: IRLitType, label_id: LabelId, operation: IRCondOp) -> IRInstr {
+    fn gen_ir_cmp_and_jump(
+        &mut self, 
+        op1: IRLitType, 
+        op2: IRLitType, 
+        label_id: LabelId, 
+        operation: IRCondOp
+    ) -> IRInstr {
         IRInstr::CondJump {
             label_id,
             op1,
@@ -354,9 +362,5 @@ pub trait CodeGen {
 
     fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
-    // *** IR CODE GENERATION *** //
- 
-    fn emit(&self, code: &str) {
-        println!("{code}");
-    }   
+    fn ctx(&self) -> Rc<RefCell<CompilerCtx>>;
 }

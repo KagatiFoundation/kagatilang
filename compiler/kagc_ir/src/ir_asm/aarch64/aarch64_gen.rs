@@ -382,13 +382,13 @@ impl Aarch64IRToASM {
     fn get_current_fn_props(&self) -> &ComptFnProps {
         self.compt_fn_props
             .as_ref()
-            .expect("Compile time function info not found! Aborting code generation...")
+            .expect("Compile time function info not found! Aborting...")
     }
 
     fn get_current_fn_props_mut(&mut self) -> &mut ComptFnProps {
         self.compt_fn_props
             .as_mut()
-            .expect("Compile time function info not found! Aborting code generation...")
+            .expect("Compile time function info not found! Aborting...")
     }
 
     #[inline]

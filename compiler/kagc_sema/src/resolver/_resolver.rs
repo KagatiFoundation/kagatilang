@@ -129,7 +129,7 @@ impl Resolver {
                 insert_pos
             };
 
-            // ^^^^ scope.declare returns None if the symbol cannot be added indicating re-definition of the symbol
+            // ^^^^ scope.declare() returns None if the symbol cannot be added indicating re-definition of the symbol
             if function_id.is_none() {
                 return Err(
                     SAError::SymbolAlreadyDefined { 
@@ -162,6 +162,7 @@ impl Resolver {
             // drop context borrow
             drop(ctx_borrow);
 
+            // loop through function's body to find new symbols
             if let Some(func_body) = &mut node.left {
                 let _ = self.declare_symbol(func_body)?;
             }
