@@ -153,7 +153,8 @@ impl CodeGen for Aarch64CodeGen {
         let func_scope: usize = self.ctx.borrow_mut().scope.exit_scope();
         
         self.label_id = fn_ctx.next_label;
-        let calls_fns: bool = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
+        let calls_fns = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
+        let allocs_mem = contains_ops!(ast, ASTOperation::AST_RECORD_CREATE, ASTOperation::AST_STRLIT);
 
         Ok(
             vec![IR::Func(
@@ -162,7 +163,7 @@ impl CodeGen for Aarch64CodeGen {
                     params, 
                     body: fn_body,
                     class: store_class,
-                    is_leaf: !calls_fns,
+                    is_leaf: !calls_fns && !allocs_mem,
                     scope_id: func_scope,
                     id: func_id 
                 }
@@ -578,13 +579,13 @@ impl CodeGen for Aarch64CodeGen {
         /*
             Size of the global value.
          */
-        let w2_reg_temp = IRLitType::Reg { 
+        let x2_reg_temp = IRLitType::Reg { 
             temp: fn_ctx.next_temp(), 
             idx: 2, 
-            size: REG_SIZE_4
+            size: REG_SIZE_8
         };
         let prepare_size_ptr = IRInstr::Mov { 
-            dest: w2_reg_temp,
+            dest: x2_reg_temp,
             src: IRLitType::Const(IRLitVal::Int32(str_size.unwrap() as i32)),
         };
 
@@ -623,7 +624,7 @@ impl CodeGen for Aarch64CodeGen {
                 prepare_size_ptr,
                 move_to_heap,
                 load_buffer_pointer_again,
-                // off_by_32
+                off_by_32
             ]
         )
     }

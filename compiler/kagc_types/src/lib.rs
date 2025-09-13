@@ -144,12 +144,10 @@ impl LitTypeVariant {
     /// Get the register size for this type of value
     pub fn to_reg_size(&self) -> usize {
         match self {
-            // 4 bytes
+            // 8 bytes; every type is 8-bytes in size for now
             Self::I32
-            | Self::U8 => 4,
-
-            // 8 bytes
-            Self::I64
+            | Self::U8
+            | Self::I64
             | Self::Record{..}
             | Self::RawStr
             | Self::PoolStr

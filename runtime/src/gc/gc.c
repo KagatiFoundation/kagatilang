@@ -1,6 +1,25 @@
 #include "gc/gc.h"
+#include "gc/gc_str.h"
 #include <assert.h>
 #include <stdio.h>
+#include <unistd.h>
+
+struct IO {
+    uint64_t value;
+    uint64_t value2;
+};
+
+int main() {
+    gc_object_t *p = kgc_alloc(16);
+    struct IO v = {
+        .value = 1111,
+        .value2 = 1111
+    };
+    kgc_memcpy(p->data, &v, sizeof v);
+    struct IO *vv = (struct IO*) p->data;
+    printf("%llu\n", vv->value);
+    kgc_release(p);
+}
 
 gc_object_t* kgc_alloc(size_t size) {
     if (size == 0) {
@@ -24,6 +43,18 @@ gc_object_t* kgc_alloc(size_t size) {
     }
     
     return obj;
+}
+
+void kgc_alloc_fail()   { 
+    const char msg[] = "kgc_alloc failed\n";
+    write(STDERR_FILENO, msg, sizeof(msg)-1);
+    _exit(1);
+}
+
+void kgc_memcpy_fail()   { 
+    const char msg[] = "kgc_memcpy failed\n";
+    write(STDERR_FILENO, msg, sizeof(msg)-1);
+    _exit(1);
 }
 
 void kgc_retain(gc_object_t* obj) {

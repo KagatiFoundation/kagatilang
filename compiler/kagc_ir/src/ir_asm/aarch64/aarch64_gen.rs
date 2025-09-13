@@ -77,10 +77,13 @@ impl TempRegMap {
 /// - `stack_size`: The amount of stack space allocated for this function.
 #[derive(Debug, Clone)]
 struct ComptFnProps {
-    pub is_leaf: bool,
-    pub stack_size: usize,
-    _next_stack_slot: usize,
-    pub liveness_info: HashMap<usize, LiveRange>,
+    pub stack_size:     usize,
+
+    _next_stack_slot:   usize,
+    
+    pub liveness_info:  HashMap<usize, LiveRange>,
+    
+    pub is_leaf:        bool,
 }
 
 impl ComptFnProps {
@@ -169,9 +172,9 @@ impl Aarch64IRToASM {
     }
     
     /// Computes the aligned stack size required for a function.
-    fn pre_compute_fn_stack_size(&self, func_ir: &IRFunc) -> Option<usize> {
+    fn pre_compute_fn_stack_size(&mut self, func_ir: &IRFunc) -> Option<usize> {
         let mut stack_size: usize = func_ir.params.len() * 8; // Each parameter is 8 bytes
-    
+
         if !func_ir.is_leaf {
             stack_size += 16; // Space for x29 and x30
         }
@@ -287,7 +290,7 @@ impl Aarch64IRToASM {
             else {
                 output_str.push_str(
                     &format!(
-                        ".section __TEXT,__cstring\n.L.str.{}:\n\t.asciz \"{}\"\n", 
+                        ".section __TEXT,__cstring\n\t.L.str.{}:\n\t.asciz \"{}\"\n", 
                         c_item_index, 
                         str_value
                     )
@@ -296,7 +299,8 @@ impl Aarch64IRToASM {
         }
         else if let KagcConst::Int(int_value) = &c_item.value {
             if parent_is_record {
-                output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
+                // output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
+                output_str.push_str(&format!("\t.xword {int_value}\n"));
             }
         }
         else if let KagcConst::Record(rec) = &c_item.value {
@@ -326,7 +330,7 @@ impl Aarch64IRToASM {
         else {
             "[SP]".to_string()
         };
-        format!("STR {}, {dest_addr}\n", reg.name())
+        format!("\tSTR {}, {dest_addr}\n", reg.name())
     }
 
     /// Load register from stack pointer (SP)
@@ -338,7 +342,7 @@ impl Aarch64IRToASM {
         else {
             "[SP]".to_string()
         };
-        format!("LDR {}, {src_addr}\n", reg.name())
+        format!("\tLDR {}, {src_addr}\n", reg.name())
     }
 
     /// Spill register to frame pointer (x29)
@@ -350,7 +354,7 @@ impl Aarch64IRToASM {
         else {
             "[x29]".to_string()
         };
-        format!("STR {}, {dest_addr}\n", reg.name())
+        format!("\tSTR {}, {dest_addr}\n", reg.name())
     }
 
     /// Load register from frame pointer (x29)
@@ -362,7 +366,7 @@ impl Aarch64IRToASM {
         else {
             "[x29]".to_string()
         };
-        format!("LDR {}, {src_addr}\n", reg.name())
+        format!("\tLDR {}, {src_addr}\n", reg.name())
     }
 
     fn gen_reg_spill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
@@ -427,10 +431,10 @@ impl IRToASM for Aarch64IRToASM {
         let stack_size: usize = self.pre_compute_fn_stack_size(fn_ir).unwrap();
 
         if fn_ir.is_leaf {
-            output_str.push_str(&format!("{}\n", self.gen_leaf_fn_prol(&fn_ir.name, stack_size)));
+            output_str.push_str(&format!("\t{}\n", self.gen_leaf_fn_prol(&fn_ir.name, stack_size)));
         }
         else {
-            output_str.push_str(&format!("{}\n", self.gen_non_leaf_fn_prol(&fn_ir.name, stack_size)));
+            output_str.push_str(&format!("\t{}\n", self.gen_non_leaf_fn_prol(&fn_ir.name, stack_size)));
         }
 
         // generate the code for function body
@@ -439,14 +443,14 @@ impl IRToASM for Aarch64IRToASM {
                 is_leaf: fn_ir.is_leaf, 
                 stack_size,
                 liveness_info: temp_liveness,
-                _next_stack_slot: 0
+                _next_stack_slot: 0,
             }
         );
 
         for param in &fn_ir.params {
             output_str.push_str(
                 &format!(
-                    "{}\n", 
+                    "\t{}\n", 
                     self.gen_fn_param_asm(param)
                 )
             );
@@ -458,7 +462,7 @@ impl IRToASM for Aarch64IRToASM {
             let _body_asm: String = self.gen_asm_from_ir_node(body_ir);
             self.try_dropping_all_temps();
             self.advance_ip();
-            fn_body_asm.push_str(&format!("{}\n", _body_asm.trim()));
+            fn_body_asm.push_str(&format!("\t{}\n", _body_asm.trim()));
         }
 
         output_str.push_str(&fn_body_asm);
@@ -502,33 +506,33 @@ impl IRToASM for Aarch64IRToASM {
         output_str.push_str(&format!("\n.global _{fn_label}\n_{fn_label}:"));
 
         if stack_size != 0 {
-            output_str.push_str(&format!("\nSUB SP, SP, #{stack_size}"));
+            output_str.push_str(&format!("\n\tSUB SP, SP, #{stack_size}"));
         }
         output_str
     }
     
     fn gen_leaf_fn_epl(&self, stack_size: usize) -> String {
         if stack_size != 0 {
-            format!("ADD SP, SP, #{stack_size}\nRET\n")
+            format!("\tADD SP, SP, #{stack_size}\n\tRET\n")
         }
         else {
-            "RET\n".to_string()
+            "\tRET\n".to_string()
         }
     }
 
     fn gen_non_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String {
         let mut output_str: String = "".to_string();
         output_str.push_str(&format!("\n.global _{fn_label}\n_{fn_label}:\n"));
-        output_str.push_str(&format!("SUB SP, SP, #{stack_size}\n"));
-        output_str.push_str(&format!("STP x29, x30, [SP, #{}]\n", stack_size - 16));
-        output_str.push_str(&format!("ADD x29, SP, #{}", stack_size - 16));
+        output_str.push_str(&format!("\tSUB SP, SP, #{stack_size}\n"));
+        output_str.push_str(&format!("\tSTP x29, x30, [SP, #{}]\n", stack_size - 16));
+        output_str.push_str(&format!("\tADD x29, SP, #{}", stack_size - 16));
         output_str
     }
     
     fn gen_non_leaf_fn_epl(&self, stack_size: usize) -> String {
         let mut output_str: String = "".to_string();
-        output_str.push_str(&format!("LDP x29, x30, [SP, #{}]\n", stack_size - 16));
-        output_str.push_str(&format!("ADD SP, SP, #{}\nRET\n", stack_size));
+        output_str.push_str(&format!("\tLDP x29, x30, [SP, #{}]\n", stack_size - 16));
+        output_str.push_str(&format!("\tADD SP, SP, #{}\nRET\n", stack_size));
         output_str
     }
     
@@ -573,7 +577,7 @@ impl IRToASM for Aarch64IRToASM {
                 let src_reg = self.resolve_register(base);
                 output_code.push_str(
                     &format!(
-                        "LDR {}, [{}, {}]", 
+                        "\tLDR {}, [{}, {}]", 
                         dest_reg.name(), 
                         src_reg.1.name(), 
                         format_args!("#{}", *off * 8)
@@ -602,7 +606,7 @@ impl IRToASM for Aarch64IRToASM {
             IRAddr::BaseOff(base, off) => {
                 let dest_reg = self.resolve_register(base).1;
                 format!(
-                    "STR {}, [{}, {}]", 
+                    "\tSTR {}, [{}, {}]", 
                     src_reg.name(), 
                     dest_reg.name(), 
                     format_args!("#-{}", off * 8)
@@ -613,7 +617,7 @@ impl IRToASM for Aarch64IRToASM {
 
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, _: &[(usize, IRLitType)], _return_type: &Option<IRLitType>) -> String {
         let mut output_str: String = String::new();
-        output_str.push_str(&format!("BL _{fn_name}"));
+        output_str.push_str(&format!("\tBL _{fn_name}"));
         output_str
     }
     
@@ -622,7 +626,7 @@ impl IRToASM for Aarch64IRToASM {
         let reg_name: String = dest_reg.1.name();
 
         let operand: String = self.extract_operand(src);
-        format!("MOV {}, {}", reg_name, operand)
+        format!("\tMOV {}, {}", reg_name, operand)
     }
     
     fn gen_ir_add_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
@@ -655,14 +659,14 @@ impl IRToASM for Aarch64IRToASM {
     }
     
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String {
-        format!("B .LB_{label_id}")
+        format!("\tB .LB_{label_id}")
     }
 
     fn gen_ir_loop_asm(&mut self, ir_loop: &mut IRLoop) -> String {
         let mut output_str: String = String::new();
 
         for body_ir in &mut ir_loop.body {
-            output_str.push_str(&format!("{}\n", self.gen_asm_from_ir_node(body_ir)));
+            output_str.push_str(&format!("\t{}\n", self.gen_asm_from_ir_node(body_ir)));
             self.advance_ip();
         }
 
@@ -681,20 +685,20 @@ impl IRToASM for Aarch64IRToASM {
         if let Some(c_item) = self.ctx.borrow().const_pool.get(pool_idx) {
             match &c_item.value {
                 KagcConst::Str(_) => {
-                    output_str.push_str(&format!("ADRP {dest_reg_name}, .L.str.{pool_idx}@PAGE\n"));
-                    output_str.push_str(&format!("ADD {dest_reg_name}, {dest_reg_name}, .L.str.{pool_idx}@PAGEOFF"));
+                    output_str.push_str(&format!("\tADRP {dest_reg_name}, .L.str.{pool_idx}@PAGE\n"));
+                    output_str.push_str(&format!("\tADD {dest_reg_name}, {dest_reg_name}, .L.str.{pool_idx}@PAGEOFF"));
                 },
                 KagcConst::Record(rec_value) => {
                     output_str.push_str(
                         &format!(
-                            "ADRP {dest_reg_name}, .L__const.{}.{}@PAGE\n", 
+                            "\tADRP {dest_reg_name}, .L__const.{}.{}@PAGE\n", 
                             c_item.origin_func.unwrap(), 
                             rec_value.alias.clone()
                         )
                     );
                     output_str.push_str(
                         &format!(
-                            "ADD {dest_reg_name}, {dest_reg_name}, .L__const.{}.{}@PAGEOFF\n", 
+                            "\tADD {dest_reg_name}, {dest_reg_name}, .L__const.{}.{}@PAGEOFF\n", 
                             c_item.origin_func.unwrap(), 
                             rec_value.alias.clone()
                         )
@@ -718,7 +722,7 @@ impl IRToASM for Aarch64IRToASM {
         };
         
         let mut output_str: String = String::new();
-        output_str.push_str(&format!("CMP {}, {}\n", self.extract_operand(op1), self.extract_operand(op2)));
+        output_str.push_str(&format!("\tCMP {}, {}\n", self.extract_operand(op1), self.extract_operand(op2)));
         output_str.push_str(&format!("{compare_operator} .LB_{label_id}"));
         output_str
     }
@@ -740,7 +744,13 @@ impl IRToASM for Aarch64IRToASM {
             ).unwrap_or_default()
         );
 
-        output.push_str(&format!("MOV {}, {:#x}\nBL _kgc_alloc\n", x0.name(), size));
+        output.push_str(
+            &format!(
+                "\tMOV {}, {:#x}\n\tBL _kgc_alloc\n\tCBNZ x0, 1f\n\tBL _kgc_alloc_fail\n1:\n", 
+                x0.name(), 
+                size
+            )
+        );
         output
     }
 
@@ -753,7 +763,7 @@ impl IRToASM for Aarch64IRToASM {
             }
         }
 
-        output.push_str("BL _kgc_memcpy\n");
+        output.push_str("\tBL _kgc_memcpy\n");
         output
     }
 }
@@ -781,7 +791,7 @@ impl Aarch64IRToASM {
 
         output.push_str(
             &format!(
-                "{} {}, {}, {}",
+                "\t{} {}, {}, {}",
                 operation, reg_name, 
                 op1, op2
             )

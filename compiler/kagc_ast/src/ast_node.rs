@@ -280,6 +280,18 @@ impl AST {
     }
 }
 
+#[macro_export]
+macro_rules! contains_ops {
+    ($ast:expr, $($op:expr),+ $(,)?) => {{
+        $(
+            if $ast.contains_operation($op) {
+                true
+            } else
+        )+
+        { false }
+    }};
+}
+
 impl BTypeComparable for AST {
     fn cmp(&self, other: &AST) -> bool {
         self.result_type == other.result_type

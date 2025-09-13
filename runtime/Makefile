@@ -27,4 +27,4 @@ tests:
 	$(CC) $(CFLAGS_TEST) $(SRCS) $(TESTS) -o test_gc $(LDFLAGS_TEST)
 
 clean:
-	rm -f $(OBJS) $(BUILD_PATH)/libkag.so test_gc
+	rm -rf $(OBJS) $(BUILD_PATH)/libkag.so test_gc test_gc.dSYM

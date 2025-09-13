@@ -15,7 +15,7 @@ typedef struct gc_object {
     uint64_t            size;
     uint64_t            num_children;
     struct gc_object**  children;
-    char*               data;
+    uint8_t*            data;
 } gc_object_t;
 
 // allocate a GC object
