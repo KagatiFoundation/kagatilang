@@ -5,7 +5,7 @@ gc_object_t* kgc_str_new(const char* s) {
     gc_object_t* obj = kgc_alloc(len);
     if (!obj) return NULL;
 
-    kgc_memcpy(obj->data, s, len);
+    k_memcpy(obj->data, s, len);
     return obj;
 }
 
@@ -15,8 +15,9 @@ size_t kgc_strlen(const char* s) {
     return len;
 }
 
-void kgc_memcpy(char* dst, const char* src, size_t n) {
+void k_memcpy(void* dst, const char* src, size_t n) {
+    char *d = dst;
     for (size_t i = 0; i < n; i++) {
-        dst[i] = src[i];
+        d[i] = src[i];
     }
 }

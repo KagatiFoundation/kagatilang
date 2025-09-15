@@ -14,12 +14,10 @@ use kagc_symbol::{
 };
 use kagc_token::Token;
 use kagc_types::{
-    record::{
+    builtins::obj::KObjType, record::{
         RecordFieldType, 
         RecordType
-    }, 
-    LitType, 
-    LitTypeVariant
+    }, LitType, LitTypeVariant
 };
 
 use crate::errors::*;
@@ -241,6 +239,7 @@ impl Resolver {
 
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
                         KagcConst::Str(raw_value),
+                        KObjType::KStr,
                         self.curr_func_id
                     );
 
@@ -268,6 +267,7 @@ impl Resolver {
 
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
                         KagcConst::Int(raw_value as i64), 
+                        KObjType::KStr,
                         self.curr_func_id
                     );
                     return Ok(pool_idx);
@@ -285,6 +285,7 @@ impl Resolver {
             if !parent_is_record {
                 let record_idx = self.ctx.borrow_mut().const_pool.insert(
                     KagcConst::Record(record_const),
+                    KObjType::KRec,
                     self.curr_func_id,
                 );
                 rec_create.pool_idx = record_idx;

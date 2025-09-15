@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use indexmap::IndexMap;
+use kagc_types::builtins::obj::KObjType;
 
 /// Pool index is used to index items in the const pool.
 pub type PoolIdx = usize;
@@ -62,6 +63,7 @@ pub enum KagcConst {
 #[derive(Debug, Clone)]
 pub struct ConstEntry {
     pub value: KagcConst,
+    pub ob_type: KObjType,
     pub origin_func: Option<usize>
 }
 
@@ -72,7 +74,12 @@ pub struct ConstPool {
 }
 
 impl ConstPool {
-    pub fn insert(&mut self, constant: KagcConst, origin_func: Option<usize>) -> PoolIdx {
+    pub fn insert(
+        &mut self, 
+        constant: KagcConst, 
+        ob_type: KObjType, 
+        origin_func: Option<usize>
+    ) -> PoolIdx {
         if let Some(&idx) = self.index_by_value.get(&constant) {
             idx
         } else {
@@ -80,6 +87,7 @@ impl ConstPool {
             let entry = ConstEntry {
                 value: constant.clone(),
                 origin_func,
+                ob_type
             };
             self.entries.push(entry);
             self.index_by_value.insert(constant, idx);

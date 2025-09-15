@@ -32,9 +32,12 @@ use std::{cell::RefCell, rc::Rc};
 use fn_ctx::FnCtx;
 use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
+use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_types::*;
 use kagc_ir::LabelId;
+use kagc_target::reg::REG_SIZE_8;
+use kagc_types::builtins::obj::KObjType;
 use kagc_types::*;
 use typedefs::*;
 
@@ -166,6 +169,23 @@ pub trait CodeGen {
     }
 
     fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+        let mut child_offsets = vec![];
+        let mut output = vec![];
+        if let Some(entry) = self.ctx().borrow().const_pool.get(rec_creation.pool_idx) {
+            match &entry.value {
+                kagc_const::pool::KagcConst::Record(record_const) => {
+                    for field in record_const.fields.iter() {
+                        let load = self.gen_ir_load_global_var(*field.1, fn_ctx)?;
+                        let count = load.len();
+                        let child_off = fn_ctx.stack_offset - 1;
+                        child_offsets.push(child_off);
+                        output.extend_from_slice(&load[0..count - 1]);
+                    }
+                },
+                _ => todo!(),
+            }
+        }
+
         // Stack offset for the record variable in the current function frame.
         //
         // After allocating a record, `rec_base` stores the stack slot where the
@@ -173,11 +193,71 @@ pub trait CodeGen {
         // to be mapped to a stable location, so that future instructions can
         // load the record pointer from the stack when accessing or assigning fields.
         let rec_base_off = fn_ctx.stack_offset;
-        let load_rec_into_stack = self.gen_ir_load_global_var(rec_creation.pool_idx, fn_ctx)?;
+        let alloc_rec = IRInstr::MemAlloc { 
+            size: rec_creation.fields.len() * 8,
+            ob_type: KObjType::KRec,
+            dest: IRLitType::Reg { 
+                temp: fn_ctx.next_temp(), 
+                idx: 0, 
+                size: REG_SIZE_8
+            }
+        };
+
+        let store_canon_pointer = IRInstr::Store { 
+            src: alloc_rec.dest().unwrap(), 
+            addr: IRAddr::StackOff(fn_ctx.next_stack_off()) 
+        };
+
+
+        let load_data_pointer = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: fn_ctx.next_temp(), 
+                size: REG_SIZE_8
+            }, 
+            addr: IRAddr::BaseOff(
+                alloc_rec.dest().unwrap(), 
+                GCOBJECT_BUFFER_IDX as i32
+            )
+        };
+
+        let data_pointer_dest = load_data_pointer.dest().unwrap().clone();
+
+        output.push(alloc_rec);
+        output.push(store_canon_pointer);
+        output.push(load_data_pointer);
+
+        for (idx, c_off) in child_offsets.iter().enumerate() {
+            let load_child_mem = IRInstr::Load { 
+                dest: IRLitType::ExtendedTemp { 
+                    id: fn_ctx.next_temp(), 
+                    size: REG_SIZE_8
+                }, 
+                addr: IRAddr::StackOff(*c_off) 
+            };
+            let store_child_mem = IRInstr::Store { 
+                src: load_child_mem.dest().unwrap(), 
+                addr: IRAddr::BaseOff(
+                    data_pointer_dest.clone(),
+                    idx as i32
+                )
+            };
+            output.push(load_child_mem);
+            output.push(store_child_mem);
+        }
+
+        let load_canon_pointer = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: fn_ctx.next_temp(), 
+                size: REG_SIZE_8
+            }, 
+            addr: IRAddr::StackOff(rec_base_off)
+        };
+
+        output.push(load_canon_pointer);
 
         // record's base offset
         fn_ctx.var_offsets.insert(rec_creation.rec_alias.clone(), rec_base_off);
-        Ok(load_rec_into_stack)
+        Ok(output)
     }
 
     fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {

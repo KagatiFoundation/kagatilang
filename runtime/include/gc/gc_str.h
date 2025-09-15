@@ -12,7 +12,7 @@ gc_object_t* kgc_str_new(const char* s);
 
 size_t kgc_strlen(const char* s);
 
-void kgc_memcpy(char* dst, const char* src, size_t n);
+void k_memcpy(void* dst, const char* src, size_t n);
 
 #ifdef __cplusplus
 }

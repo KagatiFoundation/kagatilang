@@ -30,8 +30,6 @@ use std::{collections::HashMap, fmt::Display};
 
 use lazy_static::lazy_static;
 
-use crate::builtins::obj::RecordObj;
-
 /// Trait for types that can be compared based on their variant and equality.
 pub trait BTypeComparable {
     /// Compares `self` with another instance of the same type for equality.
@@ -98,7 +96,7 @@ pub enum LitType {
     /// Represents a null value (e.g., for optional pointers or uninitialized references).
     Null,
 
-    Record(RecordObj),
+    Record,
 
     /// Placeholder value, typically used during intermediate stages of compilation.
     None,

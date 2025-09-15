@@ -32,6 +32,7 @@ use kagc_const::pool::{ConstEntry, KagcConst};
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::StorageClass;
 use kagc_target::{asm::aarch64::*, reg::*};
+use kagc_types::builtins::obj::KObjType;
 
 use crate::{
     ir_asm::ir_asm_gen::*, 
@@ -197,7 +198,7 @@ impl Aarch64IRToASM {
     }
 
     fn is_temp_alive_after(&self, temp: TempId, n_instrs: usize) -> bool {
-        let compt_props = self.get_current_fn_props();
+        let compt_props = self._get_current_fn_props();
         let (start, end) = compt_props.liveness_info
             .get(&temp)
             .unwrap_or_else(|| panic!("Untracked temp id '{temp}'"));
@@ -349,14 +350,14 @@ impl Aarch64IRToASM {
         Some(self.gen_str_sp(reg, stack_size, slot))
     }
 
-    fn gen_reg_unspill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
+    fn _gen_reg_unspill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
         if reg.status != RegStatus::Spilled {
             return None;
         }
         Some(self.gen_ldr_sp(reg, stack_size, slot))
     }
 
-    fn get_current_fn_props(&self) -> &ComptFnProps {
+    fn _get_current_fn_props(&self) -> &ComptFnProps {
         self.compt_fn_props
             .as_ref()
             .expect("Compile time function info not found! Aborting...")
@@ -555,7 +556,7 @@ impl IRToASM for Aarch64IRToASM {
                     "\tSTR {}, [{}, {}]", 
                     src_reg.name(), 
                     dest_reg.name(), 
-                    format_args!("#-{}", off * 8)
+                    format_args!("#{}", off * 8)
                 )
             }
         }
@@ -673,30 +674,23 @@ impl IRToASM for Aarch64IRToASM {
         output_str
     }
 
-    fn gen_ir_mem_alloc(&mut self, size: usize) -> String {
-        let compt_props = self.get_current_fn_props_mut();
-        let stack_size = compt_props.stack_size;
-        let next_slot = compt_props.next_stack_slot();
-
+    fn gen_ir_mem_alloc(&mut self, size: usize, ob_type: &KObjType) -> String {
         let mut output = "".to_string();
 
         // load the parameter
-        let x0 = self.allocate_specific_register(0, 4);
-        output.push_str(
-            &self.gen_reg_spill(
-                &x0, 
-                stack_size, 
-                next_slot
-            ).unwrap_or_default()
-        );
+        let x0 = self.allocate_specific_register(0, REG_SIZE_8);
+        let load_size = format!("MOV {}, {:#x}", x0.name(), size);
+        let x1 = self.allocate_specific_register(1, REG_SIZE_8);
+        let load_type = format!("MOV {}, {:#x}", x1.name(), ob_type.value());
 
-        output.push_str(
-            &format!(
-                "\tMOV {}, {:#x}\n\tBL _kgc_alloc\n\tCBNZ x0, 1f\n\tBL _kgc_alloc_fail\n1:\n", 
-                x0.name(), 
-                size
-            )
-        );
+        output.push_str(&format!(
+        "{load_size}
+        {load_type}
+        BL _object_new
+        CBNZ x0, 1f
+        BL _obj_alloc_fail\n1:
+        " 
+        ));
         output
     }
 
@@ -709,7 +703,7 @@ impl IRToASM for Aarch64IRToASM {
             }
         }
 
-        output.push_str("\tBL _kgc_memcpy\n");
+        output.push_str("\tBL _k_memcpy\n");
         output
     }
 

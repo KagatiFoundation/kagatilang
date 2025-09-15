@@ -25,7 +25,7 @@ SOFTWARE.
 #![allow(non_camel_case_types)]
 use std::str::FromStr;
 
-use kagc_types::{builtins::obj::StringObj, LitType, LitTypeVariant};
+use kagc_types::{LitType, LitTypeVariant};
 
 /// Every keyword and token supported by the C standard is listed below.
 #[derive(Copy, Clone, PartialEq, Hash, Eq, Debug)]

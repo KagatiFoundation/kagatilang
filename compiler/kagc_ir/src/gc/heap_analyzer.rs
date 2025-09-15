@@ -37,11 +37,12 @@ use crate::ir_instr::{
 /// num_children   (8 bytes)  -> offset 16
 /// children       (8 bytes)  -> offset 24
 /// data           (8 bytes)  -> offset 32
+/// ob_type        (8 bytes)  -> offset 40
 /// ```
 ///
 /// This constant represents the **raw byte offset** of the `data` pointer within
 /// the struct. It can be used directly in assembly memory instructions.
-pub const GCOBJECT_BUFFER_OFF: usize = 32; // bytes
+pub const GCOBJECT_BUFFER_OFF: usize = 40; // bytes
 
 /// Index of the `data` field in the `gc_object_t` struct.
 ///
@@ -52,13 +53,14 @@ pub const GCOBJECT_BUFFER_OFF: usize = 32; // bytes
 /// num_children   (8 bytes)  -> index 2
 /// children       (8 bytes)  -> index 3
 /// data           (8 bytes)  -> index 4
+/// ob_type        (8 bytes)  -> index 5
 /// ```
 ///
 /// This constant represents the **field index** of the `data` pointer within
 /// the struct. To compute the byte offset in assembly, multiply by the size
 /// of each field (8 bytes on 64-bit systems):
 /// `offset_in_bytes = GCOBJECT_BUFFER_IDX * 8`.
-pub const GCOBJECT_BUFFER_IDX: usize = 4;
+pub const GCOBJECT_BUFFER_IDX: usize = 5;
 
 pub type HeapRange = (usize, usize);
 

@@ -1,3 +1,5 @@
+use kagc_types::builtins::obj::KObjType;
+
 /*
 MIT License
 
@@ -71,7 +73,7 @@ pub trait IRToASM {
                     IRInstr::CondJump { label_id, operation, op1, op2, .. } => self.gen_cond_jmp_asm(op1, op2, *operation, *label_id),
 
                     // Garbage collection operations
-                    IRInstr::MemAlloc { size, .. } => self.gen_ir_mem_alloc(*size),
+                    IRInstr::MemAlloc { size, ob_type, .. } => self.gen_ir_mem_alloc(*size, ob_type),
                     
                     IRInstr::MemCpy { .. } => self.gen_ir_mem_cpy(),
 
@@ -97,7 +99,7 @@ pub trait IRToASM {
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], return_type: &Option<IRLitType>) -> String;
 
     /// Allocate memory
-    fn gen_ir_mem_alloc(&mut self, size: usize) -> String;
+    fn gen_ir_mem_alloc(&mut self, size: usize, ob_type: &KObjType) -> String;
 
     /// Allocate register
     fn gen_ir_reg_alloc(&mut self, dest: &IRLitType) -> String;

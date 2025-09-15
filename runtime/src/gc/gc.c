@@ -4,21 +4,50 @@
 #include <stdio.h>
 #include <unistd.h>
 
-struct IO {
-    uint64_t value;
-    uint64_t value2;
-};
+K_Object* object_new(size_t size, K_Object_Type type) {
+   if (size == 0) {
+        fprintf(stderr, "kgc_alloc: cannot allocate zero size\n");
+        return NULL;
+    }
 
-int main() {
-    gc_object_t *p = kgc_alloc(16);
-    struct IO v = {
-        .value = 1111,
-        .value2 = 1111
-    };
-    kgc_memcpy(p->data, &v, sizeof v);
-    struct IO *vv = (struct IO*) p->data;
-    printf("%llu\n", vv->value);
-    kgc_release(p);
+    K_Object* obj = (K_Object*) malloc(sizeof(K_Object));
+    if (!obj) return NULL;
+
+    obj->ref_count = 1;
+    obj->ob_size = size;
+    obj->num_children = 0;
+    obj->children = NULL;
+    obj->ob_type = type;
+
+    obj->data = malloc(size);
+    if (!obj->data) {
+        puts("invalid data pointer");
+        free(obj);
+        return NULL;
+    }
+    
+    return obj; 
+}
+
+void obj_alloc_fail()   { 
+    const char msg[] = "object_new failed\n";
+    write(STDERR_FILENO, msg, sizeof(msg)-1);
+    _exit(1);
+}
+
+void object_delete(K_Object *obj) {
+    if (!obj) return;
+
+    if (--obj->ref_count == 0) {
+        // release all children
+        for (size_t i = 0; i < obj->num_children; ++i) {
+            object_delete(obj->children[i]);
+        }
+
+        free(obj->children);
+        free(obj->data);
+        free(obj);
+    }
 }
 
 gc_object_t* kgc_alloc(size_t size) {

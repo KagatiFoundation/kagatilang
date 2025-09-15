@@ -27,7 +27,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
 
-use itertools::all;
 use kagc_ast::*;
 use kagc_ctx::*;
 use kagc_errors::code::ErrCode;
@@ -37,7 +36,6 @@ use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
-use kagc_ir::ir_types::IRLitTypeReg;
 use kagc_ir::ir_types::IRLitVal;
 use kagc_ir::ir_types::TempId;
 use kagc_ir::LabelId;
@@ -565,16 +563,20 @@ impl CodeGen for Aarch64CodeGen {
     }
 
     fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let str_size = self.ctx.borrow().const_pool.size(idx);
-        if str_size.is_none() {
-            panic!("ConstEntry's size cannot be computed for some reason! Panic caused by the index: {idx}");
+        let ctx_borrow = self.ctx.borrow();
+        let obj = ctx_borrow.const_pool.get(idx);
+        if obj.is_none() {
+            panic!("ConstEntry not found! Panic caused by the index: {idx}");
         }
-        
+
+        let obj = obj.unwrap();
+        let ob_size = self.ctx.borrow().const_pool.size(idx).unwrap();
         let mut output = vec![];
 
         // allocate memory for the global var
         let gc_alloc = IRInstr::MemAlloc { 
-            size: str_size.unwrap(),
+            size: ob_size,
+            ob_type: obj.ob_type.clone(),
             dest: IRLitType::Reg { 
                 temp: fn_ctx.next_temp(), 
                 idx: 0, 
@@ -676,7 +678,7 @@ impl CodeGen for Aarch64CodeGen {
         };
         let prepare_size_ptr = IRInstr::Mov { 
             dest: x2_reg_temp,
-            src: IRLitType::Const(IRLitVal::Int32(str_size.unwrap() as i32)),
+            src: IRLitType::Const(IRLitVal::Int32(ob_size as i32)),
         };
 
         // generate code to move value from .rodata to heap

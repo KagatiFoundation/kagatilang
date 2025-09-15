@@ -7,6 +7,25 @@
 extern "C" {
 #endif
 
+typedef enum _object_type {
+    K_INT = 0,
+    K_STR = 1,
+    K_REC = 2
+} K_Object_Type;
+
+typedef struct _object {
+    uint64_t            ref_count;
+    uint64_t            ob_size;
+    uint64_t            num_children;
+    struct _object**    children;
+    enum _object_type   ob_type;
+    uint8_t*            data;
+} K_Object;
+
+K_Object* object_new(size_t size, K_Object_Type type);
+
+void object_delete(K_Object *obj);
+
 /**
  * Garbage collector object
  */

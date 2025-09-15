@@ -1,5 +1,6 @@
 use kagc_symbol::StorageClass;
 use kagc_target::reg::{RegIdx, RegSize};
+use kagc_types::builtins::obj::KObjType;
 
 use crate::{ir_types::*, LabelId};
 
@@ -119,7 +120,10 @@ pub enum IRInstr {
 
         /// Destination where the address of newly allocated memory's
         /// address lives
-        dest: IRLitType
+        dest: IRLitType,
+
+        /// Object type
+        ob_type: KObjType
     },
 
     /// Grabage Collector's allocation instruction
