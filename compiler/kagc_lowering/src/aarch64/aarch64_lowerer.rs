@@ -27,6 +27,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
 
+use itertools::all;
 use kagc_ast::*;
 use kagc_ctx::*;
 use kagc_errors::code::ErrCode;
@@ -36,7 +37,9 @@ use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
+use kagc_ir::ir_types::IRLitTypeReg;
 use kagc_ir::ir_types::IRLitVal;
+use kagc_ir::ir_types::TempId;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::*;
@@ -59,6 +62,59 @@ pub struct Aarch64CodeGen {
     current_function: Option<FunctionInfo>,
     
     early_return_label_id: Option<usize>,
+}
+
+impl Aarch64CodeGen {
+    fn gen_store_param_ir(
+        &self, 
+        param_tmp: TempId,
+        sym: &Symbol, 
+        virtual_reg: RegIdx, 
+        fn_ctx: &mut FnCtx
+    ) -> CGRes {
+        let mut output = vec![];
+        let reg_sz = sym.lit_type.to_reg_size();
+        assert_ne!(reg_sz, 0);
+
+        let param_off = fn_ctx.next_stack_off();
+        let alloc_param_reg = IRInstr::RegAlloc {
+            dest: IRLitType::Reg {
+                temp: param_tmp, 
+                idx: virtual_reg, 
+                size: REG_SIZE_8 
+            },
+            idx: virtual_reg,
+            size: REG_SIZE_8
+        };
+
+        let store_param_into_stack = IRInstr::Store { 
+            src: alloc_param_reg.dest().unwrap(),
+            addr: IRAddr::StackOff(param_off)
+        };
+        output.push(IR::Instr(store_param_into_stack));
+
+        if sym.lit_type.is_gc_alloced() {
+            let load_data_off = IRInstr::Load { 
+                dest: IRLitType::ExtendedTemp { 
+                    id: fn_ctx.next_temp(), 
+                    size: REG_SIZE_8 
+                }, 
+                addr: IRAddr::BaseOff(
+                    alloc_param_reg.dest().unwrap(), 
+                    GCOBJECT_BUFFER_IDX as i32
+                ) 
+            };
+            let data_off = fn_ctx.next_stack_off();
+            let store_data_off_into_stack = IRInstr::Store { 
+                src: load_data_off.dest().unwrap(), 
+                addr: IRAddr::StackOff(data_off)
+            };
+            output.push(IR::Instr(load_data_off));
+            output.push(IR::Instr(store_data_off_into_stack));
+        }
+        fn_ctx.var_offsets.insert(sym.name.clone(), param_off);
+        Ok(output)
+    }
 }
 
 impl CodeGen for Aarch64CodeGen {        
@@ -116,20 +172,24 @@ impl CodeGen for Aarch64CodeGen {
                 assert_ne!(reg_sz, 0);
 
                 let param_tmp: usize = fn_ctx.next_temp();
-                let reg: IRLitType = IRLitType::Reg{ 
+                let store_param = self.gen_store_param_ir(
+                    param_tmp,
+                    sym, 
+                    virtual_reg, 
+                    &mut fn_ctx
+                );
+                fn_body.extend(store_param.ok().unwrap());
+
+                let reg: IRLitType = IRLitType::Reg { 
                     temp: param_tmp, 
                     idx: virtual_reg, 
                     size: reg_sz 
                 };
-
-                let param_off = fn_ctx.next_stack_off();
-                fn_ctx.var_offsets.insert(sym.name.clone(), param_off);
-
                 virtual_reg += 1;
                 reg
             }).collect();
 
-        let linearized_body: Vec<&mut AST> = ast.left.as_mut().unwrap().linearize_mut();
+        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
         for body_ast  in linearized_body {
             let body_ir: Vec<IR> = self.gen_ir_from_node(body_ast, &mut fn_ctx, ASTOperation::AST_FUNCTION)?;
             fn_body.extend(body_ir);

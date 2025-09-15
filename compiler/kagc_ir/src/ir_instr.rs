@@ -1,4 +1,5 @@
 use kagc_symbol::StorageClass;
+use kagc_target::reg::{RegIdx, RegSize};
 
 use crate::{ir_types::*, LabelId};
 
@@ -130,6 +131,13 @@ pub enum IRInstr {
     /// Grabage Collector's copy instruction
     MemCpy {
         dest: IRLitType
+    },
+
+    /// Mark the register as "allocated"
+    RegAlloc {
+        idx: RegIdx,
+        size: RegSize,
+        dest: IRLitType
     }
 }
 
@@ -137,19 +145,12 @@ impl IRInstr {
     pub fn dest(&self) -> Option<IRLitType> {
         match self {
             Self::Mov { dest, .. } => Some(dest.clone()),
-
             Self::Add { dest, .. } => Some(dest.clone()),
-            
             Self::Sub { dest, .. } => Some(dest.clone()),
-            
             Self::Mul { dest, .. } => Some(dest.clone()),
-            
             Self::Div { dest, .. } => Some(dest.clone()),
-
             Self::Call { return_type, .. } => return_type.clone(),
-
             Self::Load { dest, .. } => Some(dest.clone()),
-            
             Self::LoadGlobal { dest, .. } => Some(dest.clone()),
 
             Self::Store { addr, .. } => {
@@ -160,9 +161,8 @@ impl IRInstr {
             },
 
             Self::MemCpy { dest } => Some(dest.clone()),
-            
             Self::MemAlloc { dest, .. } => Some(dest.clone()),
-            
+            Self::RegAlloc { dest, .. } => Some(dest.clone()),
             _ => None
         }
     }

@@ -196,30 +196,6 @@ impl Aarch64IRToASM {
         (value + 16 - 1) & !15
     }
 
-    fn gen_fn_param_asm(&mut self, param: &IRLitType) -> String {
-        let fn_props = self.get_current_fn_props_mut();
-        let stack_size = fn_props.stack_size;
-        let is_leaf_fn = fn_props.is_leaf;
-
-        match param {
-            IRLitType::Reg { idx, size, .. } => {
-                let reg = AllocedReg { 
-                    size: *size, 
-                    width: if *size == 8 { RegWidth::QWORD } else { RegWidth::WORD }, 
-                    idx: *idx, 
-                    status: RegStatus::Alloced
-                };
-                if is_leaf_fn {
-                    self.gen_str_sp(&reg, stack_size, *idx)
-                }
-                else {
-                    self.gen_str_fp(&reg, *idx)
-                }
-            },
-            _ => unimplemented!()
-        }
-    }
-
     fn is_temp_alive_after(&self, temp: TempId, n_instrs: usize) -> bool {
         let compt_props = self.get_current_fn_props();
         let (start, end) = compt_props.liveness_info
@@ -443,15 +419,6 @@ impl IRToASM for Aarch64IRToASM {
                 _next_stack_slot: 0,
             }
         );
-
-        for param in &fn_ir.params {
-            output_str.push_str(
-                &format!(
-                    "\t{}\n", 
-                    self.gen_fn_param_asm(param)
-                )
-            );
-        }
 
         let mut fn_body_asm = String::new();
 
@@ -738,12 +705,17 @@ impl IRToASM for Aarch64IRToASM {
 
         for reg in Aarch64RegManager2::caller_saved_regs() {
             if let Some(temp) = self.temp_reg_map.find_temp_by_reg(reg) {
-                let alive = self.is_temp_alive_after(temp, 1);
+                // let alive = self.is_temp_alive_after(temp, 1);
             }
         }
 
         output.push_str("\tBL _kgc_memcpy\n");
         output
+    }
+
+    fn gen_ir_reg_alloc(&mut self, dest: &IRLitType) -> String {
+        let alloced_reg = self.resolve_register(dest);
+        String::new()
     }
 }
 

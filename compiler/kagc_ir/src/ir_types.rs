@@ -30,6 +30,13 @@ impl IRLitVal {
 }
 
 #[derive(Debug, Clone)]
+pub struct IRLitTypeReg {
+    pub temp: TempId,
+    pub idx: RegIdx,
+    pub size: RegSize
+}
+
+#[derive(Debug, Clone)]
 pub enum IRLitType {
     Var(Symbol),
 
@@ -109,7 +116,7 @@ impl IRLitType {
 
             Self::StackOff(off) => off.to_string(),
 
-            Self::ExtendedTemp { id, .. } => id.to_string()
+            Self::ExtendedTemp { id, .. } => id.to_string(),
         }
     }
 

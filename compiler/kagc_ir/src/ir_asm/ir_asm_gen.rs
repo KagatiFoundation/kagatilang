@@ -74,6 +74,8 @@ pub trait IRToASM {
                     IRInstr::MemAlloc { size, .. } => self.gen_ir_mem_alloc(*size),
                     
                     IRInstr::MemCpy { .. } => self.gen_ir_mem_cpy(),
+
+                    IRInstr::RegAlloc { dest, .. } => self.gen_ir_reg_alloc(dest),
                      
                     _ => todo!()
                 }
@@ -96,6 +98,9 @@ pub trait IRToASM {
 
     /// Allocate memory
     fn gen_ir_mem_alloc(&mut self, size: usize) -> String;
+
+    /// Allocate register
+    fn gen_ir_reg_alloc(&mut self, dest: &IRLitType) -> String;
 
     /// Allocate memory
     fn gen_ir_mem_cpy(&mut self) -> String;

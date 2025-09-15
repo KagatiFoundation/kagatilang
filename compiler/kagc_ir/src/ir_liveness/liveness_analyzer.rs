@@ -21,11 +21,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
 use std::collections::HashMap;
-
 use kagc_target::reg::RegIdx;
-
 use crate::{
     ir_instr::*, 
     ir_types::{
@@ -132,6 +129,7 @@ impl LivenessAnalyzer {
                     IRInstr::Sub { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Mul { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Div { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
+                    IRInstr::RegAlloc { dest, .. } => Self::uses_temp_in_ir_lit(dest, temp_lookup),
 
                     IRInstr::Load { dest, addr } => {
                         let mut tmp_used = Self::uses_temp_in_ir_lit(dest, temp_lookup);
