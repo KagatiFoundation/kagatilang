@@ -172,9 +172,8 @@ impl CodeGen for Aarch64CodeGen {
     }
 
     fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
-        if let Some(Stmt::VarDecl(var_decl)) = ast.kind.as_stmt() {
-            let var_sym: Symbol = self.get_symbol_local_or_global(&var_decl.sym_name).unwrap();
-
+        let var_decl = ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
+        if let Stmt::VarDecl(var_decl) = var_decl {
             if ast.left.is_none() {
                 panic!("Variable is not assigned a value!");
             }
@@ -204,28 +203,40 @@ impl CodeGen for Aarch64CodeGen {
                 IR::Instr(instr)
             }).collect::<Vec<IR>>();
 
-            if ASTOperation::AST_RECORD_CREATE == ast.left.as_ref().unwrap().operation {
-                return Ok(result);
-            }
-            else {
-                let var_stack_off = fn_ctx.next_stack_off();
-                let decl_ir: IR = IR::VarDecl(
-                    IRVarDecl {
-                        sym_name: var_decl.sym_name.clone(),
-                        class: var_sym.class,
-                        offset: Some(var_stack_off),
-                        value: last_instr.dest().unwrap()
-                    }
-                );
+            let var_stack_off = fn_ctx.next_stack_off();
+            let store_var_ir = IR::Instr(
+                IRInstr::Store { 
+                    src: last_instr.dest().unwrap(), 
+                    addr: IRAddr::StackOff(var_stack_off)
+                }
+            );
 
-                // remember the variable's stack offset
-                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
+            result.push(store_var_ir);
 
-                result.push(decl_ir);
-                return Ok(result);
+            if ast.result_type.is_gc_alloced() {
+                let load_gc_alloced_obj_data = IRInstr::Load { 
+                    dest: IRLitType::ExtendedTemp { 
+                        id: fn_ctx.next_temp(),
+                        size: REG_SIZE_8 
+                    }, 
+                    addr: IRAddr::BaseOff(
+                        last_instr.dest().unwrap(), 
+                        GCOBJECT_BUFFER_IDX as i32
+                    )
+                };
+
+                let store_gc_alloc_data_ptr = IRInstr::Store { 
+                    src: load_gc_alloced_obj_data.dest().unwrap(), 
+                    addr: IRAddr::StackOff(fn_ctx.next_stack_off())
+                }; 
+                result.push(IR::Instr(load_gc_alloced_obj_data));
+                result.push(IR::Instr(store_gc_alloc_data_ptr));
             }
+
+            // remember the variable's stack offset
+            fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
+            return Ok(result);
         }
-
         // FIND A BETTER SOLUTION THAN JUST PANICKING
         panic!()
     }
@@ -342,15 +353,13 @@ impl CodeGen for Aarch64CodeGen {
                     let reg_sz = curr_fn.return_type.to_reg_size();
                     assert_ne!(reg_sz, 0);
 
-                    let ret_stmt_instrs: Vec<IRInstr> = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
+                    let ret_stmt_instrs = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
 
                     // last instruction is basically the temporary which holds the return 
                     // expression's evaluation result
-                    let last_instr: IRInstr = ret_stmt_instrs.last().cloned().unwrap();
-
+                    let last_instr = ret_stmt_instrs.last().cloned().unwrap();
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
-                    
-                    let ret_tmp: usize = fn_ctx.next_temp();
+                    let ret_tmp = fn_ctx.next_temp();
                     
                     ret_instrs.push(
                         IR::Instr(
@@ -366,7 +375,6 @@ impl CodeGen for Aarch64CodeGen {
             let early_ret_instrs = if fn_ctx.early_return {
                 // turn off early return ASAP
                 fn_ctx.early_return = false;
-
                 let jump_to: usize = if let Some(lbl_id) = self.early_return_label_id {
                     lbl_id
                 }
@@ -463,21 +471,36 @@ impl CodeGen for Aarch64CodeGen {
     }
 
     fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let lit_val_tmp: usize = fn_ctx.next_temp();
         let reg_sz = access.result_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
         // The record's stack offset
-        let rec_stack_off = fn_ctx
+        let rec_stack_off = *fn_ctx
             .var_offsets
             .get(&access.rec_alias)
             .unwrap_or_else(|| panic!("what the fck bro"));
 
+        let load_data_ptr = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp { 
+                id: fn_ctx.next_temp(), 
+                size: REG_SIZE_8 
+            }, 
+            addr: IRAddr::StackOff(rec_stack_off + 1)
+        };
+
+        let load_value = IRInstr::Load { 
+            dest: IRLitType::ExtendedTemp{ 
+                id: fn_ctx.next_temp(), 
+                size: reg_sz 
+            }, 
+            addr: IRAddr::BaseOff(
+                load_data_ptr.dest().unwrap(), 
+                access.rel_stack_off as i32
+            )
+        };
         Ok(vec![
-            IRInstr::Load { 
-                dest: IRLitType::ExtendedTemp{ id: lit_val_tmp, size: reg_sz }, 
-                addr: IRAddr::StackOff(*rec_stack_off + access.rel_stack_off)
-            }
+            load_data_ptr,
+            load_value
         ])
     }
 
@@ -486,6 +509,8 @@ impl CodeGen for Aarch64CodeGen {
         if str_size.is_none() {
             panic!("ConstEntry's size cannot be computed for some reason! Panic caused by the index: {idx}");
         }
+        
+        let mut output = vec![];
 
         // allocate memory for the global var
         let gc_alloc = IRInstr::MemAlloc { 
@@ -506,9 +531,12 @@ impl CodeGen for Aarch64CodeGen {
             addr: IRAddr::StackOff(store_off)
         };
 
+        output.push(gc_alloc);
+        output.push(store_mem_addr);
+
         // Load the `data` section from the `gc_object_t` object in the memory.
         // It is at the 32 bytes offset.
-        let load_data_sec = IRInstr::Load { 
+        let load_gc_alloced_obj_canon = IRInstr::Load { 
             dest: IRLitType::ExtendedTemp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8
@@ -529,18 +557,20 @@ impl CodeGen for Aarch64CodeGen {
             Since we want to access the `data` field (a pointer to the actual payload),
             we must add an offset of 32 (0x20) to the base pointer returned by `_kgc_alloc`.
         */
-        let load_buffer_pointer = IRInstr::Load { 
+        let load_gc_alloced_obj_data = IRInstr::Load { 
             dest: IRLitType::ExtendedTemp { 
                 id: fn_ctx.next_temp(),
                 size: REG_SIZE_8 
             }, 
             addr: IRAddr::BaseOff(
-                load_data_sec.dest().unwrap(), 
+                load_gc_alloced_obj_canon.dest().unwrap(), 
                 GCOBJECT_BUFFER_IDX as i32
             )
         };
 
-        let load_glob_value = IRInstr::LoadGlobal { 
+        output.push(load_gc_alloced_obj_canon);
+
+        let load_glob_value_from_pool = IRInstr::LoadGlobal { 
             pool_idx: idx, 
             dest: IRLitType::ExtendedTemp{ 
                 id: fn_ctx.next_temp(), 
@@ -559,7 +589,7 @@ impl CodeGen for Aarch64CodeGen {
         };
         let prepare_dst_ptr = IRInstr::Mov { 
             dest: x0_reg_temp,
-            src: load_buffer_pointer.dest().unwrap(),
+            src: load_gc_alloced_obj_data.dest().unwrap(),
         };
 
         /*
@@ -573,7 +603,7 @@ impl CodeGen for Aarch64CodeGen {
         };
         let prepare_src_ptr = IRInstr::Mov { 
             dest: x1_reg_temp,
-            src: load_glob_value.dest().unwrap(),
+            src: load_glob_value_from_pool.dest().unwrap(),
         };
 
         /*
@@ -591,42 +621,26 @@ impl CodeGen for Aarch64CodeGen {
 
         // generate code to move value from .rodata to heap
         let move_to_heap = IRInstr::MemCpy { 
-            dest: load_buffer_pointer.dest().unwrap()
+            dest: load_gc_alloced_obj_data.dest().unwrap()
         };
 
-        let load_buffer_pointer_again = IRInstr::Load { 
+        output.push(load_gc_alloced_obj_data);
+        output.push(load_glob_value_from_pool);
+        output.push(prepare_dst_ptr);
+        output.push(prepare_src_ptr);
+        output.push(prepare_size_ptr);
+        output.push(move_to_heap);
+
+        let load_gc_alloced_obj_canon = IRInstr::Load { 
             dest: IRLitType::ExtendedTemp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8 
             }, 
             addr: IRAddr::StackOff(store_off)
         };
-        let off_by_32 = IRInstr::Load { 
-            dest: IRLitType::ExtendedTemp { 
-                id: fn_ctx.next_temp(), 
-                size: REG_SIZE_8
-            }, 
-            addr: IRAddr::BaseOff(
-                load_buffer_pointer_again.dest().unwrap(), 
-                GCOBJECT_BUFFER_IDX as i32
-            )
-        };
 
-        Ok(
-            vec![
-                gc_alloc,
-                store_mem_addr,
-                load_data_sec,
-                load_buffer_pointer,
-                load_glob_value,
-                prepare_dst_ptr,
-                prepare_src_ptr,
-                prepare_size_ptr,
-                move_to_heap,
-                load_buffer_pointer_again,
-                off_by_32
-            ]
-        )
+        output.push(load_gc_alloced_obj_canon);
+        Ok(output)
     }
 
     fn lower_import_to_ir(&self) -> CGRes {

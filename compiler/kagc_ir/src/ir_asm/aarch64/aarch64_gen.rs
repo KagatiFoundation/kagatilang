@@ -180,10 +180,7 @@ impl Aarch64IRToASM {
         }
     
         for ir in &func_ir.body {
-            if let IR::VarDecl(_) = ir {
-                stack_size += 8; // Each variable takes 8 bytes
-            }
-            else if let IR::Instr(IRInstr::Store { .. }) = ir {
+            if let IR::Instr(IRInstr::Store { .. }) = ir {
                 stack_size += 8;
             }
             else if let IR::Instr(IRInstr::MemAlloc { .. }) = ir {
@@ -481,24 +478,6 @@ impl IRToASM for Aarch64IRToASM {
 
     fn gen_ir_return_asm(&mut self, _ir_return: &IRReturn) -> String {
         "hello".to_string()
-    }
-    
-    fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &IRVarDecl) -> String {
-        let mut output_str: String = "".to_string();
-
-        let value_reg = self.resolve_register(&vdecl_ir.value).1;
-
-        let fn_props = self.get_current_fn_props_mut();
-        let stack_size = fn_props.stack_size;
-        let var_stack_off = vdecl_ir.offset.unwrap();
-
-        if !fn_props.is_leaf {
-            output_str.push_str(&self.gen_str_fp(&value_reg, var_stack_off));
-        }
-        else {
-            output_str.push_str(&self.gen_str_sp(&value_reg, stack_size, var_stack_off));
-        }
-        output_str
     }
     
     fn gen_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String {

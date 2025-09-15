@@ -21,9 +21,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
-use kagc_symbol::StorageClass;
-
 use crate::{ir_instr::*, ir_types::*, LabelId};
 
 pub(crate) const NO_INSTR: &str = "";
@@ -43,16 +40,6 @@ pub trait IRToASM {
             IR::Func(irfunc) => {
                 let fn_asm: String = self.gen_ir_fn_asm(irfunc);
                 fn_asm
-            },
-            
-            IR::VarDecl(irassign) => {
-                if irassign.class == StorageClass::LOCAL {
-                    let assign_asm: String = self.gen_ir_local_var_decl_asm(irassign);
-                    assign_asm
-                } 
-                else {
-                    "".to_string()
-                }
             },
 
             IR::Loop(loop_stmt) => self.gen_ir_loop_asm(loop_stmt),
@@ -138,10 +125,6 @@ pub trait IRToASM {
     /// Handles function prologue, body, and epilogue based on 
     /// IR function structure.
     fn gen_ir_fn_asm(&mut self, fn_ir: &mut IRFunc) -> String;
-    
-    /// Generates AArch64 assembly for a local variable declaration.
-    /// Allocates stack space and initializes the variable if needed.
-    fn gen_ir_local_var_decl_asm(&mut self, vdecl_ir: &IRVarDecl) -> String;
 
     /// Generate return statement code.
     fn gen_ir_return_asm(&mut self, ir_return: &IRReturn) -> String;

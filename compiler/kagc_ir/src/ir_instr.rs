@@ -187,21 +187,6 @@ pub struct IRFunc {
 }
 
 #[derive(Debug, Clone)]
-pub struct IRVarDecl {
-    /// Name of the variable being declared.
-    pub sym_name: String,
-
-    /// Storage class of the variable.
-    pub class: StorageClass,
-
-    /// Value of the variable.
-    pub value: IRLitType,
-
-    /// Stack offset of the variable.
-    pub offset: Option<usize>
-}
-
-#[derive(Debug, Clone)]
 pub struct IRReturn {
     pub early: bool,
 
@@ -224,8 +209,6 @@ pub struct IRLoop {
 pub enum IR {
     Func(IRFunc),
 
-    VarDecl(IRVarDecl),
-    
     Return(IRReturn),
     
     Loop(IRLoop),

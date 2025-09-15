@@ -165,32 +165,6 @@ pub trait CodeGen {
         }
     }
 
-    fn lower_rec_field_assign_to_ir(&mut self, rec_field: &mut RecordFieldAssignExpr, rec_mem_loc: IRLitType, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let mut output = vec![];
-        let tmp_id: usize = fn_ctx.next_temp();
-        let reg_sz = rec_field.value.result_type().to_reg_size();
-
-        let load_field_val = IRInstr::Load { 
-            dest: IRLitType::ExtendedTemp{ 
-                id: tmp_id, 
-                size: reg_sz 
-            }, 
-            addr: IRAddr::BaseOff(
-                rec_mem_loc.clone(), 
-                rec_field.offset as i32
-            )
-        };
-
-        let store_field_val = IRInstr::Store { 
-            src: IRLitType::ExtendedTemp{ id: tmp_id, size: reg_sz },
-            addr: IRAddr::StackOff(fn_ctx.next_stack_off())
-        };
-
-        output.push(load_field_val);
-        output.push(store_field_val);
-        Ok(output)
-    }
-
     fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         // Stack offset for the record variable in the current function frame.
         //
@@ -199,25 +173,11 @@ pub trait CodeGen {
         // to be mapped to a stable location, so that future instructions can
         // load the record pointer from the stack when accessing or assigning fields.
         let rec_base_off = fn_ctx.stack_offset;
-
-        let mut output = vec![];
         let load_rec_into_stack = self.gen_ir_load_global_var(rec_creation.pool_idx, fn_ctx)?;
-
-        let rec_dest = load_rec_into_stack.last().unwrap().dest();
-        output.extend(load_rec_into_stack);
 
         // record's base offset
         fn_ctx.var_offsets.insert(rec_creation.rec_alias.clone(), rec_base_off);
-
-        for field in &mut rec_creation.fields {
-            let field_output = self.lower_rec_field_assign_to_ir(
-                field, 
-                rec_dest.clone().unwrap(), 
-                fn_ctx
-            )?;
-            output.extend(field_output);
-        }
-        Ok(output)
+        Ok(load_rec_into_stack)
     }
 
     fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {

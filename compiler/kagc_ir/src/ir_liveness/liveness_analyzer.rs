@@ -78,15 +78,10 @@ impl LivenessAnalyzer {
         let mut live_set: HashMap<usize, usize> = HashMap::new();
 
         for (idx, ir) in body.iter().enumerate() {
-            match ir {
-                IR::VarDecl(_) 
-                | IR::Instr(_) => {
-                    if let Some(temp) = Self::extract_temp_dest(ir) {
-                        live_set.entry(temp).or_insert(idx);
-                    }
-                },
-
-                _ => ()
+            if let IR::Instr(_) = ir {
+                if let Some(temp) = Self::extract_temp_dest(ir) {
+                    live_set.entry(temp).or_insert(idx);
+                }
             }
         }
 
@@ -99,8 +94,7 @@ impl LivenessAnalyzer {
             .enumerate()
             .find_map(|(rev_idx, ir)| {
                 match ir {
-                    IR::Instr(_)
-                    | IR::VarDecl(_) => {
+                    IR::Instr(_) => {
                         if Self::is_temp_used(ir, temp_lookup) {
                             Some(rev_idx)
                         } else {
@@ -177,8 +171,6 @@ impl LivenessAnalyzer {
                     _ => false
                 }
             },
-
-            IR::VarDecl(vardecl) => matches!(vardecl.value, IRLitType::ExtendedTemp{ id, .. } if id == temp_lookup),
 
             _ => false,
         }
