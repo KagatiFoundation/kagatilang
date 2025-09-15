@@ -50,30 +50,6 @@ void object_delete(K_Object *obj) {
     }
 }
 
-gc_object_t* kgc_alloc(size_t size) {
-    if (size == 0) {
-        fprintf(stderr, "kgc_alloc: cannot allocate zero size\n");
-        return NULL;
-    }
-
-    gc_object_t* obj = (gc_object_t*) malloc(sizeof(gc_object_t));
-    if (!obj) return NULL;
-
-    obj->ref_count = 1;
-    obj->size = size;
-    obj->num_children = 0;
-    obj->children = NULL;
-
-    obj->data = malloc(size);
-    if (!obj->data) {
-        puts("invalid data pointer");
-        free(obj);
-        return NULL;
-    }
-    
-    return obj;
-}
-
 void kgc_alloc_fail()   { 
     const char msg[] = "kgc_alloc failed\n";
     write(STDERR_FILENO, msg, sizeof(msg)-1);
@@ -89,21 +65,6 @@ void kgc_memcpy_fail()   {
 void kgc_retain(gc_object_t* obj) {
     if (obj) {
         obj->ref_count += 1;
-    }
-}
-
-void kgc_release(gc_object_t* obj) {
-    if (!obj) return;
-
-    if (--obj->ref_count == 0) {
-        // release all children
-        for (size_t i = 0; i < obj->num_children; ++i) {
-            kgc_release(obj->children[i]);
-        }
-
-        free(obj->children);
-        free(obj->data);
-        free(obj);
     }
 }
 

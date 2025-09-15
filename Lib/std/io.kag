@@ -1,0 +1,5 @@
+def extern print(msg: string) -> void;
+
+def extern eprint(msg: string) -> void;
+
+def extern print_int(value: integer) -> void;

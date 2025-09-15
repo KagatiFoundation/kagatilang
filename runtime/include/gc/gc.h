@@ -37,14 +37,8 @@ typedef struct gc_object {
     uint8_t*            data;
 } gc_object_t;
 
-// allocate a GC object
-gc_object_t* kgc_alloc(size_t size);
-
 // increase the reference count
 void kgc_retain(gc_object_t* obj);
-
-// free the allocated record
-void kgc_release(gc_object_t* obj);
 
 void kgc_add_child(gc_object_t* obj, gc_object_t* child);
 
