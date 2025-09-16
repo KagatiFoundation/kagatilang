@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
 use kagc_ast::ASTOperation;
 use kagc_symbol::Symbol;
 use kagc_target::reg::{RegIdx, RegSize};

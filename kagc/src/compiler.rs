@@ -1,37 +1,27 @@
-use std::{
-    cell::RefCell, 
-    collections::HashMap, 
-    rc::Rc
-};
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
-use kagc_comp_unit::{
-    file_pool::FileMeta, 
-    source::*, 
-    *
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
+use kagc_comp_unit::file_pool::FileMeta;
+use kagc_comp_unit::CompilationUnit;
+use kagc_comp_unit::ImportResolver;
+use kagc_comp_unit::source::ParsingStage;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
-use kagc_ir::ir_asm::aarch64::Aarch64IRToASM;
 use kagc_lexer::Tokenizer;
-
-use kagc_lowering::{
-    aarch64::aarch64_lowerer::Aarch64CodeGen, 
-    CodeGen
-};
-use kagc_parser::{
-    builder::ParserBuilder, 
-    SharedParserCtx
-};
-use kagc_scope::{
-    ctx::builder::ScopeCtxBuilder, 
-    manager::ScopeManager, 
-    scope::Scope
-};
-use kagc_sema::{
-    resolver::Resolver, 
-    SemanticAnalyzer
-};
+use kagc_lowering::aarch64::Aarch64IRGen;
+use kagc_lowering::IRGen;
+use kagc_codegen::aarch64::Aarch64Codegen;
+use kagc_parser::builder::ParserBuilder;
+use kagc_parser::SharedParserCtx;
+use kagc_scope::ctx::builder::ScopeCtxBuilder;
+use kagc_scope::manager::ScopeManager;
+use kagc_scope::scope::Scope;
+use kagc_sema::resolver::Resolver;
+use kagc_sema::SemanticAnalyzer;
 use kagc_target::asm::aarch64::Aarch64RegManager2;
 
 #[derive(Debug, Clone)]
@@ -98,8 +88,7 @@ impl Compiler {
         let rm = Aarch64RegManager2::new();
 
         // AST to IR generator
-        let mut lowerer = Aarch64CodeGen::new(self.ctx.clone());
-     
+        let mut lowerer = Aarch64IRGen::new(self.ctx.clone());
 
         let mut final_irs = vec![];
 
@@ -130,7 +119,7 @@ impl Compiler {
         }
 
         // IR to Aarch64 ASM generator
-        let mut cg = Aarch64IRToASM::new(self.ctx.clone(), rm);
+        let mut cg = Aarch64Codegen::new(self.ctx.clone(), rm);
         let code = cg.gen_asm(&mut final_irs);
         println!("{code}");
         Ok(())

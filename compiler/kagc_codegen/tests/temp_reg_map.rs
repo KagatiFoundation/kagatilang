@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
 #[cfg(test)]
 mod tests {
-    use kagc_ir::ir_asm::aarch64::TempRegMap;
+    use kagc_codegen::aarch64::TempRegMap;
     use kagc_target::reg::*;
     use std::collections::HashMap;
 

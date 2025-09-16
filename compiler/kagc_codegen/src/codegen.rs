@@ -1,29 +1,13 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
+use kagc_ir::ir_instr::*;
+use kagc_ir::ir_instr::IRInstr;
+use kagc_ir::ir_types::IRLitType;
+use kagc_ir::ir_types::IRCondOp;
+use kagc_ir::LabelId;
+
 use kagc_types::builtins::obj::KObjType;
-
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-use crate::{ir_instr::*, ir_types::*, LabelId};
 
 pub(crate) const NO_INSTR: &str = "";
 
@@ -36,7 +20,7 @@ pub(crate) enum IRToASMState {
     FuncCall
 }
 
-pub trait IRToASM { 
+pub trait Codegen { 
     fn gen_asm_from_ir_node(&mut self, ir: &mut IR) -> String {
         match ir {
             IR::Func(irfunc) => {

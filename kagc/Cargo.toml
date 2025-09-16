@@ -24,3 +24,4 @@ kagc_lowering = { path = "../compiler/kagc_lowering" }
 kagc_ir = { path = "../compiler/kagc_ir" }
 kagc_comp_unit = { path = "../compiler/kagc_comp_unit" }
 kagc_scope = { path = "../compiler/kagc_scope" }
+kagc_codegen = { path = "../compiler/kagc_codegen" }

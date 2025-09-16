@@ -48,9 +48,9 @@ use kagc_utils::integer::*;
 use crate::fn_ctx::FnCtx;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
-use crate::CodeGen;
+use crate::IRGen;
 
-pub struct Aarch64CodeGen {
+pub struct Aarch64IRGen {
     ctx: Rc<RefCell<CompilerCtx>>,
 
     // label ID tracker
@@ -62,7 +62,7 @@ pub struct Aarch64CodeGen {
     early_return_label_id: Option<usize>,
 }
 
-impl Aarch64CodeGen {
+impl Aarch64IRGen {
     fn gen_store_param_ir(
         &self, 
         param_tmp: TempId,
@@ -115,7 +115,7 @@ impl Aarch64CodeGen {
     }
 }
 
-impl CodeGen for Aarch64CodeGen {        
+impl IRGen for Aarch64IRGen {        
     fn ctx(&self) -> Rc<RefCell<CompilerCtx>> {
         self.ctx.clone()
     }
@@ -728,7 +728,7 @@ impl CodeGen for Aarch64CodeGen {
     }
 }
 
-impl Aarch64CodeGen {
+impl Aarch64IRGen {
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
             ctx,

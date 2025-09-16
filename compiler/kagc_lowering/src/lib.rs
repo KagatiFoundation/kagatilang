@@ -41,7 +41,7 @@ use kagc_types::builtins::obj::KObjType;
 use kagc_types::*;
 use typedefs::*;
 
-pub trait CodeGen {
+pub trait IRGen {
     fn gen_ir(&mut self, nodes: &mut [AST]) -> Vec<IR> {
         let mut output: Vec<IR> = vec![];
         for node in nodes {

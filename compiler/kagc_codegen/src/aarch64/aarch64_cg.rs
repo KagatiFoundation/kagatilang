@@ -1,46 +1,30 @@
-/*
-MIT License
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
-Copyright (c) 2023 Kagati Foundation
+use crate::Codegen;
+use crate::NO_INSTR;
+use kagc_ir::ir_instr::*;
+use kagc_ir::ir_instr::IRInstr;
+use kagc_ir::ir_liveness::LiveRange;
+use kagc_ir::ir_liveness::LivenessAnalyzer;
+use kagc_ir::ir_types::IRLitType;
+use kagc_ir::ir_types::TempId;
+use kagc_ir::ir_types::IRCondOp;
+use kagc_ir::ir_types::IRLitVal;
+use kagc_ir::LabelId;
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
-use std::{
-    cell::RefCell, 
-    collections::HashMap, 
-    rc::Rc
-};
-
-use kagc_const::pool::{ConstEntry, KagcConst};
+use kagc_const::pool::ConstEntry;
+use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::StorageClass;
 use kagc_target::{asm::aarch64::*, reg::*};
 use kagc_types::builtins::obj::KObjType;
 
-use crate::{
-    ir_asm::ir_asm_gen::*, 
-    ir_instr::*, 
-    ir_liveness::*, 
-    ir_types::*, 
-    LabelId
-};
+use crate::IRToASMState;
 
 #[derive(Debug, Default)]
 pub struct TempRegMap {
@@ -106,7 +90,7 @@ impl ComptFnProps {
 /// 
 /// - `compt_fn_props`: Optional function properties, used for tracking 
 ///   whether a function is a leaf and its stack size.
-pub struct Aarch64IRToASM {
+pub struct Aarch64Codegen {
     pub ctx: Rc<RefCell<CompilerCtx>>,
 
     reg_manager: Aarch64RegManager2,
@@ -124,7 +108,7 @@ pub struct Aarch64IRToASM {
     state: IRToASMState,
 }
 
-impl Aarch64IRToASM {
+impl Aarch64Codegen {
     #[allow(clippy::new_without_default)]
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>, rm: Aarch64RegManager2) -> Self {
         Self {
@@ -387,7 +371,7 @@ impl Aarch64IRToASM {
     }
 }
 
-impl IRToASM for Aarch64IRToASM {
+impl Codegen for Aarch64Codegen {
     fn gen_ir_fn_asm(&mut self, fn_ir: &mut IRFunc) -> String {
         if fn_ir.class == StorageClass::EXTERN {
             // self.advance_ip();
@@ -713,7 +697,7 @@ impl IRToASM for Aarch64IRToASM {
     }
 }
 
-impl Aarch64IRToASM {
+impl Aarch64Codegen {
     fn gen_ir_bin_op_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType, operation: &str) -> String {
         let compt_props = self.get_current_fn_props_mut();
         let stack_size = compt_props.stack_size;
