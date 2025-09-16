@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use kagc_codegen::x86::X86Codegen;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
@@ -119,7 +120,8 @@ impl Compiler {
         }
 
         // IR to Aarch64 ASM generator
-        let mut cg = Aarch64Codegen::new(self.ctx.clone(), rm);
+        // let mut cg = Aarch64Codegen::new(self.ctx.clone(), rm);
+        let mut cg = X86Codegen {};
         let code = cg.gen_asm(&mut final_irs);
         println!("{code}");
         Ok(())

@@ -9,8 +9,6 @@ use kagc_ir::LabelId;
 
 use kagc_types::builtins::obj::KObjType;
 
-pub(crate) const NO_INSTR: &str = "";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IRToASMState {
     Local,
@@ -72,12 +70,6 @@ pub trait Codegen {
     fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRLitType) -> String;
 
     fn gen_cond_jmp_asm(&mut self, op1: &IRLitType, op2: &IRLitType, operation: IRCondOp, label_id: LabelId) -> String;
-
-    /// Starts a function call process. Has to return NOP.
-    fn start_func_call_proc(&mut self) -> String;
-
-    /// Stops a function call process. Has tp return NOP.
-    fn stop_func_call_proc(&mut self) -> String;
 
     /// Generates assembly for a function call expression.
     fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], return_type: &Option<IRLitType>) -> String;

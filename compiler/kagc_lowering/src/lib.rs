@@ -27,7 +27,8 @@ pub mod errors;
 pub mod typedefs;
 pub mod fn_ctx;
 
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use fn_ctx::FnCtx;
 use kagc_ast::*;

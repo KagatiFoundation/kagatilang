@@ -2,7 +2,6 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use crate::Codegen;
-use crate::NO_INSTR;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IRInstr;
 use kagc_ir::ir_liveness::LiveRange;
@@ -135,13 +134,6 @@ impl Aarch64Codegen {
         }
         output.push(self.dump_globals());
         output.join("\n")
-    }
-
-    /// Switches to the given state returning the old state.
-    fn switch_cg_state(&mut self, new_state: IRToASMState) -> IRToASMState {
-        let old: IRToASMState = self.state;
-        self.state = new_state;
-        old
     }
 
     /// Sets function-specific properties when entering a function scope.
@@ -574,19 +566,6 @@ impl Codegen for Aarch64Codegen {
     
     fn gen_ir_div_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
         self.gen_ir_bin_op_asm(dest, op1, op2, "DIV")
-    }
-    
-    fn start_func_call_proc(&mut self) -> String {
-        self.switch_cg_state(IRToASMState::FuncCall);
-        NO_INSTR.to_string()
-    }
-    
-    fn stop_func_call_proc(&mut self) -> String {
-        // function calls happen only inside the local scope; thus, 
-        // switch to local scope after a function call finishes
-        self.switch_cg_state(IRToASMState::Local);
-
-        NO_INSTR.to_string()
     }
     
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String {
