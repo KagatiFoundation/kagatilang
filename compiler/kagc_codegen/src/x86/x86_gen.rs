@@ -5,12 +5,10 @@ use kagc_ir::ir_instr::IRAddr;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRLitType;
 use kagc_ir::ir_types::IRLitVal;
+use kagc_ir::ir_instr::IRReturn;
+use kagc_ir::ir_instr::IRLoop;
 
 use crate::Codegen;
-
-struct X86RegMgr {
-
-}
 
 pub struct X86Codegen;
 
@@ -192,15 +190,16 @@ impl Codegen for X86Codegen {
         todo!()
     }
 
-    fn gen_ir_mov_asm(&mut self, dest: &kagc_ir::ir_types::IRLitType, src: &kagc_ir::ir_types::IRLitType) -> String {
+    fn gen_ir_mov_asm(&mut self, dest: &IRLitType, src: &IRLitType) -> String {
+        
         todo!()
     }
 
-    fn gen_ir_return_asm(&mut self, ir_return: &kagc_ir::ir_instr::IRReturn) -> String {
+    fn gen_ir_return_asm(&mut self, ir_return: &IRReturn) -> String {
         todo!()
     }
 
-    fn gen_ir_loop_asm(&mut self, ir_loop: &mut kagc_ir::ir_instr::IRLoop) -> String {
+    fn gen_ir_loop_asm(&mut self, ir_loop: &mut IRLoop) -> String {
         todo!()
     }
 
