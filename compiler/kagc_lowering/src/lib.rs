@@ -197,7 +197,7 @@ pub trait IRGen {
         let alloc_rec = IRInstr::MemAlloc { 
             size: rec_creation.fields.len() * 8,
             ob_type: KObjType::KRec,
-            dest: IRLitType::Reg { 
+            dest: IRValueType::Reg { 
                 temp: fn_ctx.next_temp(), 
                 idx: 0, 
                 size: REG_SIZE_8
@@ -211,7 +211,7 @@ pub trait IRGen {
 
 
         let load_data_pointer = IRInstr::Load { 
-            dest: IRLitType::ExtendedTemp { 
+            dest: IRValueType::ExtendedTemp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8
             }, 
@@ -229,7 +229,7 @@ pub trait IRGen {
 
         for (idx, c_off) in child_offsets.iter().enumerate() {
             let load_child_mem = IRInstr::Load { 
-                dest: IRLitType::ExtendedTemp { 
+                dest: IRValueType::ExtendedTemp { 
                     id: fn_ctx.next_temp(), 
                     size: REG_SIZE_8
                 }, 
@@ -247,7 +247,7 @@ pub trait IRGen {
         }
 
         let load_canon_pointer = IRInstr::Load { 
-            dest: IRLitType::ExtendedTemp { 
+            dest: IRValueType::ExtendedTemp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8
             }, 
@@ -265,7 +265,7 @@ pub trait IRGen {
         Ok(vec![
             IRInstr::mov_into_temp(
                 fn_ctx.next_temp(), 
-                IRLitType::Const(IRLitVal::Null),
+                IRValueType::Const(IRImmVal::Null),
                 8
             )
         ])
@@ -277,15 +277,15 @@ pub trait IRGen {
         }
 
         let (ir_lit, reg_size) = match lit_expr.result_type {
-            LitTypeVariant::I32 => (IRLitVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")), 4_usize),
-            LitTypeVariant::U8 => (IRLitVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")), 4_usize),
+            LitTypeVariant::I32 => (IRImmVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")), 4_usize),
+            LitTypeVariant::U8 => (IRImmVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")), 4_usize),
             _ => todo!(),
         };
 
         Ok(vec![
             IRInstr::mov_into_temp(
                 fn_ctx.next_temp(), 
-                IRLitType::Const(ir_lit),
+                IRValueType::Const(ir_lit),
                 reg_size
             )
         ])
@@ -304,9 +304,9 @@ pub trait IRGen {
         let left_dest: &IRInstr = left_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
         let right_dest: &IRInstr = right_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
 
-        fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IRLitType {
+        fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IRValueType {
             let reg_sz = result_type.to_reg_size();
-            IRLitType::ExtendedTemp { id: fn_ctx.next_temp(), size: reg_sz }
+            IRValueType::ExtendedTemp { id: fn_ctx.next_temp(), size: reg_sz }
         }
 
         let bin_expr_type: IRInstr = match bin_expr.operation {
@@ -369,8 +369,8 @@ pub trait IRGen {
 
     fn gen_ir_cmp_and_jump(
         &mut self, 
-        op1: IRLitType, 
-        op2: IRLitType, 
+        op1: IRValueType, 
+        op2: IRValueType, 
         label_id: LabelId, 
         operation: IRCondOp
     ) -> IRInstr {
@@ -384,19 +384,19 @@ pub trait IRGen {
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
-    fn lower_add_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+    fn lower_add_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
        IRInstr::Add { dest, op1, op2 }
     }
 
-    fn lower_sub_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+    fn lower_sub_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
        IRInstr::Sub { dest, op1, op2 }
     }
 
-    fn lower_mul_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+    fn lower_mul_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
        IRInstr::Mul { dest, op1, op2 }
     }
 
-    fn lower_div_to_ir(&mut self, dest: IRLitType, op1: IRLitType, op2: IRLitType) -> IRInstr {
+    fn lower_div_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
        IRInstr::Div { dest, op1, op2 }
     }
 

@@ -6,7 +6,7 @@ use kagc_target::reg::RegIdx;
 use crate::{
     ir_instr::*, 
     ir_types::{
-        IRLitType, 
+        IRValueType, 
         TempId
     }
 };
@@ -86,10 +86,10 @@ impl LivenessAnalyzer {
     fn extract_temp_dest(ir: &IR) -> Option<usize> {
         match ir {
             IR::Instr(instr) => {
-                if let Some(IRLitType::ExtendedTemp{ id, ..}) = instr.dest() {
+                if let Some(IRValueType::ExtendedTemp{ id, ..}) = instr.dest() {
                     Some(id)
                 }
-                else if let Some(IRLitType::Reg { temp, .. }) = instr.dest() {
+                else if let Some(IRValueType::Reg { temp, .. }) = instr.dest() {
                     Some(temp)
                 }
                 else {
@@ -154,15 +154,15 @@ impl LivenessAnalyzer {
         }
     }
 
-    fn uses_temp_in_ir_lit(ir_lit: &IRLitType, temp: usize) -> bool {
+    fn uses_temp_in_ir_lit(ir_lit: &IRValueType, temp: usize) -> bool {
         match ir_lit {
-            IRLitType::ExtendedTemp{ id, .. } => *id == temp,
-            IRLitType::Reg { temp: id, .. } => *id == temp,
+            IRValueType::ExtendedTemp{ id, .. } => *id == temp,
+            IRValueType::Reg { temp: id, .. } => *id == temp,
             _ => false
         }
     }
 
-    fn is_temp_used_bin_op(dest: &IRLitType, op1: &IRLitType, op2: &IRLitType, temp_lookup: usize) -> bool {
+    fn is_temp_used_bin_op(dest: &IRValueType, op1: &IRValueType, op2: &IRValueType, temp_lookup: usize) -> bool {
         [
             dest.as_ext_temp() == Some(temp_lookup),
             op1.as_ext_temp() == Some(temp_lookup),

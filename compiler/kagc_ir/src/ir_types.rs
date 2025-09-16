@@ -3,7 +3,8 @@
 
 use kagc_ast::ASTOperation;
 use kagc_symbol::Symbol;
-use kagc_target::reg::{RegIdx, RegSize};
+use kagc_target::reg::RegIdx;
+use kagc_target::reg::RegSize;
 
 use crate::LabelId;
 
@@ -11,39 +12,29 @@ use crate::LabelId;
 pub type TempId = usize;
 
 #[derive(Debug, Clone)]
-pub enum IRLitVal {
+pub enum IRImmVal {
     Str(String, LabelId),
     Int64(i64),
     Int32(i32),
     U8(u8),
-
     Null
 }
 
-impl IRLitVal {
+impl IRImmVal {
     pub fn into_str(&self) -> String {
         match self {
-            IRLitVal::Str(value, ..) => value.clone(),
-            IRLitVal::Int64(value) => value.to_string(),
-            IRLitVal::Int32(value) => value.to_string(),
-            IRLitVal::U8(value) => value.to_string(),
-            IRLitVal::Null => "null".to_string()
+            IRImmVal::Str(value, ..) => value.clone(),
+            IRImmVal::Int64(value) => value.to_string(),
+            IRImmVal::Int32(value) => value.to_string(),
+            IRImmVal::U8(value) => value.to_string(),
+            IRImmVal::Null => "null".to_string()
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct IRLitTypeReg {
-    pub temp: TempId,
-    pub idx: RegIdx,
-    pub size: RegSize
-}
-
-#[derive(Debug, Clone)]
-pub enum IRLitType {
-    Var(Symbol),
-
-    Const(IRLitVal),
+pub enum IRValueType {
+    Const(IRImmVal),
     
     Reg {
         temp: TempId,
@@ -108,22 +99,16 @@ macro_rules! impl_as_irlit_type {
     };
 }
 
-impl IRLitType {
+impl IRValueType {
     pub fn into_str(&self) -> String {
         match self {
-            Self::Var(var) => var.name.clone(),
-            
             Self::Const(irlit_val) => irlit_val.into_str(),
-            
             Self::Reg{ idx, .. } => format!("x{}", *idx),
-
             Self::StackOff(off) => off.to_string(),
-
             Self::ExtendedTemp { id, .. } => id.to_string(),
         }
     }
 
-    check_instr_type!(is_var, Var);
     check_instr_type!(is_const, Const);
     check_instr_type!(is_stack_off, StackOff);
 
@@ -131,8 +116,7 @@ impl IRLitType {
         matches!(self, Self::Reg { .. })
     }
 
-    impl_as_irlit_type!(as_var, Var, Symbol);
-    impl_as_irlit_type!(as_const, Const, IRLitVal);
+    impl_as_irlit_type!(as_const, Const, IRImmVal);
     impl_as_irlit_type!(as_stack_off, StackOff, usize);
 
     pub fn as_ext_temp(&self) -> Option<usize> {

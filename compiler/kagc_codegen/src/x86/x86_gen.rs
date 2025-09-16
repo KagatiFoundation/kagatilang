@@ -3,8 +3,8 @@
 
 use kagc_ir::ir_instr::IRAddr;
 use kagc_ir::ir_instr::IR;
-use kagc_ir::ir_types::IRLitType;
-use kagc_ir::ir_types::IRLitVal;
+use kagc_ir::ir_types::IRValueType;
+use kagc_ir::ir_types::IRImmVal;
 use kagc_ir::ir_instr::IRReturn;
 use kagc_ir::ir_instr::IRLoop;
 
@@ -125,7 +125,7 @@ impl Codegen for X86Codegen {
         "LEAVE\nRET".to_string()
     }
 
-    fn gen_asm_store(&mut self, src: &IRLitType, addr: &IRAddr) -> String {
+    fn gen_asm_store(&mut self, src: &IRValueType, addr: &IRAddr) -> String {
         match addr {
             IRAddr::StackOff(stack_off) => {
                 let off = *stack_off;
@@ -140,11 +140,11 @@ impl Codegen for X86Codegen {
         }
     }
 
-    fn gen_asm_load(&mut self, dest: &IRLitType, addr: &IRAddr) -> String {
+    fn gen_asm_load(&mut self, dest: &IRValueType, addr: &IRAddr) -> String {
         todo!()
     }
 
-    fn gen_ir_add_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String {
+    fn gen_ir_add_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String {
         let mut output = "".to_string();
         let first_value = self.extract_operand(op1);
         output.push_str(&format!("MOV rax, {first_value}"));
@@ -154,15 +154,15 @@ impl Codegen for X86Codegen {
         output
     }
 
-    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &kagc_ir::ir_types::IRLitType) -> String {
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &kagc_ir::ir_types::IRValueType) -> String {
         todo!()
     }
 
-    fn gen_cond_jmp_asm(&mut self, op1: &kagc_ir::ir_types::IRLitType, op2: &kagc_ir::ir_types::IRLitType, operation: kagc_ir::ir_types::IRCondOp, label_id: kagc_ir::LabelId) -> String {
+    fn gen_cond_jmp_asm(&mut self, op1: &kagc_ir::ir_types::IRValueType, op2: &kagc_ir::ir_types::IRValueType, operation: kagc_ir::ir_types::IRCondOp, label_id: kagc_ir::LabelId) -> String {
         todo!()
     }
 
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, kagc_ir::ir_types::IRLitType)], return_type: &Option<kagc_ir::ir_types::IRLitType>) -> String {
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, kagc_ir::ir_types::IRValueType)], return_type: &Option<kagc_ir::ir_types::IRValueType>) -> String {
         todo!()
     }
 
@@ -170,7 +170,7 @@ impl Codegen for X86Codegen {
         todo!()
     }
 
-    fn gen_ir_reg_alloc(&mut self, dest: &kagc_ir::ir_types::IRLitType) -> String {
+    fn gen_ir_reg_alloc(&mut self, dest: &kagc_ir::ir_types::IRValueType) -> String {
         todo!()
     }
 
@@ -178,19 +178,19 @@ impl Codegen for X86Codegen {
         todo!()
     }
 
-    fn gen_ir_sub_asm(&mut self, dest: &kagc_ir::ir_types::IRLitType, op1: &kagc_ir::ir_types::IRLitType, op2: &kagc_ir::ir_types::IRLitType) -> String {
+    fn gen_ir_sub_asm(&mut self, dest: &kagc_ir::ir_types::IRValueType, op1: &kagc_ir::ir_types::IRValueType, op2: &kagc_ir::ir_types::IRValueType) -> String {
         todo!()
     }
 
-    fn gen_ir_mul_asm(&mut self, dest: &kagc_ir::ir_types::IRLitType, op1: &kagc_ir::ir_types::IRLitType, op2: &kagc_ir::ir_types::IRLitType) -> String {
+    fn gen_ir_mul_asm(&mut self, dest: &kagc_ir::ir_types::IRValueType, op1: &kagc_ir::ir_types::IRValueType, op2: &kagc_ir::ir_types::IRValueType) -> String {
         todo!()
     }
 
-    fn gen_ir_div_asm(&mut self, dest: &kagc_ir::ir_types::IRLitType, op1: &kagc_ir::ir_types::IRLitType, op2: &kagc_ir::ir_types::IRLitType) -> String {
+    fn gen_ir_div_asm(&mut self, dest: &kagc_ir::ir_types::IRValueType, op1: &kagc_ir::ir_types::IRValueType, op2: &kagc_ir::ir_types::IRValueType) -> String {
         todo!()
     }
 
-    fn gen_ir_mov_asm(&mut self, dest: &IRLitType, src: &IRLitType) -> String {
+    fn gen_ir_mov_asm(&mut self, dest: &IRValueType, src: &IRValueType) -> String {
         
         todo!()
     }
@@ -214,19 +214,19 @@ impl Codegen for X86Codegen {
 
 impl X86Codegen {
     /// Extract the IRLitType as an operand(String)
-    fn extract_operand(&mut self, irlit: &IRLitType) -> String {
+    fn extract_operand(&mut self, irlit: &IRValueType) -> String {
         match irlit {
-            IRLitType::Const(irlit_val) => {
+            IRValueType::Const(irlit_val) => {
                 match irlit_val {
-                    IRLitVal::Int32(value) => format!("{:#x}", *value),
-                    IRLitVal::U8(value) => format!("{:#x}", *value),
-                    IRLitVal::Str(value, ..) => value.clone(),
-                    IRLitVal::Null => "#0".to_string(), // Null is just '0' under the hood. LOL
+                    IRImmVal::Int32(value) => format!("{:#x}", *value),
+                    IRImmVal::U8(value) => format!("{:#x}", *value),
+                    IRImmVal::Str(value, ..) => value.clone(),
+                    IRImmVal::Null => "#0".to_string(), // Null is just '0' under the hood. LOL
                     _ => todo!()
                 }
             },
             
-            IRLitType::Reg { idx, size, .. } => {
+            IRValueType::Reg { idx, size, .. } => {
                 if *size == 4 {
                     format!("w{}", *idx)
                 }

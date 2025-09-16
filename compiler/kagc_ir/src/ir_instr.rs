@@ -13,38 +13,38 @@ pub enum IRAddr {
     StackOff(usize),
 
     /// Stack offset relative to some register
-    BaseOff(IRLitType, i32)
+    BaseOff(IRValueType, i32)
 }
 
 #[derive(Debug, Clone)]
 pub enum IRInstr {
     Mov {
-        dest: IRLitType, 
-        src: IRLitType
+        dest: IRValueType, 
+        src: IRValueType
     },
     
     Add {
-        dest: IRLitType, 
-        op1: IRLitType, 
-        op2: IRLitType
+        dest: IRValueType, 
+        op1: IRValueType, 
+        op2: IRValueType
     },
 
     Sub {
-        dest: IRLitType,
-        op1: IRLitType,
-        op2: IRLitType,
+        dest: IRValueType,
+        op1: IRValueType,
+        op2: IRValueType,
     },
 
     Mul {
-        dest: IRLitType,
-        op1: IRLitType,
-        op2: IRLitType,
+        dest: IRValueType,
+        op1: IRValueType,
+        op2: IRValueType,
     },
 
     Div {
-        dest: IRLitType,
-        op1: IRLitType,
-        op2: IRLitType,
+        dest: IRValueType,
+        op1: IRValueType,
+        op2: IRValueType,
     },
 
     Call {
@@ -56,10 +56,10 @@ pub enum IRInstr {
         /// `usize`: The parameter's position in the argument list.
         /// 
         /// `IRLitType`: The parameter.
-        params: Vec<(usize, IRLitType)>,
+        params: Vec<(usize, IRValueType)>,
 
         /// Return type of the function call.
-        return_type: Option<IRLitType>
+        return_type: Option<IRValueType>
     },
 
     /**
@@ -67,14 +67,14 @@ pub enum IRInstr {
      */
     Store {
         /// Value to be stored. `src` is always a register type.
-        src: IRLitType,
+        src: IRValueType,
 
         addr: IRAddr 
     },
     
     Load {
         /// Destination to load to. `dest` is always a register type
-        dest: IRLitType,
+        dest: IRValueType,
 
         addr: IRAddr
     },
@@ -89,16 +89,16 @@ pub enum IRInstr {
         pool_idx: usize,
 
         /// Destination to load to
-        dest: IRLitType
+        dest: IRValueType
     },
 
     /// Conditional jump
     CondJump {
         /// Operand 1
-        op1: IRLitType,
+        op1: IRValueType,
 
         /// Operand 2
-        op2: IRLitType,
+        op2: IRValueType,
 
         /// Label ID to jump to.
         label_id: LabelId,
@@ -123,7 +123,7 @@ pub enum IRInstr {
 
         /// Destination where the address of newly allocated memory's
         /// address lives
-        dest: IRLitType,
+        dest: IRValueType,
 
         /// Object type
         ob_type: KObjType
@@ -137,19 +137,19 @@ pub enum IRInstr {
 
     /// Grabage Collector's copy instruction
     MemCpy {
-        dest: IRLitType
+        dest: IRValueType
     },
 
     /// Mark the register as "allocated"
     RegAlloc {
         idx: RegIdx,
         size: RegSize,
-        dest: IRLitType
+        dest: IRValueType
     }
 }
 
 impl IRInstr {
-    pub fn dest(&self) -> Option<IRLitType> {
+    pub fn dest(&self) -> Option<IRValueType> {
         match self {
             Self::Mov { dest, .. } => Some(dest.clone()),
             Self::Add { dest, .. } => Some(dest.clone()),
@@ -162,7 +162,7 @@ impl IRInstr {
 
             Self::Store { addr, .. } => {
                 match addr {
-                    IRAddr::StackOff(off) => Some(IRLitType::StackOff(*off)),
+                    IRAddr::StackOff(off) => Some(IRValueType::StackOff(*off)),
                     IRAddr::BaseOff(base, _) => Some(base.clone()),
                 }
             },
@@ -174,9 +174,9 @@ impl IRInstr {
         }
     }
 
-    pub fn mov_into_temp(temp: usize, value: IRLitType, reg_size: usize) -> Self {
+    pub fn mov_into_temp(temp: usize, value: IRValueType, reg_size: usize) -> Self {
         Self::Mov {
-            dest: IRLitType::ExtendedTemp{ id: temp, size: reg_size }, 
+            dest: IRValueType::ExtendedTemp{ id: temp, size: reg_size }, 
             src: value
         }
     }
@@ -185,7 +185,7 @@ impl IRInstr {
 #[derive(Debug, Clone)]
 pub struct IRFunc {
     pub name: String,
-    pub params: Vec<IRLitType>,
+    pub params: Vec<IRValueType>,
     pub body: Vec<IR>,
     pub class: StorageClass,
     pub is_leaf: bool,

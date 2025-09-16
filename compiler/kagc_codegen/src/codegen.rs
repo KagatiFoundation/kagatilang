@@ -3,7 +3,7 @@
 
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IRInstr;
-use kagc_ir::ir_types::IRLitType;
+use kagc_ir::ir_types::IRValueType;
 use kagc_ir::ir_types::IRCondOp;
 use kagc_ir::LabelId;
 
@@ -67,42 +67,42 @@ pub trait Codegen {
         }
     }
 
-    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRLitType) -> String;
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRValueType) -> String;
 
-    fn gen_cond_jmp_asm(&mut self, op1: &IRLitType, op2: &IRLitType, operation: IRCondOp, label_id: LabelId) -> String;
+    fn gen_cond_jmp_asm(&mut self, op1: &IRValueType, op2: &IRValueType, operation: IRCondOp, label_id: LabelId) -> String;
 
     /// Generates assembly for a function call expression.
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRLitType)], return_type: &Option<IRLitType>) -> String;
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRValueType)], return_type: &Option<IRValueType>) -> String;
 
     /// Allocate memory
     fn gen_ir_mem_alloc(&mut self, size: usize, ob_type: &KObjType) -> String;
 
     /// Allocate register
-    fn gen_ir_reg_alloc(&mut self, dest: &IRLitType) -> String;
+    fn gen_ir_reg_alloc(&mut self, dest: &IRValueType) -> String;
 
     /// Allocate memory
     fn gen_ir_mem_cpy(&mut self) -> String;
 
     /// Generates AArch64 assembly for an addition operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_add_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+    fn gen_ir_add_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
 
     /// Generates AArch64 assembly for an subtraction operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_sub_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+    fn gen_ir_sub_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
 
     /// Generates AArch64 assembly for an multiplication operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_mul_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+    fn gen_ir_mul_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
     
     /// Generates AArch64 assembly for an division operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_div_asm(&mut self, dest: &IRLitType, op1: &IRLitType, op2: &IRLitType) -> String;
+    fn gen_ir_div_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
 
     /// Generates AArch64 assembly for a move (assignment) operation.
     /// Moves the value from `src` into `dest`, handling both registers 
     /// and immediates.
-    fn gen_ir_mov_asm(&mut self, dest: &IRLitType, src: &IRLitType) -> String;
+    fn gen_ir_mov_asm(&mut self, dest: &IRValueType, src: &IRValueType) -> String;
 
     /// Generates AArch64 assembly for a function definition.
     /// Handles function prologue, body, and epilogue based on 
@@ -118,9 +118,9 @@ pub trait Codegen {
 
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String;
     
-    fn gen_asm_load(&mut self, dest: &IRLitType, addr: &IRAddr) -> String;
+    fn gen_asm_load(&mut self, dest: &IRValueType, addr: &IRAddr) -> String;
     
-    fn gen_asm_store(&mut self, src: &IRLitType, addr: &IRAddr) -> String;
+    fn gen_asm_store(&mut self, src: &IRValueType, addr: &IRAddr) -> String;
 
     fn gen_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String;
 
