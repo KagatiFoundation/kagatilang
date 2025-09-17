@@ -229,4 +229,6 @@ impl X86Codegen {
             _ => unimplemented!()
         }
     }
+
+    // fn resolve_register(&mut self, irlit: &IRValueType) -> Alloced
 }

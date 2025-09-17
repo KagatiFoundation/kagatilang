@@ -275,8 +275,8 @@ pub trait IRGen {
         }
 
         let (ir_lit, reg_size) = match lit_expr.result_type {
-            LitTypeVariant::I32 => (IRImmVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")), 4_usize),
-            LitTypeVariant::U8 => (IRImmVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")), 4_usize),
+            LitTypeVariant::I32 => (IRImmVal::Int32(*lit_expr.value.unwrap_i32().expect("No i32 value!")), 8_usize),
+            LitTypeVariant::U8 => (IRImmVal::U8(*lit_expr.value.unwrap_u8().expect("No u8 value!")), 8_usize),
             _ => todo!(),
         };
 

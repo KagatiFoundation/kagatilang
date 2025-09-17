@@ -619,7 +619,7 @@ impl IRGen for Aarch64IRGen {
         };
         let prepare_size_ptr = IRInstr::Mov { 
             dest: load_param_2_size,
-            src: IRValueType::Const(IRImmVal::Int32(ob_size as i32)),
+            src: IRValueType::Const(IRImmVal::Int64(ob_size as i64)),
         };
 
         // generate code to move value from .rodata to heap

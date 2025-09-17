@@ -207,3 +207,138 @@ impl LivenessAnalyzer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use kagc_symbol::StorageClass;
+    use kagc_target::reg::REG_SIZE_8;
+
+    use crate::ir_instr::*;
+    use crate::ir_liveness::LivenessAnalyzer;
+    use crate::ir_types::*;
+
+    fn next_temp(temp: &mut usize) -> usize {
+        let curr = *temp;
+        *temp += 1;
+        curr
+    }
+
+    #[test]
+    fn test_mini_liveness_analyzer() {
+        let mut temp: usize = 0;
+        let fn_ir = IRFunc {
+            name: "f".to_string(),
+            class: StorageClass::GLOBAL,
+            is_leaf: true,
+            id: 1,
+            scope_id: 0,
+            params: vec![],
+            body: vec![
+                IR::Instr(IRInstr::Mov { 
+                    // temp 0
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IRValueType::Const(IRImmVal::Int32(32))
+                }),
+                IR::Instr(IRInstr::Mov { 
+                    // temp 1
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IRValueType::Const(IRImmVal::Int32(32))
+                }),
+                IR::Instr(IRInstr::Add { 
+                    // temp 2
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IRValueType::ExtendedTemp { id: 0, size: REG_SIZE_8 }, 
+                    op2: IRValueType::ExtendedTemp { id: 1, size: REG_SIZE_8 }
+                }),
+                IR::Instr(IRInstr::Mov { 
+                    // temp 3
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IRValueType::Const(IRImmVal::Int32(32))
+                }),
+                IR::Instr(IRInstr::Sub { 
+                    // temp 4
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IRValueType::ExtendedTemp { id: 2, size: REG_SIZE_8 }, 
+                    op2: IRValueType::ExtendedTemp { id: 3, size: REG_SIZE_8 }
+                }),
+            ],
+        };
+        let analysis_res = LivenessAnalyzer::analyze_fn_temps(&fn_ir);
+        assert_eq!(analysis_res.get(&0), Some(&(0, 2)));
+        assert_eq!(analysis_res.get(&2), Some(&(2, 2)));
+        assert_eq!(analysis_res.get(&4), Some(&(4, 0)));
+    }
+
+    #[test]
+    fn test_dead_temps() {
+        let mut temp: usize = 0;
+        let fn_ir = IRFunc {
+            name: "dead_test".to_string(),
+            class: StorageClass::GLOBAL,
+            is_leaf: true,
+            id: 2,
+            scope_id: 0,
+            params: vec![],
+            body: vec![
+                IR::Instr(IRInstr::Mov {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IRValueType::Const(IRImmVal::Int32(10)) // temp 0
+                }),
+                IR::Instr(IRInstr::Mov {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 },
+                    src: IRValueType::Const(IRImmVal::Int32(20)) // temp 1 (never used)
+                }),
+                IR::Instr(IRInstr::Add {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 },
+                    op1: IRValueType::ExtendedTemp { id: 0, size: REG_SIZE_8 },
+                    op2: IRValueType::Const(IRImmVal::Int32(5)) // temp 2
+                }),
+            ],
+        };
+
+        let analysis_res = LivenessAnalyzer::analyze_fn_temps(&fn_ir);
+        assert_eq!(analysis_res.get(&0), Some(&(0, 2))); // used in add
+        assert_eq!(analysis_res.get(&1), Some(&(1, 0))); // never used, live range = 0
+        assert_eq!(analysis_res.get(&2), Some(&(2, 0))); // last temp, never used afterwards
+    }
+
+    #[test]
+    fn test_independent_temps() {
+        let mut temp: usize = 0;
+        let fn_ir = IRFunc {
+            name: "indep_test".to_string(),
+            class: StorageClass::GLOBAL,
+            is_leaf: true,
+            id: 4,
+            scope_id: 0,
+            params: vec![],
+            body: vec![
+                IR::Instr(IRInstr::Mov {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IRValueType::Const(IRImmVal::Int32(5)) // temp 0
+                }),
+                IR::Instr(IRInstr::Mov {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IRValueType::Const(IRImmVal::Int32(10)) // temp 1
+                }),
+                IR::Instr(IRInstr::Add {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IRValueType::ExtendedTemp { id: 0, size: REG_SIZE_8 },
+                    op2: IRValueType::Const(IRImmVal::Int32(1)) // temp 2
+                }),
+                IR::Instr(IRInstr::Mul {
+                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IRValueType::ExtendedTemp { id: 1, size: REG_SIZE_8 },
+                    op2: IRValueType::Const(IRImmVal::Int32(2)) // temp 3
+                }),
+            ],
+        };
+
+        let analysis_res = LivenessAnalyzer::analyze_fn_temps(&fn_ir);
+        assert_eq!(analysis_res.get(&0), Some(&(0, 2))); // used in add
+        assert_eq!(analysis_res.get(&1), Some(&(1, 2))); // used in mul
+        assert_eq!(analysis_res.get(&2), Some(&(2, 0))); // last temp in add chain
+        assert_eq!(analysis_res.get(&3), Some(&(3, 0))); // last temp in mul chain
+    }
+
+}

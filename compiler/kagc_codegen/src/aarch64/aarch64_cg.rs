@@ -713,10 +713,10 @@ impl Aarch64Codegen {
             IRValueType::Const(irlit_val) => {
                 match irlit_val {
                     IRImmVal::Int32(value) => format!("{:#x}", *value),
+                    IRImmVal::Int64(value) => format!("{:#x}", *value),
                     IRImmVal::U8(value) => format!("{:#x}", *value),
                     IRImmVal::Str(value, ..) => value.clone(),
                     IRImmVal::Null => "#0".to_string(), // Null is just '0' under the hood. LOL
-                    _ => todo!()
                 }
             },
 

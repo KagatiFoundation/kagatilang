@@ -99,7 +99,7 @@ impl ConstPool {
         if let Some(item) = self.get(idx) {
             return match &item.value {
                 KagcConst::Str(value) => Some(value.len() + 1 /* +1 for null byte */),
-                KagcConst::Int(_) => Some(4),
+                KagcConst::Int(_) => Some(8),
                 KagcConst::Bool(_) => Some(1),
 
                 KagcConst::Record(record_const) => {
@@ -137,5 +137,135 @@ impl ConstPool {
 
     pub fn iter_enumerated(&self) -> impl Iterator<Item = (PoolIdx, &ConstEntry)> {
         self.entries.iter().enumerate()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indexmap::IndexMap;
+    use kagc_types::builtins::obj::KObjType;
+
+    #[test]
+    fn test_insert_and_deduplication() {
+        let mut pool = ConstPool::default();
+
+        let idx1 = pool.insert(KagcConst::Int(42), KObjType::KInt, None);
+        let idx2 = pool.insert(KagcConst::Int(42), KObjType::KInt, None);
+
+        assert_eq!(idx1, idx2, "Inserting the same constant should reuse index");
+        assert_eq!(pool.len(), 1);
+    }
+
+    #[test]
+    fn test_insert_different_constants() {
+        let mut pool = ConstPool::default();
+
+        let idx1 = pool.insert(KagcConst::Int(10), KObjType::KInt, None);
+        let idx2 = pool.insert(KagcConst::Bool(true), KObjType::KInt, None);
+
+        assert_ne!(idx1, idx2);
+        assert_eq!(pool.len(), 2);
+    }
+
+    #[test]
+    fn test_size_primitives() {
+        let mut pool = ConstPool::default();
+
+        let idx_str = pool.insert(KagcConst::Str("hello".into()), KObjType::KStr, None);
+        let idx_int = pool.insert(KagcConst::Int(123), KObjType::KInt, None);
+        let idx_bool = pool.insert(KagcConst::Bool(true), KObjType::KInt, None);
+
+        assert_eq!(pool.size(idx_str), Some(6)); // 5 chars + null terminator
+        assert_eq!(pool.size(idx_int), Some(8));
+        assert_eq!(pool.size(idx_bool), Some(1));
+    }
+
+    #[test]
+    fn test_size_record() {
+        let mut pool = ConstPool::default();
+
+        let idx_str = pool.insert(KagcConst::Str("abc".into()), KObjType::KStr, None);
+        let idx_bool = pool.insert(KagcConst::Bool(true), KObjType::KInt, None);
+
+        let mut fields = IndexMap::new();
+        fields.insert("field1".to_string(), idx_str);
+        fields.insert("field2".to_string(), idx_bool);
+
+        let record = RecordConst {
+            type_name: "MyRecord".to_string(),
+            alias: "r".to_string(),
+            fields: OrderedMap(fields),
+            alignment: 4,
+        };
+
+        let idx_record = pool.insert(KagcConst::Record(record),KObjType::KRec, None);
+
+        // Size = len("abc")+1 + 1 = 4+1 = 5
+        assert_eq!(pool.size(idx_record), Some(5));
+    }
+
+    #[test]
+    fn test_size_record_with_invalid_field() {
+        let mut pool = ConstPool::default();
+
+        let mut fields = IndexMap::new();
+        fields.insert("broken".to_string(), 99); // invalid index
+
+        let record = RecordConst {
+            type_name: "Broken".to_string(),
+            alias: "b".to_string(),
+            fields: OrderedMap(fields),
+            alignment: 8,
+        };
+
+        let idx = pool.insert(KagcConst::Record(record), KObjType::KRec, None);
+
+        assert_eq!(pool.size(idx), None, "Should return None if field index is invalid");
+    }
+
+    #[test]
+    fn test_pool_state_methods() {
+        let mut pool = ConstPool::default();
+        assert!(pool.is_empty());
+
+        let idx = pool.insert(KagcConst::Int(1), KObjType::KInt, Some(123));
+        assert!(!pool.is_empty());
+        assert_eq!(pool.len(), 1);
+
+        let entry = pool.get(idx).unwrap();
+        assert_eq!(entry.origin_func, Some(123));
+
+        let collected: Vec<_> = pool.iter().collect();
+        assert_eq!(collected.len(), 1);
+
+        let enumerated: Vec<_> = pool.iter_enumerated().collect();
+        assert_eq!(enumerated[0].0, idx);
+    }
+
+    #[test]
+    fn test_ordered_map_hash_and_equality() {
+        use std::collections::hash_map::DefaultHasher;
+
+        let mut m1 = IndexMap::new();
+        m1.insert("a".to_string(), 1);
+        m1.insert("b".to_string(), 2);
+
+        let mut m2 = IndexMap::new();
+        m2.insert("a".to_string(), 1);
+        m2.insert("b".to_string(), 2);
+
+        let ordered1 = OrderedMap(m1);
+        let ordered2 = OrderedMap(m2);
+
+        assert_eq!(ordered1, ordered2);
+
+        let mut hasher1 = DefaultHasher::new();
+        ordered1.hash(&mut hasher1);
+
+        let mut hasher2 = DefaultHasher::new();
+        ordered2.hash(&mut hasher2);
+
+        assert_eq!(hasher1.finish(), hasher2.finish());
     }
 }
