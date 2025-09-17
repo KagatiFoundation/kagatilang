@@ -225,15 +225,6 @@ impl X86Codegen {
                     _ => todo!()
                 }
             },
-            
-            IRValueType::Reg { idx, size, .. } => {
-                if *size == 4 {
-                    format!("w{}", *idx)
-                }
-                else {
-                    format!("x{}", *idx)
-                }
-            },
 
             _ => unimplemented!()
         }

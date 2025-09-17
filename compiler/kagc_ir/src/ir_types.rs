@@ -3,13 +3,15 @@
 
 use kagc_ast::ASTOperation;
 use kagc_symbol::Symbol;
-use kagc_target::reg::RegIdx;
 use kagc_target::reg::RegSize;
 
 use crate::LabelId;
 
 /// Temporary identifier.
 pub type TempId = usize;
+
+/// Argument position.
+pub type ArgPos = usize;
 
 #[derive(Debug, Clone)]
 pub enum IRImmVal {
@@ -35,16 +37,32 @@ impl IRImmVal {
 #[derive(Debug, Clone)]
 pub enum IRValueType {
     Const(IRImmVal),
-    
-    Reg {
-        temp: TempId,
-        idx: RegIdx,
-        size: RegSize
-    },
 
     ExtendedTemp {
         id: TempId,
         size: RegSize
+    },
+
+    ArgOut {
+        temp: TempId,
+        position: ArgPos,
+        size: usize,
+    },
+
+    ArgIn {
+        position: ArgPos,
+        size: usize
+    },
+
+    RetIn {
+        position: usize,
+        size: usize
+    },
+
+    RetOut {
+        position: usize,
+        temp: TempId,
+        size: usize
     },
 
     /// Stack offset
@@ -103,18 +121,17 @@ impl IRValueType {
     pub fn into_str(&self) -> String {
         match self {
             Self::Const(irlit_val) => irlit_val.into_str(),
-            Self::Reg{ idx, .. } => format!("x{}", *idx),
             Self::StackOff(off) => off.to_string(),
             Self::ExtendedTemp { id, .. } => id.to_string(),
+            Self::ArgOut { temp, .. } => temp.to_string(),
+            Self::ArgIn { position, .. } => position.to_string(),
+            Self::RetIn { position, .. } => position.to_string(),
+            Self::RetOut { position, .. } => position.to_string(),
         }
     }
 
     check_instr_type!(is_const, Const);
     check_instr_type!(is_stack_off, StackOff);
-
-    pub fn is_reg(&self) -> bool {
-        matches!(self, Self::Reg { .. })
-    }
 
     impl_as_irlit_type!(as_const, Const, IRImmVal);
     impl_as_irlit_type!(as_stack_off, StackOff, usize);
@@ -122,13 +139,6 @@ impl IRValueType {
     pub fn as_ext_temp(&self) -> Option<usize> {
         match self {
             Self::ExtendedTemp { id, .. } => Some(*id),
-            _ => None
-        }
-    }
-
-    pub fn as_reg(&self) -> Option<(RegIdx, usize)> {
-        match self {
-            Self::Reg { idx, size, .. } => Some((*idx, *size)),
             _ => None
         }
     }

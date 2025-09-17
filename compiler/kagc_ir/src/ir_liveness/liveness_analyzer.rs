@@ -2,14 +2,12 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::collections::HashMap;
-use kagc_target::reg::RegIdx;
-use crate::{
-    ir_instr::*, 
-    ir_types::{
-        IRValueType, 
-        TempId
-    }
-};
+use crate::ir_instr::IRAddr;
+use crate::ir_instr::IRFunc;
+use crate::ir_instr::IRInstr;
+use crate::ir_instr::IR;
+use crate::ir_types::IRValueType;
+use crate::ir_types::TempId;
 
 /// Live range of a temporary
 pub type LiveRange = (usize, usize);
@@ -89,7 +87,10 @@ impl LivenessAnalyzer {
                 if let Some(IRValueType::ExtendedTemp{ id, ..}) = instr.dest() {
                     Some(id)
                 }
-                else if let Some(IRValueType::Reg { temp, .. }) = instr.dest() {
+                else if let Some(IRValueType::RetOut { temp, .. }) = instr.dest() {
+                    Some(temp)
+                }
+                else if let Some(IRValueType::ArgOut { temp, .. }) = instr.dest() {
                     Some(temp)
                 }
                 else {
@@ -137,8 +138,10 @@ impl LivenessAnalyzer {
                         [
                             op1.as_ext_temp() == Some(temp_lookup),
                             op2.as_ext_temp() == Some(temp_lookup),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_reg()),
-                            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_reg())
+                            Self::is_temp_used_in_ret_out(temp_lookup, op1),
+                            Self::is_temp_used_in_arg_out(temp_lookup, op1),
+                            Self::is_temp_used_in_ret_out(temp_lookup, op2),
+                            Self::is_temp_used_in_arg_out(temp_lookup, op2),
                         ].iter().any(|c| *c)
                     },
 
@@ -156,8 +159,9 @@ impl LivenessAnalyzer {
 
     fn uses_temp_in_ir_lit(ir_lit: &IRValueType, temp: usize) -> bool {
         match ir_lit {
-            IRValueType::ExtendedTemp{ id, .. } => *id == temp,
-            IRValueType::Reg { temp: id, .. } => *id == temp,
+            IRValueType::ExtendedTemp { id, .. } => *id == temp,
+            IRValueType::ArgOut { temp: id, .. } => *id == temp,
+            IRValueType::RetOut { temp: id, .. } => *id == temp,
             _ => false
         }
     }
@@ -167,15 +171,27 @@ impl LivenessAnalyzer {
             dest.as_ext_temp() == Some(temp_lookup),
             op1.as_ext_temp() == Some(temp_lookup),
             op2.as_ext_temp() == Some(temp_lookup),
-            Self::is_temp_used_in_alloc_reg(temp_lookup, dest.as_reg()),
-            Self::is_temp_used_in_alloc_reg(temp_lookup, op1.as_reg()),
-            Self::is_temp_used_in_alloc_reg(temp_lookup, op2.as_reg())
+            Self::is_temp_used_in_arg_out(temp_lookup, dest),
+            Self::is_temp_used_in_ret_out(temp_lookup, dest),
+            Self::is_temp_used_in_arg_out(temp_lookup, op1),
+            Self::is_temp_used_in_ret_out(temp_lookup, op1),
+            Self::is_temp_used_in_arg_out(temp_lookup, op2),
+            Self::is_temp_used_in_ret_out(temp_lookup, op2),
         ].iter().any(|c| *c) 
     }
 
-    fn is_temp_used_in_alloc_reg(temp_lookup: usize, alloc_reg: Option<(RegIdx, usize)>) -> bool {
-        if let Some((_, temp)) = alloc_reg {
-            temp == temp_lookup
+    fn is_temp_used_in_arg_out(temp_lookup: usize, arg_out: &IRValueType) -> bool {
+        if let IRValueType::ArgOut { temp, .. } = arg_out {
+            *temp == temp_lookup
+        }
+        else {
+            false
+        }
+    }
+
+    fn is_temp_used_in_ret_out(temp_lookup: usize, arg_out: &IRValueType) -> bool {
+        if let IRValueType::RetOut { temp, .. } = arg_out {
+            *temp == temp_lookup
         }
         else {
             false

@@ -661,7 +661,7 @@ impl Codegen for Aarch64Codegen {
         let mut output = "".to_string();
 
         for reg in Aarch64RegManager2::caller_saved_regs() {
-            if let Some(temp) = self.temp_reg_map.find_temp_by_reg(reg) {
+            if self.temp_reg_map.find_temp_by_reg(reg).is_some() {
                 // let alive = self.is_temp_alive_after(temp, 1);
             }
         }
@@ -671,7 +671,7 @@ impl Codegen for Aarch64Codegen {
     }
 
     fn gen_ir_reg_alloc(&mut self, dest: &IRValueType) -> String {
-        let alloced_reg = self.resolve_register(dest);
+        let _ = self.resolve_register(dest);
         String::new()
     }
 }
@@ -719,20 +719,20 @@ impl Aarch64Codegen {
                     _ => todo!()
                 }
             },
-            
-            IRValueType::Reg { idx, size, .. } => {
-                if *size == 4 {
-                    format!("w{}", *idx)
-                }
-                else {
-                    format!("x{}", *idx)
-                }
-            },
 
             IRValueType::ExtendedTemp { id, .. } => {
-                let src_reg: AllocedReg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
+                let src_reg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
                 src_reg.name()
             },
+
+            IRValueType::RetIn { position, size } => {
+                let src_reg = AllocedReg {
+                    idx: *position,
+                    size: *size,
+                    status: RegStatus::Free,
+                };
+                src_reg.name()
+            }
 
             _ => unimplemented!()
         }
@@ -742,8 +742,41 @@ impl Aarch64Codegen {
     /// Returns temporary ID with its mapped AllocedReg.
     fn resolve_register(&mut self, irlit: &IRValueType) -> (TempId, AllocedReg) {
         match irlit {
-            IRValueType::ExtendedTemp { id, size } => (*id, self.get_or_allocate_temp_register(*id, *size)),
-            IRValueType::Reg { idx, size, temp } => (*temp, self.get_or_allocate_specific_register(*idx, *temp, *size)),
+            IRValueType::ExtendedTemp { 
+                id, 
+                size 
+            } => (*id, self.get_or_allocate_temp_register(*id, *size)),
+            
+            IRValueType::ArgOut { 
+                temp, 
+                size, 
+                position 
+            } => (*temp, self.get_or_allocate_specific_register(*position, *temp, *size)),
+            
+            IRValueType::RetOut { 
+                position,
+                temp,
+                size
+            } => (*temp, self.get_or_allocate_specific_register(*position, *temp, *size)),
+
+            IRValueType::ArgIn { size, position } => {
+                let reg = AllocedReg {
+                    idx: *position,
+                    size: *size,
+                    status: RegStatus::Free
+                };
+                (0, reg)
+            },
+
+            IRValueType::RetIn { size, position } => {
+                let reg = AllocedReg {
+                    idx: *position,
+                    size: *size,
+                    status: RegStatus::Free
+                };
+                (0, reg)
+            },
+
             _ => {
                 println!("{irlit:#?}");
                 todo!()

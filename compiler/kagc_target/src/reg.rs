@@ -85,8 +85,6 @@ pub struct AllocedReg {
     /// The size of the allocated register (e.g., 32-bit, 64-bit).
     pub size: RegSize,
 
-    pub width: RegWidth,
-
     /// The index of the allocated register within the register set.
     pub idx: RegIdx,
 
@@ -98,7 +96,6 @@ impl AllocedReg {
     pub fn no_reg() -> Self {
         Self {
             size: 0xFFFFFFFF,
-            width: RegWidth::WORD,
             idx: INVALID_REG_IDX,
             status: RegStatus::Invalid
         }
@@ -109,7 +106,7 @@ impl AllocedReg {
     }
 
     pub fn name(&self) -> String {
-        if self.width == RegWidth::WORD {
+        if self.size == REG_SIZE_4 {
             format!("w{}", self.idx)
         }
         else {

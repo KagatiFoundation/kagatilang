@@ -10,7 +10,6 @@ mod tests {
     fn sample_alloced_reg(idx: u8) -> AllocedReg {
         AllocedReg {
             size: REG_SIZE_8,
-            width: RegWidth::QWORD,
             idx: idx as usize,
             status: RegStatus::Alloced,
         }

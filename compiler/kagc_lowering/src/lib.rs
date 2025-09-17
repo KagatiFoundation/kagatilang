@@ -197,9 +197,8 @@ pub trait IRGen {
         let alloc_rec = IRInstr::MemAlloc { 
             size: rec_creation.fields.len() * 8,
             ob_type: KObjType::KRec,
-            dest: IRValueType::Reg { 
-                temp: fn_ctx.next_temp(), 
-                idx: 0, 
+            dest: IRValueType::RetIn { 
+                position: 0, 
                 size: REG_SIZE_8
             }
         };
@@ -208,7 +207,6 @@ pub trait IRGen {
             src: alloc_rec.dest().unwrap(), 
             addr: IRAddr::StackOff(fn_ctx.next_stack_off()) 
         };
-
 
         let load_data_pointer = IRInstr::Load { 
             dest: IRValueType::ExtendedTemp { 

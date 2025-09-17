@@ -6,8 +6,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::vec;
 
-use kagc_ast::*;
-use kagc_ctx::*;
+use kagc_ast::contains_ops;
+use kagc_ast::ASTKind;
+use kagc_ast::ASTOperation;
+use kagc_ast::FuncCallExpr;
+use kagc_ast::IdentExpr;
+use kagc_ast::RecordFieldAccessExpr;
+use kagc_ast::AST;
+use kagc_ast::Stmt;
+use kagc_ctx::CompilerCtx;
 use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::Severity;
@@ -16,7 +23,6 @@ use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IR;
 use kagc_ir::ir_types::IRValueType;
 use kagc_ir::ir_types::IRImmVal;
-use kagc_ir::ir_types::TempId;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::*;
@@ -44,28 +50,22 @@ pub struct Aarch64IRGen {
 impl Aarch64IRGen {
     fn gen_store_param_ir(
         &self, 
-        param_tmp: TempId,
         sym: &Symbol, 
-        virtual_reg: RegIdx, 
+        arg_pos: usize, 
         fn_ctx: &mut FnCtx
     ) -> CGRes {
         let mut output = vec![];
         let reg_sz = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
-        let param_off = fn_ctx.next_stack_off();
-        let alloc_param_reg = IRInstr::RegAlloc {
-            dest: IRValueType::Reg {
-                temp: param_tmp, 
-                idx: virtual_reg, 
-                size: REG_SIZE_8 
-            },
-            idx: virtual_reg,
-            size: REG_SIZE_8
+        let store_arg_value = IRValueType::ArgIn { 
+            position: arg_pos, 
+            size: reg_sz 
         };
 
+        let param_off = fn_ctx.next_stack_off();
         let store_param_into_stack = IRInstr::Store { 
-            src: alloc_param_reg.dest().unwrap(),
+            src: store_arg_value.clone(),
             addr: IRAddr::StackOff(param_off)
         };
         output.push(IR::Instr(store_param_into_stack));
@@ -77,7 +77,7 @@ impl Aarch64IRGen {
                     size: REG_SIZE_8 
                 }, 
                 addr: IRAddr::BaseOff(
-                    alloc_param_reg.dest().unwrap(), 
+                    store_arg_value, 
                     GCOBJECT_BUFFER_IDX as i32
                 ) 
             };
@@ -148,18 +148,15 @@ impl IRGen for Aarch64IRGen {
                 let reg_sz = sym.lit_type.to_reg_size();
                 assert_ne!(reg_sz, 0);
 
-                let param_tmp: usize = fn_ctx.next_temp();
                 let store_param = self.gen_store_param_ir(
-                    param_tmp,
                     sym, 
                     virtual_reg, 
                     &mut fn_ctx
                 );
                 fn_body.extend(store_param.ok().unwrap());
 
-                let reg: IRValueType = IRValueType::Reg { 
-                    temp: param_tmp, 
-                    idx: virtual_reg, 
+                let reg: IRValueType = IRValueType::ArgIn { 
+                    position: virtual_reg, 
                     size: reg_sz 
                 };
                 virtual_reg += 1;
@@ -294,47 +291,45 @@ impl IRGen for Aarch64IRGen {
     }
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
-        let use_reg: bool = fn_ctx.force_reg_use;
-        let forced_reg: Option<usize> = fn_ctx.reg_counter;
+        let mut param_instrs = vec![];
+        let mut actual_params = vec![];
 
-        let mut param_instrs: Vec<IRInstr> = vec![];
-        let mut actual_params: Vec<(usize, IRValueType)> = vec![];
-
-        let num_args: usize = func_call_expr.args.len();
-        let mut last_instrs: Vec<(IRInstr, LitTypeVariant)> = vec![];
+        let num_args = func_call_expr.args.len();
+        let mut last_instrs = vec![];
 
         for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
             let param_reg_idx = num_args - 1 - rev_idx;
-            let current_tmp: usize = fn_ctx.temp_counter;
-            let p_instr: Vec<IRInstr> = self.__gen_expr(param_expr, fn_ctx)?;
+            let current_tmp = fn_ctx.temp_counter;
+            let p_instr = self.__gen_expr(param_expr, fn_ctx)?;
 
-            let last_instr: IRInstr = p_instr.last().unwrap().clone();
+            let last_instr = p_instr.last().unwrap().clone();
             last_instrs.push((last_instr, param_expr.result_type()));
 
-            let new_temp: usize = fn_ctx.temp_counter;
-            let tmp_reg_loc: usize = current_tmp + (new_temp - current_tmp) - 1;
+            let new_temp = fn_ctx.temp_counter;
+            let tmp_reg_loc = current_tmp + (new_temp - current_tmp) - 1;
 
             let reg_sz = param_expr.result_type().to_reg_size();
             assert_ne!(reg_sz, 0);
 
             param_instrs.extend(p_instr);
-            actual_params.push((param_reg_idx, IRValueType::ExtendedTemp{ id: tmp_reg_loc, size: reg_sz }));
-        }
-
-        if use_reg {
-            fn_ctx.force_reg_use(forced_reg.unwrap());
-        }
-        else {
-            fn_ctx.clear_reg_hint();
+            actual_params.push(
+                (
+                    param_reg_idx, 
+                    IRValueType::ExtendedTemp{ 
+                        id: tmp_reg_loc, 
+                        size: reg_sz 
+                    }
+                )
+            );
         }
 
         for (rev_idx, last_instr) in last_instrs.iter().rev().enumerate() {
-            let param_tmp: usize = fn_ctx.next_temp();
+            let param_tmp = fn_ctx.next_temp();
             param_instrs.push(
                 IRInstr::Mov {
-                    dest: IRValueType::Reg{ 
+                    dest: IRValueType::ArgOut { 
                         temp: param_tmp, 
-                        idx: rev_idx, 
+                        position: rev_idx, 
                         size: last_instr.1.to_reg_size() 
                     }, 
                     src: last_instr.0.dest().unwrap()
@@ -342,34 +337,14 @@ impl IRGen for Aarch64IRGen {
             );
         }
 
-        let mut preserve_ret_val_instr = None; 
-        if !func_call_expr.result_type.is_void() && !func_call_expr.result_type.is_none() {
-            let reg_sz = func_call_expr.result_type.to_reg_size();
-            assert_ne!(reg_sz, 0);
-
-            preserve_ret_val_instr = Some(IRInstr::Mov {
-                dest: IRValueType::ExtendedTemp { 
-                    id: fn_ctx.next_temp(), 
-                    size: reg_sz 
-                },
-                src: IRValueType::Reg { 
-                    temp: fn_ctx.next_temp(), 
-                    idx: 0, 
-                    size: reg_sz 
-                }
-            });
-        }
-
         param_instrs.push(IRInstr::Call {
             fn_name: func_call_expr.symbol_name.clone(),
             params: actual_params,
-            return_type: None // fn_call_ret_type
+            return_type: Some(IRValueType::RetIn {
+                position: 0,
+                size: REG_SIZE_8
+            })
         });
-
-        if let Some(preserve_instr) = preserve_ret_val_instr {
-            param_instrs.push(preserve_instr); 
-        }
-
         Ok(param_instrs)
     }
 
@@ -395,7 +370,11 @@ impl IRGen for Aarch64IRGen {
                     ret_instrs.push(
                         IR::Instr(
                             IRInstr::Mov {
-                                dest: IRValueType::Reg{ temp: ret_tmp, idx: 0, size: reg_sz },
+                                dest: IRValueType::RetOut { 
+                                    temp: ret_tmp, 
+                                    position: 0, 
+                                    size: reg_sz 
+                                },
                                 src: last_instr.dest().unwrap()
                             }
                         )
@@ -550,34 +529,24 @@ impl IRGen for Aarch64IRGen {
         let gc_alloc = IRInstr::MemAlloc { 
             size: ob_size,
             ob_type: obj.ob_type.clone(),
-            dest: IRValueType::Reg { 
-                temp: fn_ctx.next_temp(), 
-                idx: 0, 
+            dest: IRValueType::RetIn { 
+                position: 0, 
                 size: REG_SIZE_8
             }
         };
+        let gc_obj_dest = gc_alloc.dest().unwrap();
 
         // STR instruction's stack offset
         let store_off = fn_ctx.next_stack_off();
 
         // store the allocated memory's address on the stack
         let store_mem_addr = IRInstr::Store { 
-            src: gc_alloc.dest().unwrap(), 
+            src: gc_obj_dest.clone(), 
             addr: IRAddr::StackOff(store_off)
         };
 
         output.push(gc_alloc);
         output.push(store_mem_addr);
-
-        // Load the `data` section from the `gc_object_t` object in the memory.
-        // It is at the 32 bytes offset.
-        let load_gc_alloced_obj_canon = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp { 
-                id: fn_ctx.next_temp(), 
-                size: REG_SIZE_8
-            }, 
-            addr: IRAddr::StackOff(store_off)
-        };
 
         /* 
             Offset the destination register by 32 bytes. But why 32? Let me explain.
@@ -598,12 +567,10 @@ impl IRGen for Aarch64IRGen {
                 size: REG_SIZE_8 
             }, 
             addr: IRAddr::BaseOff(
-                load_gc_alloced_obj_canon.dest().unwrap(), 
+                gc_obj_dest, 
                 GCOBJECT_BUFFER_IDX as i32
             )
         };
-
-        output.push(load_gc_alloced_obj_canon);
 
         let load_glob_value_from_pool = IRInstr::LoadGlobal { 
             pool_idx: idx, 
@@ -617,13 +584,14 @@ impl IRGen for Aarch64IRGen {
             Load the destination pointer where the global value 
             is going to be stored.
          */
-        let x0_reg_temp = IRValueType::Reg { 
+        let load_param_0_dest = IRValueType::ArgOut { 
             temp: fn_ctx.next_temp(), 
-            idx: 0, 
-            size: REG_SIZE_8 
+            position: 0, 
+            size: REG_SIZE_8,
         };
+
         let prepare_dst_ptr = IRInstr::Mov { 
-            dest: x0_reg_temp,
+            dest: load_param_0_dest,
             src: load_gc_alloced_obj_data.dest().unwrap(),
         };
 
@@ -631,26 +599,26 @@ impl IRGen for Aarch64IRGen {
             Source pointer of the global variable. Initially, 
             the value is located at .rodata section of the executable.
          */
-        let x1_reg_temp = IRValueType::Reg { 
+        let load_param_1_src = IRValueType::ArgOut { 
             temp: fn_ctx.next_temp(), 
-            idx: 1, 
-            size: REG_SIZE_8 
+            position: 1, 
+            size: REG_SIZE_8,
         };
         let prepare_src_ptr = IRInstr::Mov { 
-            dest: x1_reg_temp,
+            dest: load_param_1_src,
             src: load_glob_value_from_pool.dest().unwrap(),
         };
 
         /*
             Size of the global value.
          */
-        let x2_reg_temp = IRValueType::Reg { 
+        let load_param_2_size = IRValueType::ArgOut { 
             temp: fn_ctx.next_temp(), 
-            idx: 2, 
-            size: REG_SIZE_8
+            position: 2, 
+            size: REG_SIZE_8,
         };
         let prepare_size_ptr = IRInstr::Mov { 
-            dest: x2_reg_temp,
+            dest: load_param_2_size,
             src: IRValueType::Const(IRImmVal::Int32(ob_size as i32)),
         };
 

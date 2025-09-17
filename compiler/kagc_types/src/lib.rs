@@ -26,7 +26,8 @@ pub mod record;
 pub mod builtins;
 
 use core::panic;
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
+use std::fmt::Display;
 
 use lazy_static::lazy_static;
 
@@ -204,14 +205,12 @@ impl LitTypeVariant {
             | Self::F64
             | Self::Str
             | Self::PoolStr
+            | Self::U8
             | Self::RawStr => 8,
 
             // 4 bytes
             Self::F32 | 
             Self::I32 => 4,
-
-            // 1 byte
-            Self::U8 => 1,
 
             // 2 bytes
             Self::I16 => 2,

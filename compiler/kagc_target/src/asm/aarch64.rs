@@ -1,26 +1,5 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 use std::collections::{HashMap, VecDeque};
 
@@ -44,7 +23,6 @@ impl AllocedReg {
         AllocedReg {
             idx: EARLY_RETURN,
             size: 0,
-            width: RegWidth::WORD,
             status: RegStatus::Invalid
         }
     }
@@ -80,18 +58,10 @@ impl Aarch64RegManager2 {
         self.available_registers[reg_to_spill] = true; 
         self.register_map.remove(&reg_to_spill);
 
-        let width = if alloc_size == 8 {
-            RegWidth::QWORD
-        }
-        else {
-            RegWidth::WORD
-        };
-
         AllocedReg { 
             size: alloc_size, 
             idx: reg_to_spill,
             status: RegStatus::Spilled,
-            width
         }
     }
 
@@ -124,18 +94,10 @@ impl RegManager2 for Aarch64RegManager2 {
                     }
                 );
 
-                let width = if alloc_size == 8 {
-                    RegWidth::QWORD
-                }
-                else {
-                    RegWidth::WORD
-                };
-
                 return AllocedReg {
                     idx: i,
                     size: alloc_size,
                     status: RegStatus::Alloced,
-                    width
                 };
             }
         }
@@ -163,17 +125,9 @@ impl RegManager2 for Aarch64RegManager2 {
                 }
             );
 
-            let width = if alloc_size == 8 {
-                RegWidth::QWORD
-            }
-            else {
-                RegWidth::WORD
-            };
-
             let a = AllocedReg {
                 idx,
                 size: alloc_size,
-                width,
                 status: RegStatus::Alloced
             };
             return a;
@@ -201,17 +155,9 @@ impl RegManager2 for Aarch64RegManager2 {
                     }
                 );
 
-                let width = if alloc_size == 8 {
-                    RegWidth::QWORD
-                }
-                else {
-                    RegWidth::WORD
-                };
-
                 return AllocedReg {
                     idx: i,
                     size: alloc_size,
-                    width,
                     status: RegStatus::Alloced
                 };
             }
@@ -234,17 +180,9 @@ impl RegManager2 for Aarch64RegManager2 {
                 }
             );
 
-            let width = if alloc_size == 8 {
-                RegWidth::QWORD
-            }
-            else {
-                RegWidth::WORD
-            };
-
             return AllocedReg {
                 idx,
                 size: alloc_size,
-                width,
                 status: RegStatus::Alloced
             };
         }
@@ -341,7 +279,6 @@ mod tests {
         let mut mgr = setup_manager();
         let reg = mgr.allocate_register(8);
         assert_eq!(reg.size, 8);
-        assert_eq!(reg.width, RegWidth::QWORD);
         assert_eq!(reg.status, RegStatus::Alloced);
 
         assert!(mgr.register_map.contains_key(&reg.idx));
@@ -353,7 +290,6 @@ mod tests {
         let mut mgr = setup_manager();
         let reg = mgr.allocate_param_register(4);
         assert_eq!(reg.size, 4);
-        assert_eq!(reg.width, RegWidth::WORD);
         assert_eq!(reg.status, RegStatus::Alloced);
 
         assert!(mgr.register_map.contains_key(&reg.idx));
@@ -367,7 +303,6 @@ mod tests {
         let reg = mgr.allocate_register_with_idx(8, 10, AllocStrategy::NoSpill);
         assert_eq!(reg.idx, 10);
         assert_eq!(reg.size, 8);
-        assert_eq!(reg.width, RegWidth::QWORD);
         assert!(!mgr.is_free(10));
     }
 

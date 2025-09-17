@@ -13,9 +13,7 @@ use kagc_types::builtins::obj::KObjType;
 pub(crate) enum IRToASMState {
     Local,
 
-    Global,
-
-    FuncCall
+    Global
 }
 
 pub trait Codegen { 
