@@ -61,7 +61,12 @@ pub trait IRGen {
         output
     }
 
-    fn gen_ir_from_node(&mut self, node: &mut AST, fn_ctx: &mut FnCtx, parent_ast_kind: ASTOperation) -> CGRes {
+    fn gen_ir_from_node(
+        &mut self, 
+        node: &mut AST, 
+        fn_ctx: &mut FnCtx, 
+        parent_ast_kind: ASTOperation
+    ) -> CGRes {
         if node.operation == ASTOperation::AST_GLUE {
             let mut output: Vec<IR> = vec![];
             if let Some(left) = node.left.as_mut() {
@@ -81,7 +86,7 @@ pub trait IRGen {
             return self.gen_ir_var_decl(node, fn_ctx);
         }
         else if node.operation == ASTOperation::AST_FUNC_CALL {
-            return self.gen_ir_fn_call(node, fn_ctx);
+            return self.gen_ir_fn_call(node, fn_ctx, None);
         }
         else if node.operation == ASTOperation::AST_LOOP {
             return self.gen_ir_loop(node, fn_ctx);
@@ -109,41 +114,21 @@ pub trait IRGen {
         }
     }
 
-    fn gen_ir_fn_call(&mut self, node: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_fn_call(&mut self, node: &mut AST, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGRes {
         if let ASTKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
             let mut result: Vec<IR> = vec![];
-            
-            self.gen_ir_fn_call_expr(func_call, fn_ctx).iter().for_each(|instrs| {
+            self.gen_ir_fn_call_expr(func_call, fn_ctx, dest).iter().for_each(|instrs| {
                 instrs.iter().for_each(|instr| {
                     result.push(IR::Instr(instr.clone()));
                 });
             });
-
             return Ok(result);
         }
         panic!()
     }
 
-    fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes;
-
-    fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
-
-    fn gen_ir_return(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
-
-    fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
-
-    fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
-
-    fn gen_ir_label(&self, label_id: LabelId) -> CGRes;
-
-    fn gen_ir_jump(&self, label_id: LabelId) -> CGRes;
-
-    fn lower_import_to_ir(&self) -> CGRes;
-
-    fn lower_rec_decl_to_ir(&mut self, node: &mut AST) -> CGRes;
-
     /// Generate IR nodes from an AST expression node.
-    fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {ast:#?}");
         }
@@ -153,23 +138,23 @@ pub trait IRGen {
             .as_expr_mut()
             .unwrap_or_else(|| panic!("Cannot unwrap an expression for some reason. Aborting..."));
 
-        self.__gen_expr(expr, fn_ctx)
+        self.__gen_expr(expr, fn_ctx, dest)
     }
 
-    fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         match expr {
-            Expr::LitVal(litexpr) => self.gen_lit_ir_expr(litexpr, fn_ctx),
-            Expr::Binary(binexpr) => self.gen_bin_ir_expr(binexpr, fn_ctx),
-            Expr::Ident(identexpr) => self.gen_ident_ir_expr(identexpr, fn_ctx),
-            Expr::FuncCall(funccallexpr) => self.gen_ir_fn_call_expr(funccallexpr, fn_ctx),
-            Expr::RecordCreation(ref mut recexpr) => self.lower_rec_creation_to_ir(recexpr, fn_ctx),
-            Expr::RecordFieldAccess(recfieldexpr) => self.lower_rec_field_access_to_ir(recfieldexpr, fn_ctx),
+            Expr::LitVal(litexpr) => self.gen_lit_ir_expr(litexpr, fn_ctx, dest),
+            Expr::Binary(binexpr) => self.gen_bin_ir_expr(binexpr, fn_ctx, dest),
+            Expr::Ident(identexpr) => self.gen_ident_ir_expr(identexpr, fn_ctx, dest),
+            Expr::FuncCall(funccallexpr) => self.gen_ir_fn_call_expr(funccallexpr, fn_ctx, dest),
+            Expr::RecordCreation(ref mut recexpr) => self.lower_rec_creation_to_ir(recexpr, fn_ctx, dest),
+            Expr::RecordFieldAccess(recfieldexpr) => self.lower_rec_field_access_to_ir(recfieldexpr, fn_ctx, dest),
             Expr::Null => self.lower_null_const_to_ir(fn_ctx),
             _ => todo!()
         }
     }
 
-    fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         let mut child_offsets = vec![];
         let mut output = vec![];
         if let Some(entry) = self.ctx().borrow().const_pool.get(rec_creation.pool_idx) {
@@ -244,15 +229,17 @@ pub trait IRGen {
             output.push(store_child_mem);
         }
 
-        let load_canon_pointer = IRInstr::Load { 
-            dest: IROperand::Temp { 
-                id: fn_ctx.next_temp(), 
-                size: REG_SIZE_8
-            }, 
-            addr: IRAddr::StackOff(rec_base_off)
-        };
+        let dest = dest.unwrap_or(IROperand::Temp {
+            id: fn_ctx.next_temp(),
+            size: REG_SIZE_8
+        });
 
-        output.push(load_canon_pointer);
+        output.push(
+            IRInstr::Load { 
+                dest, 
+                addr: IRAddr::StackOff(rec_base_off)
+            }
+        );
 
         // record's base offset
         fn_ctx.var_offsets.insert(rec_creation.rec_alias.clone(), rec_base_off);
@@ -269,7 +256,7 @@ pub trait IRGen {
         ])
     }
 
-    fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
             return self.gen_ir_load_str(*pool_idx, fn_ctx);
         }
@@ -280,12 +267,16 @@ pub trait IRGen {
             _ => todo!(),
         };
 
+        let dest = dest.unwrap_or(IROperand::Temp {
+            id: fn_ctx.next_temp(),
+            size: reg_size,
+        });
+
         Ok(vec![
-            IRInstr::mov_into_temp(
-                fn_ctx.next_temp(), 
-                IROperand::Const(ir_lit),
-                reg_size
-            )
+            IRInstr::Mov { 
+                dest, 
+                src: IROperand::Const(ir_lit)
+            }
         ])
     }
 
@@ -293,45 +284,51 @@ pub trait IRGen {
         self.gen_ir_load_global_var(idx, fn_ctx)
     }
 
-    fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
 
-        let left_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.left, fn_ctx)?;
-        let right_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.right, fn_ctx)?;
+        let eval_left_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.left, fn_ctx, None)?;
+        let eval_right_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.right, fn_ctx, None)?;
 
-        let left_dest: &IRInstr = left_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
-        let right_dest: &IRInstr = right_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
+        let left_dest = eval_left_expr
+            .last()
+            .unwrap_or_else(|| panic!("No left destination found! Abort!"));
+        let right_dest = eval_right_expr
+            .last()
+            .unwrap_or_else(|| panic!("No left destination found! Abort!"));
 
         fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IROperand {
             let reg_sz = result_type.to_reg_size();
             IROperand::Temp { id: fn_ctx.next_temp(), size: reg_sz }
         }
 
-        let bin_expr_type: IRInstr = match bin_expr.operation {
+        let dest = dest.unwrap_or(dest_extd_temp(fn_ctx, bin_expr.result_type.clone()));
+
+        let perform_bin_opr: IRInstr = match bin_expr.operation {
             ASTOperation::AST_ADD => {
                 self.lower_add_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
+                    dest,
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
             },
             ASTOperation::AST_SUBTRACT => {
                 self.lower_sub_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
+                    dest,
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
             },
             ASTOperation::AST_MULTIPLY => {
                 self.lower_mul_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
+                    dest,
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
             },
             ASTOperation::AST_DIVIDE => {
                 self.lower_div_to_ir(
-                    dest_extd_temp(fn_ctx, bin_expr.result_type.clone()), 
+                    dest,
                     left_dest.dest().unwrap(), 
                     right_dest.dest().unwrap()
                 )
@@ -342,7 +339,8 @@ pub trait IRGen {
             ASTOperation::AST_NEQ   | ASTOperation::AST_EQEQ => 
             {
                 let parent_ast_kind: ASTOperation = fn_ctx.parent_ast_kind;
-                if (parent_ast_kind == ASTOperation::AST_IF) || (parent_ast_kind == ASTOperation::AST_WHILE) {
+                let is_cond_dependent = (parent_ast_kind == ASTOperation::AST_IF) || (parent_ast_kind == ASTOperation::AST_WHILE);
+                if is_cond_dependent {
                     self.gen_ir_cmp_and_jump(
                         left_dest.dest().unwrap(), 
                         right_dest.dest().unwrap(), 
@@ -358,10 +356,9 @@ pub trait IRGen {
             _ => todo!()
         };
 
-        irs.extend(left_expr);
-        irs.extend(right_expr);
-        irs.push(bin_expr_type);
-
+        irs.extend(eval_left_expr);
+        irs.extend(eval_right_expr);
+        irs.push(perform_bin_opr);
         Ok(irs)
     }
 
@@ -380,7 +377,12 @@ pub trait IRGen {
         }
     }
 
-    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
+    fn gen_ir_fn_call_expr(
+        &mut self, 
+        func_call_expr: &mut FuncCallExpr, 
+        fn_ctx: &mut FnCtx, 
+        dest: Option<IROperand>
+    ) -> CGExprEvalRes;
 
     fn lower_add_to_ir(&mut self, dest: IROperand, op1: IROperand, op2: IROperand) -> IRInstr {
        IRInstr::Add { dest, op1, op2 }
@@ -398,9 +400,31 @@ pub trait IRGen {
        IRInstr::Div { dest, op1, op2 }
     }
 
-    fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
+    fn lower_rec_field_access_to_ir(
+        &mut self, access: &mut RecordFieldAccessExpr, 
+        fn_ctx: &mut FnCtx, 
+        dest: Option<IROperand>
+    ) -> CGExprEvalRes;
 
-    fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
+    fn gen_ir_fn(&mut self, ast: &mut AST) -> CGRes;
+
+    fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_return(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes;
+
+    fn gen_ir_label(&self, label_id: LabelId) -> CGRes;
+
+    fn gen_ir_jump(&self, label_id: LabelId) -> CGRes;
+
+    fn lower_import_to_ir(&self) -> CGRes;
+
+    fn lower_rec_decl_to_ir(&mut self, node: &mut AST) -> CGRes;
+
+    fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes;
 
     fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 

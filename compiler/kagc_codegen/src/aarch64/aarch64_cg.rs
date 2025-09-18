@@ -705,7 +705,16 @@ impl Aarch64Codegen {
                 src_reg.name_aarch64()
             }
 
-            _ => unimplemented!()
+            IROperand::Return { position, size, .. } => {
+                let reg = AllocedReg {
+                    idx: *position,
+                    size: *size,
+                    status: RegStatus::Free
+                };
+                reg.name_aarch64()
+            }
+
+            _ => unimplemented!("{irlit:#?}")
         }
     }
 

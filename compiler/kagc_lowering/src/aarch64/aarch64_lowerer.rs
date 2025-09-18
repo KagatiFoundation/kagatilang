@@ -209,7 +209,7 @@ impl IRGen for Aarch64IRGen {
             // set parent ast kind as var decl
             fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
 
-            let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
+            let var_decl_val: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx, None)?;
             let last_instr = var_decl_val.last().unwrap().clone();
 
             if last_instr.dest().is_none() {
@@ -269,7 +269,7 @@ impl IRGen for Aarch64IRGen {
         panic!()
     }
 
-    fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
         let sym_off = *fn_ctx
             .var_offsets
@@ -279,18 +279,20 @@ impl IRGen for Aarch64IRGen {
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
+        let dest = dest.unwrap_or(IROperand::Temp {
+            id: fn_ctx.next_temp(),
+            size: reg_sz,
+        });
+
         Ok(vec![
             IRInstr::Load {
-                dest: IROperand::Temp { 
-                    id: fn_ctx.next_temp(),
-                    size: reg_sz
-                },
+                dest,
                 addr: IRAddr::StackOff(sym_off)
             }
         ])
     }
 
-    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         let mut param_instrs = vec![];
         let mut actual_params = vec![];
 
@@ -300,7 +302,7 @@ impl IRGen for Aarch64IRGen {
         for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
             let param_reg_idx = num_args - 1 - rev_idx;
             let current_tmp = fn_ctx.temp_counter;
-            let p_instr = self.__gen_expr(param_expr, fn_ctx)?;
+            let p_instr = self.__gen_expr(param_expr, fn_ctx, None)?;
 
             let last_instr = p_instr.last().unwrap().clone();
             last_instrs.push((last_instr, param_expr.result_type()));
@@ -337,13 +339,15 @@ impl IRGen for Aarch64IRGen {
             );
         }
 
+        let dest = dest.unwrap_or(IROperand::CallValue {
+            position: 0,
+            size: REG_SIZE_8,
+        });
+
         param_instrs.push(IRInstr::Call {
             fn_name: func_call_expr.symbol_name.clone(),
             params: actual_params,
-            return_type: Some(IROperand::CallValue {
-                position: 0,
-                size: REG_SIZE_8
-            })
+            return_type: Some(dest)
         });
         Ok(param_instrs)
     }
@@ -359,43 +363,30 @@ impl IRGen for Aarch64IRGen {
                     let reg_sz = curr_fn.return_type.to_reg_size();
                     assert_ne!(reg_sz, 0);
 
-                    let ret_stmt_instrs = self.gen_ir_expr(ret_stmt.left.as_mut().unwrap(), fn_ctx)?;
-
-                    // last instruction is basically the temporary which holds the return 
-                    // expression's evaluation result
-                    let last_instr = ret_stmt_instrs.last().unwrap();
-
+                    let ret_tmp = fn_ctx.next_temp();
+                    let ret_stmt_instrs = self.gen_ir_expr(
+                        ret_stmt.left.as_mut().unwrap(), 
+                        fn_ctx, 
+                        Some(IROperand::Return {
+                            temp: ret_tmp,
+                            position: 0,
+                            size: reg_sz
+                        })
+                    )?;
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
-                    
-                    ret_instrs.push(
-                        IR::Instr(
-                            IRInstr::Mov {
-                                dest: IROperand::Return { 
-                                    temp: fn_ctx.next_temp(), 
-                                    position: 0, 
-                                    size: reg_sz 
-                                },
-                                src: last_instr.dest().unwrap()
-                            }
-                        )
-                    );
                 }
             }
 
             let early_ret_instrs = if fn_ctx.early_return {
                 // turn off early return ASAP
                 fn_ctx.early_return = false;
-                let jump_to: usize = if let Some(lbl_id) = self.early_return_label_id {
-                    lbl_id
-                }
-                else {
+                let label_id = self.early_return_label_id.unwrap_or_else(|| {
                     let next_id: usize = fn_ctx.get_next_label();
                     self.early_return_label_id = Some(next_id);
                     next_id
-                };
-
+                });
                 vec![
-                    IR::Instr(IRInstr::Jump { label_id: jump_to })
+                    IR::Instr(IRInstr::Jump { label_id })
                 ]
             }
             else {
@@ -445,7 +436,7 @@ impl IRGen for Aarch64IRGen {
 
         // Evaluate the condition and store the resilt in a register.
         // Every if-else must have the `left` branch set in the main if-else AST tree.
-        let cond_result: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx)?;
+        let cond_result: Vec<IRInstr> = self.gen_ir_expr(ast.left.as_mut().unwrap(), fn_ctx, None)?;
         
         fn_ctx.reset_label_hint();
 
@@ -480,7 +471,12 @@ impl IRGen for Aarch64IRGen {
         Ok(output)
     }
 
-    fn lower_rec_field_access_to_ir(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn lower_rec_field_access_to_ir(
+        &mut self, 
+        access: &mut RecordFieldAccessExpr, 
+        fn_ctx: &mut FnCtx, 
+        dest: Option<IROperand>
+    ) -> CGExprEvalRes {
         let reg_sz = access.result_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
@@ -498,11 +494,13 @@ impl IRGen for Aarch64IRGen {
             addr: IRAddr::StackOff(rec_stack_off + 1)
         };
 
+        let dest = dest.unwrap_or(IROperand::Temp {
+            id: fn_ctx.next_temp(),
+            size: reg_sz,
+        });
+
         let load_value = IRInstr::Load { 
-            dest: IROperand::Temp{ 
-                id: fn_ctx.next_temp(), 
-                size: reg_sz 
-            }, 
+            dest, 
             addr: IRAddr::BaseOff(
                 load_data_ptr.dest().unwrap(), 
                 access.rel_stack_off as i32

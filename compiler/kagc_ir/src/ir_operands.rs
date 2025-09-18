@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_ast::ASTOperation;
 use kagc_target::reg::RegSize;
 
 use crate::LabelId;
@@ -54,12 +53,12 @@ pub enum IROperand {
     },
 
     CallValue {
-        position: usize,
+        position: usize, // TODO: Remove this field
         size: usize
     },
 
     Return {
-        position: usize,
+        position: usize, // TODO: Remove this field
         temp: TempId,
         size: usize
     },
