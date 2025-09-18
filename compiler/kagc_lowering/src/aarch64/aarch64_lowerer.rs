@@ -363,7 +363,8 @@ impl IRGen for Aarch64IRGen {
 
                     // last instruction is basically the temporary which holds the return 
                     // expression's evaluation result
-                    let last_instr = ret_stmt_instrs.last().cloned().unwrap();
+                    let last_instr = ret_stmt_instrs.last().unwrap();
+
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
                     let ret_tmp = fn_ctx.next_temp();
                     

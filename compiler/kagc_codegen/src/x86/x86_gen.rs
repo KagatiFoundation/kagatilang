@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use kagc_ir::ir_instr::IRAddr;
 use kagc_ir::ir_instr::IRFunc;
 use kagc_ir::ir_instr::IR;
+use kagc_ir::ir_liveness::LiveRange;
+use kagc_ir::ir_liveness::LivenessAnalyzer;
 use kagc_ir::ir_types::IRCondOp;
 use kagc_ir::ir_types::IRValueType;
 use kagc_ir::ir_types::IRImmVal;
@@ -13,6 +15,7 @@ use kagc_ir::ir_instr::IRReturn;
 use kagc_ir::ir_instr::IRLoop;
 use kagc_ir::ir_types::TempId;
 use kagc_ir::LabelId;
+use kagc_symbol::StorageClass;
 use kagc_target::asm::x86::X86Reg;
 use kagc_target::asm::x86::X86RegMgr;
 use kagc_target::asm::x86::X86RegName;
@@ -20,15 +23,48 @@ use kagc_target::reg::RegStatus;
 use kagc_target::reg::REG_SIZE_8;
 
 use crate::Codegen;
+use crate::ComptFnProps;
 
 #[derive(Default)]
 struct X86TRMap {
-    mapping: HashMap<TempId, String>
+    reg_map: HashMap<TempId, X86Reg>
+}
+
+impl X86TRMap {
+    pub fn drop(&mut self, key: &TempId) -> Option<X86Reg> {
+        self.reg_map.remove(key)
+    }
+
+    /// Get temporary ID associated with the given register.
+    pub fn find_temp_by_reg(&self, reg: X86RegName) -> Option<TempId> {
+        self.reg_map
+            .iter()
+            .find(|(_, &r)| {
+                r.name == reg
+            })
+            .map(|(temp, _)| *temp)
+    }
+
+    pub fn find_reg_by_temp(&self, temp_id: TempId) -> Option<&X86Reg> {
+        self.reg_map.get(&temp_id)
+    }
+
+    pub fn clear_mappings(&mut self) {
+        self.reg_map.clear();
+    }
 }
 
 pub struct X86Codegen {
     rm: X86RegMgr,
-    mapping: X86TRMap
+
+    temp_reg_map: X86TRMap,
+
+    compt_fn_props: Option<ComptFnProps>,
+
+    /// Instruction Pointer:
+    /// IP is used to track the execution of instructions inside 
+    /// a function.
+    func_ip: usize,
 }
 
 impl X86Codegen {
@@ -36,7 +72,9 @@ impl X86Codegen {
     pub fn new() -> Self {
         Self {
             rm: X86RegMgr::new(),
-            mapping: X86TRMap::default()
+            temp_reg_map: X86TRMap::default(),
+            compt_fn_props: None,
+            func_ip: 0
         }
     }
 }
@@ -52,10 +90,72 @@ impl X86Codegen {
         }
         output.join("\n")
     }
+
+    fn switch_to_func_scope(&mut self, func_props: ComptFnProps) {
+        self.compt_fn_props = Some(func_props);
+    }
+
+    fn drop_temp(&mut self, temp: usize) {
+        let freed_reg: Option<X86Reg> = self.temp_reg_map.drop(&temp);
+
+        if let Some(reg) = freed_reg {
+            self.rm.free_reg(reg.name);
+        }
+    }
+
+    fn try_dropping_temp(&mut self, temp: usize) -> bool {
+        if let Some(compt_fn_info) = &self.compt_fn_props {
+            if let Some((start, end)) = compt_fn_info.liveness_info.get(&temp) {
+                // temporary's life is over
+                if (*start + *end) <= self.func_ip {
+                    self.drop_temp(temp);
+                    return true;
+                }
+            }
+        }
+        else {
+            panic!("Compile time information not available for function!");
+        }
+        false
+    }
+
+    fn try_dropping_all_temps(&mut self) -> bool {
+        {
+            let mut temps = vec![];
+            for (temp, _) in self.temp_reg_map.reg_map.iter() {
+                temps.push(*temp);
+            }
+            temps
+        }.iter().for_each(|temp| {
+            _ = self.try_dropping_temp(*temp);
+        });
+        true
+    }
+
+    #[inline]
+    fn advance_ip(&mut self) {
+        self.func_ip += 1;
+    }
 }
 
 impl Codegen for X86Codegen {
     fn gen_ir_fn_asm(&mut self, fn_ir: &mut IRFunc) -> String {
+        if fn_ir.class == StorageClass::EXTERN {
+            return format!(".extern _{}\n", fn_ir.name);
+        }
+
+        let temp_liveness: HashMap<usize, LiveRange> = LivenessAnalyzer::analyze_fn_temps(fn_ir);
+
+        // generate the code for function body
+        self.switch_to_func_scope(
+            ComptFnProps { 
+                is_leaf: fn_ir.is_leaf, 
+                stack_size: fn_ir.params.len() * 8,
+                liveness_info: temp_liveness,
+                _next_stack_slot: 0,
+            }
+        );
+
         let mut output = String::new();
         output.push_str(
             &format!(
@@ -86,6 +186,8 @@ impl Codegen for X86Codegen {
 
         for body_ir in &mut fn_ir.body {
             let asm: String = self.gen_asm_from_ir_node(body_ir);
+            self.try_dropping_all_temps();
+            self.advance_ip();
             fn_body_asm.push_str(&format!("{asm}\n", asm = asm.trim()));
         }
 
@@ -268,8 +370,8 @@ impl X86Codegen {
             },
 
             IRValueType::ExtendedTemp { id, .. } => {
-                let reg = self.mapping.mapping.get(id).unwrap_or_else(|| panic!());
-                reg.clone()
+                let reg = self.temp_reg_map.reg_map.get(id).unwrap_or_else(|| panic!());
+                reg.name().to_string()
             }
 
             IRValueType::RetIn { size, .. } => {
@@ -289,13 +391,13 @@ impl X86Codegen {
         match irlit {
             IRValueType::ExtendedTemp { id, size } => {
                 let reg = self.rm.allocate(*size).ok().unwrap();
-                self.mapping.mapping.insert(*id, reg.name().to_string());
+                self.temp_reg_map.reg_map.insert(*id, reg);
                 (*id, reg)
             },
 
             IRValueType::RetOut { temp, .. } => {
                 let reg = self.rm.allocate_fixed_register(X86RegName::RAX, REG_SIZE_8).ok().unwrap();
-                self.mapping.mapping.insert(*temp, reg.name().to_string());
+                self.temp_reg_map.reg_map.insert(*temp, reg);
                 (*temp, reg)
             },
 

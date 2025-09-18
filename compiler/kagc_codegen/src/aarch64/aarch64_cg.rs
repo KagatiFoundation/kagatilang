@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use crate::Codegen;
+use crate::ComptFnProps;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IRInstr;
 use kagc_ir::ir_liveness::LiveRange;
@@ -51,30 +52,6 @@ impl TempRegMap {
 
     pub fn clear_mappings(&mut self) {
         self.reg_map.clear();
-    }
-}
-
-/// Represents properties of a compiled function.
-/// 
-/// - `is_leaf`: Indicates whether the function is a leaf function 
-///   (i.e., it makes no function calls).
-/// - `stack_size`: The amount of stack space allocated for this function.
-#[derive(Debug, Clone)]
-struct ComptFnProps {
-    pub stack_size:     usize,
-
-    _next_stack_slot:   usize,
-    
-    pub liveness_info:  HashMap<usize, LiveRange>,
-    
-    pub is_leaf:        bool,
-}
-
-impl ComptFnProps {
-    pub fn next_stack_slot(&mut self) -> usize {
-        let slot = self._next_stack_slot;
-        self._next_stack_slot += 1;
-        slot
     }
 }
 

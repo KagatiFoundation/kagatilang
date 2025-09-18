@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::collections::HashMap;
+
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_instr::IRInstr;
+use kagc_ir::ir_liveness::LiveRange;
 use kagc_ir::ir_types::IRValueType;
 use kagc_ir::ir_types::IRCondOp;
 use kagc_ir::LabelId;
@@ -14,6 +17,30 @@ pub(crate) enum IRToASMState {
     Local,
 
     Global
+}
+
+/// Represents properties of a compiled function.
+/// 
+/// - `is_leaf`: Indicates whether the function is a leaf function 
+///   (i.e., it makes no function calls).
+/// - `stack_size`: The amount of stack space allocated for this function.
+#[derive(Debug, Clone)]
+pub(crate) struct ComptFnProps {
+    pub stack_size:     usize,
+
+    pub _next_stack_slot:   usize,
+    
+    pub liveness_info:  HashMap<usize, LiveRange>,
+    
+    pub is_leaf:        bool,
+}
+
+impl ComptFnProps {
+    pub fn next_stack_slot(&mut self) -> usize {
+        let slot = self._next_stack_slot;
+        self._next_stack_slot += 1;
+        slot
+    }
 }
 
 pub trait Codegen { 
