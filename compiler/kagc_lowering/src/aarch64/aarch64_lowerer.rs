@@ -20,9 +20,9 @@ use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::Severity;
 use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
-use kagc_ir::ir_instr::IR;
-use kagc_ir::ir_types::IRValueType;
-use kagc_ir::ir_types::IRImmVal;
+use kagc_ir::ir_operands::IROperand;
+use kagc_ir::ir_operands::IRImmVal;
+use kagc_ir::ir_operands::IRAddr;
 use kagc_ir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::*;
@@ -58,7 +58,7 @@ impl Aarch64IRGen {
         let reg_sz = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
 
-        let store_arg_value = IRValueType::ArgIn { 
+        let store_arg_value = IROperand::Param { 
             position: arg_pos, 
             size: reg_sz 
         };
@@ -72,7 +72,7 @@ impl Aarch64IRGen {
 
         if sym.lit_type.is_gc_alloced() {
             let load_data_off = IRInstr::Load { 
-                dest: IRValueType::ExtendedTemp { 
+                dest: IROperand::Temp { 
                     id: fn_ctx.next_temp(), 
                     size: REG_SIZE_8 
                 }, 
@@ -139,7 +139,7 @@ impl IRGen for Aarch64IRGen {
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
-        let params: Vec<IRValueType> = self.ctx
+        let params: Vec<IROperand> = self.ctx
             .borrow()
             .scope
             .collect_params(func_scope)
@@ -155,7 +155,7 @@ impl IRGen for Aarch64IRGen {
                 );
                 fn_body.extend(store_param.ok().unwrap());
 
-                let reg: IRValueType = IRValueType::ArgIn { 
+                let reg: IROperand = IROperand::Param { 
                     position: virtual_reg, 
                     size: reg_sz 
                 };
@@ -243,7 +243,7 @@ impl IRGen for Aarch64IRGen {
 
             if ast.result_type.is_gc_alloced() {
                 let load_gc_alloced_obj_data = IRInstr::Load { 
-                    dest: IRValueType::ExtendedTemp { 
+                    dest: IROperand::Temp { 
                         id: fn_ctx.next_temp(),
                         size: REG_SIZE_8 
                     }, 
@@ -281,7 +281,7 @@ impl IRGen for Aarch64IRGen {
 
         Ok(vec![
             IRInstr::Load {
-                dest: IRValueType::ExtendedTemp { 
+                dest: IROperand::Temp { 
                     id: fn_ctx.next_temp(),
                     size: reg_sz
                 },
@@ -315,7 +315,7 @@ impl IRGen for Aarch64IRGen {
             actual_params.push(
                 (
                     param_reg_idx, 
-                    IRValueType::ExtendedTemp{ 
+                    IROperand::Temp{ 
                         id: tmp_reg_loc, 
                         size: reg_sz 
                     }
@@ -327,7 +327,7 @@ impl IRGen for Aarch64IRGen {
             let param_tmp = fn_ctx.next_temp();
             param_instrs.push(
                 IRInstr::Mov {
-                    dest: IRValueType::ArgOut { 
+                    dest: IROperand::CallArg { 
                         temp: param_tmp, 
                         position: rev_idx, 
                         size: last_instr.1.to_reg_size() 
@@ -340,7 +340,7 @@ impl IRGen for Aarch64IRGen {
         param_instrs.push(IRInstr::Call {
             fn_name: func_call_expr.symbol_name.clone(),
             params: actual_params,
-            return_type: Some(IRValueType::RetIn {
+            return_type: Some(IROperand::CallValue {
                 position: 0,
                 size: REG_SIZE_8
             })
@@ -366,13 +366,12 @@ impl IRGen for Aarch64IRGen {
                     let last_instr = ret_stmt_instrs.last().unwrap();
 
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
-                    let ret_tmp = fn_ctx.next_temp();
                     
                     ret_instrs.push(
                         IR::Instr(
                             IRInstr::Mov {
-                                dest: IRValueType::RetOut { 
-                                    temp: ret_tmp, 
+                                dest: IROperand::Return { 
+                                    temp: fn_ctx.next_temp(), 
                                     position: 0, 
                                     size: reg_sz 
                                 },
@@ -492,7 +491,7 @@ impl IRGen for Aarch64IRGen {
             .unwrap_or_else(|| panic!("what the fck bro"));
 
         let load_data_ptr = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp { 
+            dest: IROperand::Temp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8 
             }, 
@@ -500,7 +499,7 @@ impl IRGen for Aarch64IRGen {
         };
 
         let load_value = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp{ 
+            dest: IROperand::Temp{ 
                 id: fn_ctx.next_temp(), 
                 size: reg_sz 
             }, 
@@ -530,7 +529,7 @@ impl IRGen for Aarch64IRGen {
         let gc_alloc = IRInstr::MemAlloc { 
             size: ob_size,
             ob_type: obj.ob_type.clone(),
-            dest: IRValueType::RetIn { 
+            dest: IROperand::CallValue { 
                 position: 0, 
                 size: REG_SIZE_8
             }
@@ -563,7 +562,7 @@ impl IRGen for Aarch64IRGen {
             we must add an offset of 32 (0x20) to the base pointer returned by `_kgc_alloc`.
         */
         let load_gc_alloced_obj_data = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp { 
+            dest: IROperand::Temp { 
                 id: fn_ctx.next_temp(),
                 size: REG_SIZE_8 
             }, 
@@ -575,7 +574,7 @@ impl IRGen for Aarch64IRGen {
 
         let load_glob_value_from_pool = IRInstr::LoadGlobal { 
             pool_idx: idx, 
-            dest: IRValueType::ExtendedTemp{ 
+            dest: IROperand::Temp{ 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8 // always use 8 bytes to load string literals into the stack
             } 
@@ -585,7 +584,7 @@ impl IRGen for Aarch64IRGen {
             Load the destination pointer where the global value 
             is going to be stored.
          */
-        let load_param_0_dest = IRValueType::ArgOut { 
+        let load_param_0_dest = IROperand::CallArg { 
             temp: fn_ctx.next_temp(), 
             position: 0, 
             size: REG_SIZE_8,
@@ -600,7 +599,7 @@ impl IRGen for Aarch64IRGen {
             Source pointer of the global variable. Initially, 
             the value is located at .rodata section of the executable.
          */
-        let load_param_1_src = IRValueType::ArgOut { 
+        let load_param_1_src = IROperand::CallArg { 
             temp: fn_ctx.next_temp(), 
             position: 1, 
             size: REG_SIZE_8,
@@ -613,14 +612,14 @@ impl IRGen for Aarch64IRGen {
         /*
             Size of the global value.
          */
-        let load_param_2_size = IRValueType::ArgOut { 
+        let load_param_2_size = IROperand::CallArg { 
             temp: fn_ctx.next_temp(), 
             position: 2, 
             size: REG_SIZE_8,
         };
         let prepare_size_ptr = IRInstr::Mov { 
             dest: load_param_2_size,
-            src: IRValueType::Const(IRImmVal::Int64(ob_size as i64)),
+            src: IROperand::Const(IRImmVal::Int64(ob_size as i64)),
         };
 
         // generate code to move value from .rodata to heap
@@ -636,7 +635,7 @@ impl IRGen for Aarch64IRGen {
         output.push(move_to_heap);
 
         let load_gc_alloced_obj_canon = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp { 
+            dest: IROperand::Temp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8 
             }, 

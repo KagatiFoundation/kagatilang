@@ -35,7 +35,7 @@ use kagc_ast::*;
 use kagc_ctx::CompilerCtx;
 use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
 use kagc_ir::ir_instr::*;
-use kagc_ir::ir_types::*;
+use kagc_ir::ir_operands::*;
 use kagc_ir::LabelId;
 use kagc_target::reg::REG_SIZE_8;
 use kagc_types::builtins::obj::KObjType;
@@ -197,7 +197,7 @@ pub trait IRGen {
         let alloc_rec = IRInstr::MemAlloc { 
             size: rec_creation.fields.len() * 8,
             ob_type: KObjType::KRec,
-            dest: IRValueType::RetIn { 
+            dest: IROperand::CallValue { 
                 position: 0, 
                 size: REG_SIZE_8
             }
@@ -209,7 +209,7 @@ pub trait IRGen {
         };
 
         let load_data_pointer = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp { 
+            dest: IROperand::Temp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8
             }, 
@@ -227,7 +227,7 @@ pub trait IRGen {
 
         for (idx, c_off) in child_offsets.iter().enumerate() {
             let load_child_mem = IRInstr::Load { 
-                dest: IRValueType::ExtendedTemp { 
+                dest: IROperand::Temp { 
                     id: fn_ctx.next_temp(), 
                     size: REG_SIZE_8
                 }, 
@@ -245,7 +245,7 @@ pub trait IRGen {
         }
 
         let load_canon_pointer = IRInstr::Load { 
-            dest: IRValueType::ExtendedTemp { 
+            dest: IROperand::Temp { 
                 id: fn_ctx.next_temp(), 
                 size: REG_SIZE_8
             }, 
@@ -263,7 +263,7 @@ pub trait IRGen {
         Ok(vec![
             IRInstr::mov_into_temp(
                 fn_ctx.next_temp(), 
-                IRValueType::Const(IRImmVal::Null),
+                IROperand::Const(IRImmVal::Null),
                 8
             )
         ])
@@ -283,7 +283,7 @@ pub trait IRGen {
         Ok(vec![
             IRInstr::mov_into_temp(
                 fn_ctx.next_temp(), 
-                IRValueType::Const(ir_lit),
+                IROperand::Const(ir_lit),
                 reg_size
             )
         ])
@@ -302,9 +302,9 @@ pub trait IRGen {
         let left_dest: &IRInstr = left_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
         let right_dest: &IRInstr = right_expr.last().unwrap_or_else(|| panic!("No left destination found! Abort!"));
 
-        fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IRValueType {
+        fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IROperand {
             let reg_sz = result_type.to_reg_size();
-            IRValueType::ExtendedTemp { id: fn_ctx.next_temp(), size: reg_sz }
+            IROperand::Temp { id: fn_ctx.next_temp(), size: reg_sz }
         }
 
         let bin_expr_type: IRInstr = match bin_expr.operation {
@@ -367,8 +367,8 @@ pub trait IRGen {
 
     fn gen_ir_cmp_and_jump(
         &mut self, 
-        op1: IRValueType, 
-        op2: IRValueType, 
+        op1: IROperand, 
+        op2: IROperand, 
         label_id: LabelId, 
         operation: IRCondOp
     ) -> IRInstr {
@@ -382,19 +382,19 @@ pub trait IRGen {
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> CGExprEvalRes;
 
-    fn lower_add_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
+    fn lower_add_to_ir(&mut self, dest: IROperand, op1: IROperand, op2: IROperand) -> IRInstr {
        IRInstr::Add { dest, op1, op2 }
     }
 
-    fn lower_sub_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
+    fn lower_sub_to_ir(&mut self, dest: IROperand, op1: IROperand, op2: IROperand) -> IRInstr {
        IRInstr::Sub { dest, op1, op2 }
     }
 
-    fn lower_mul_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
+    fn lower_mul_to_ir(&mut self, dest: IROperand, op1: IROperand, op2: IROperand) -> IRInstr {
        IRInstr::Mul { dest, op1, op2 }
     }
 
-    fn lower_div_to_ir(&mut self, dest: IRValueType, op1: IRValueType, op2: IRValueType) -> IRInstr {
+    fn lower_div_to_ir(&mut self, dest: IROperand, op1: IROperand, op2: IROperand) -> IRInstr {
        IRInstr::Div { dest, op1, op2 }
     }
 

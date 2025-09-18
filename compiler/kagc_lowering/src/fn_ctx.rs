@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use kagc_ast::ASTOperation;
-use kagc_ir::{ir_types::TempId, LabelId};
+use kagc_ir::{ir_operands::TempId, LabelId};
 use kagc_symbol::function::INVALID_FUNC_ID;
 use kagc_target::reg::RegIdx;
 

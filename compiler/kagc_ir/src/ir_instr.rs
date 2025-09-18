@@ -1,50 +1,68 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use kagc_ast::ASTOperation;
 use kagc_symbol::StorageClass;
-use kagc_target::reg::{RegIdx, RegSize};
+use kagc_target::reg::RegIdx;
+use kagc_target::reg::RegSize;
 use kagc_types::builtins::obj::KObjType;
 
-use crate::{ir_types::*, LabelId};
+use crate::{ir_operands::*, LabelId};
 
-#[derive(Debug, Clone)]
-pub enum IRAddr {
-    /// Absolute stack offset
-    StackOff(usize),
 
-    /// Stack offset relative to some register
-    BaseOff(IRValueType, i32)
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
+pub enum IRCondOp {
+    IRLThan,
+    IRGThan,
+    IREqEq,
+    IRNEq,
+    IRGTEq,
+    IRLTEq
+}
+
+impl From<ASTOperation> for IRCondOp {
+    fn from(value: ASTOperation) -> Self {
+        match value {
+            ASTOperation::AST_GTHAN => Self::IRGThan,
+            ASTOperation::AST_LTHAN => Self::IRLThan,
+            ASTOperation::AST_EQEQ => Self::IREqEq,
+            ASTOperation::AST_NEQ => Self::IRNEq,
+            ASTOperation::AST_GTEQ => Self::IRGTEq,
+            ASTOperation::AST_LTEQ => Self::IRLTEq,
+            _ => panic!("Cannot convert!")
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum IRInstr {
     Mov {
-        dest: IRValueType, 
-        src: IRValueType
+        dest: IROperand, 
+        src: IROperand
     },
     
     Add {
-        dest: IRValueType, 
-        op1: IRValueType, 
-        op2: IRValueType
+        dest: IROperand, 
+        op1: IROperand, 
+        op2: IROperand
     },
 
     Sub {
-        dest: IRValueType,
-        op1: IRValueType,
-        op2: IRValueType,
+        dest: IROperand,
+        op1: IROperand,
+        op2: IROperand,
     },
 
     Mul {
-        dest: IRValueType,
-        op1: IRValueType,
-        op2: IRValueType,
+        dest: IROperand,
+        op1: IROperand,
+        op2: IROperand,
     },
 
     Div {
-        dest: IRValueType,
-        op1: IRValueType,
-        op2: IRValueType,
+        dest: IROperand,
+        op1: IROperand,
+        op2: IROperand,
     },
 
     Call {
@@ -56,10 +74,10 @@ pub enum IRInstr {
         /// `usize`: The parameter's position in the argument list.
         /// 
         /// `IRLitType`: The parameter.
-        params: Vec<(usize, IRValueType)>,
+        params: Vec<(usize, IROperand)>,
 
         /// Return type of the function call.
-        return_type: Option<IRValueType>
+        return_type: Option<IROperand>
     },
 
     /**
@@ -67,14 +85,14 @@ pub enum IRInstr {
      */
     Store {
         /// Value to be stored. `src` is always a register type.
-        src: IRValueType,
+        src: IROperand,
 
         addr: IRAddr 
     },
     
     Load {
         /// Destination to load to. `dest` is always a register type
-        dest: IRValueType,
+        dest: IROperand,
 
         addr: IRAddr
     },
@@ -89,16 +107,16 @@ pub enum IRInstr {
         pool_idx: usize,
 
         /// Destination to load to
-        dest: IRValueType
+        dest: IROperand
     },
 
     /// Conditional jump
     CondJump {
         /// Operand 1
-        op1: IRValueType,
+        op1: IROperand,
 
         /// Operand 2
-        op2: IRValueType,
+        op2: IROperand,
 
         /// Label ID to jump to.
         label_id: LabelId,
@@ -123,7 +141,7 @@ pub enum IRInstr {
 
         /// Destination where the address of newly allocated memory's
         /// address lives
-        dest: IRValueType,
+        dest: IROperand,
 
         /// Object type
         ob_type: KObjType
@@ -137,19 +155,19 @@ pub enum IRInstr {
 
     /// Grabage Collector's copy instruction
     MemCpy {
-        dest: IRValueType
+        dest: IROperand
     },
 
     /// Mark the register as "allocated"
-    RegAlloc {
+    RegAlloc2 {
         idx: RegIdx,
         size: RegSize,
-        dest: IRValueType
+        dest: IROperand
     }
 }
 
 impl IRInstr {
-    pub fn dest(&self) -> Option<IRValueType> {
+    pub fn dest(&self) -> Option<IROperand> {
         match self {
             Self::Mov { dest, .. } => Some(dest.clone()),
             Self::Add { dest, .. } => Some(dest.clone()),
@@ -162,21 +180,20 @@ impl IRInstr {
 
             Self::Store { addr, .. } => {
                 match addr {
-                    IRAddr::StackOff(off) => Some(IRValueType::StackOff(*off)),
+                    IRAddr::StackOff(off) => Some(IROperand::StackSlot(*off)),
                     IRAddr::BaseOff(base, _) => Some(base.clone()),
                 }
             },
 
             Self::MemCpy { dest } => Some(dest.clone()),
             Self::MemAlloc { dest, .. } => Some(dest.clone()),
-            Self::RegAlloc { dest, .. } => Some(dest.clone()),
             _ => None
         }
     }
 
-    pub fn mov_into_temp(temp: usize, value: IRValueType, reg_size: usize) -> Self {
+    pub fn mov_into_temp(temp: usize, value: IROperand, reg_size: usize) -> Self {
         Self::Mov {
-            dest: IRValueType::ExtendedTemp{ id: temp, size: reg_size }, 
+            dest: IROperand::Temp{ id: temp, size: reg_size }, 
             src: value
         }
     }
@@ -185,7 +202,7 @@ impl IRInstr {
 #[derive(Debug, Clone)]
 pub struct IRFunc {
     pub name: String,
-    pub params: Vec<IRValueType>,
+    pub params: Vec<IROperand>,
     pub body: Vec<IR>,
     pub class: StorageClass,
     pub is_leaf: bool,

@@ -2,7 +2,6 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_ast::ASTOperation;
-use kagc_symbol::Symbol;
 use kagc_target::reg::RegSize;
 
 use crate::LabelId;
@@ -35,67 +34,47 @@ impl IRImmVal {
 }
 
 #[derive(Debug, Clone)]
-pub enum IRValueType {
+pub enum IROperand {
     Const(IRImmVal),
 
-    ExtendedTemp {
+    Temp {
         id: TempId,
         size: RegSize
     },
 
-    ArgOut {
+    CallArg {
         temp: TempId,
         position: ArgPos,
         size: usize,
     },
 
-    ArgIn {
+    Param {
         position: ArgPos,
         size: usize
     },
 
-    RetIn {
+    CallValue {
         position: usize,
         size: usize
     },
 
-    RetOut {
+    Return {
         position: usize,
         temp: TempId,
         size: usize
     },
 
     /// Stack offset
+    StackSlot(usize),
+}
+
+#[derive(Debug, Clone)]
+pub enum IRAddr {
+    /// Absolute stack offset
     StackOff(usize),
-}
 
-#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
-pub enum IRCondOp {
-    IRLThan,
-    IRGThan,
-    IREqEq,
-    IRNEq,
-    IRGTEq,
-    IRLTEq
-}
-
-impl From<ASTOperation> for IRCondOp {
-    fn from(value: ASTOperation) -> Self {
-        match value {
-            ASTOperation::AST_GTHAN => Self::IRGThan,
-            ASTOperation::AST_LTHAN => Self::IRLThan,
-            ASTOperation::AST_EQEQ => Self::IREqEq,
-            ASTOperation::AST_NEQ => Self::IRNEq,
-            ASTOperation::AST_GTEQ => Self::IRGTEq,
-            ASTOperation::AST_LTEQ => Self::IRLTEq,
-            _ => panic!("Cannot convert!")
-        }
-    }
-}
-
-pub struct IRSymbol {
-    pub symbol: Symbol,
-    pub offset: usize
+    /// Stack offset relative to some register
+    BaseOff(IROperand, i32)
 }
 
 macro_rules! check_instr_type {
@@ -117,28 +96,28 @@ macro_rules! impl_as_irlit_type {
     };
 }
 
-impl IRValueType {
+impl IROperand {
     pub fn into_str(&self) -> String {
         match self {
             Self::Const(irlit_val) => irlit_val.into_str(),
-            Self::StackOff(off) => off.to_string(),
-            Self::ExtendedTemp { id, .. } => id.to_string(),
-            Self::ArgOut { temp, .. } => temp.to_string(),
-            Self::ArgIn { position, .. } => position.to_string(),
-            Self::RetIn { position, .. } => position.to_string(),
-            Self::RetOut { position, .. } => position.to_string(),
+            Self::StackSlot(off) => off.to_string(),
+            Self::Temp { id, .. } => id.to_string(),
+            Self::CallArg { temp, .. } => temp.to_string(),
+            Self::Param { position, .. } => position.to_string(),
+            Self::CallValue { position, .. } => position.to_string(),
+            Self::Return { position, .. } => position.to_string(),
         }
     }
 
     check_instr_type!(is_const, Const);
-    check_instr_type!(is_stack_off, StackOff);
+    check_instr_type!(is_stack_off, StackSlot);
 
     impl_as_irlit_type!(as_const, Const, IRImmVal);
-    impl_as_irlit_type!(as_stack_off, StackOff, usize);
+    impl_as_irlit_type!(as_stack_off, StackSlot, usize);
 
     pub fn as_ext_temp(&self) -> Option<usize> {
         match self {
-            Self::ExtendedTemp { id, .. } => Some(*id),
+            Self::Temp { id, .. } => Some(*id),
             _ => None
         }
     }

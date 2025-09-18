@@ -13,8 +13,6 @@ use crate::reg::RegStatus;
 pub enum X86RegName {
     RAX,
     RBX,
-    RCX,
-    RDX,
     RSP,
     RBP,
     R10,
@@ -23,6 +21,14 @@ pub enum X86RegName {
     R13,
     R14,
     R15,
+
+    // Parameter registers
+    RDI,
+    RSI,
+    RDX,
+    RCX,
+    R8,
+    R9
 }
 
 /// X86 register
@@ -117,7 +123,19 @@ impl X86Reg {
                 X86RegName::R13 => "r13",
                 X86RegName::R14 => "r14",
                 X86RegName::R15 => "r15",
+                X86RegName::RDI => "rdi",
+                X86RegName::RSI => "rsi",
+                X86RegName::R8 => "r8",
+                X86RegName::R9 => "r9",
             },
+        }
+    }
+
+    pub fn param1(size: RegSize) -> Self {
+        X86Reg { 
+            size, 
+            name: X86RegName::RDI, 
+            status: RegStatus::Free 
         }
     }
 }

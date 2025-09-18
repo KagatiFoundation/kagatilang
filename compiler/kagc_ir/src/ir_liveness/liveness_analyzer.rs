@@ -2,12 +2,12 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::collections::HashMap;
-use crate::ir_instr::IRAddr;
+use crate::ir_operands::IRAddr;
 use crate::ir_instr::IRFunc;
 use crate::ir_instr::IRInstr;
 use crate::ir_instr::IR;
-use crate::ir_types::IRValueType;
-use crate::ir_types::TempId;
+use crate::ir_operands::IROperand;
+use crate::ir_operands::TempId;
 
 /// Live range of a temporary
 pub type LiveRange = (usize, usize);
@@ -84,13 +84,13 @@ impl LivenessAnalyzer {
     fn extract_temp_dest(ir: &IR) -> Option<usize> {
         match ir {
             IR::Instr(instr) => {
-                if let Some(IRValueType::ExtendedTemp{ id, ..}) = instr.dest() {
+                if let Some(IROperand::Temp{ id, ..}) = instr.dest() {
                     Some(id)
                 }
-                else if let Some(IRValueType::RetOut { temp, .. }) = instr.dest() {
+                else if let Some(IROperand::Return { temp, .. }) = instr.dest() {
                     Some(temp)
                 }
-                else if let Some(IRValueType::ArgOut { temp, .. }) = instr.dest() {
+                else if let Some(IROperand::Return { temp, .. }) = instr.dest() {
                     Some(temp)
                 }
                 else {
@@ -110,7 +110,6 @@ impl LivenessAnalyzer {
                     IRInstr::Sub { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Mul { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Div { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
-                    IRInstr::RegAlloc { dest, .. } => Self::uses_temp_in_ir_lit(dest, temp_lookup),
 
                     IRInstr::Load { dest, addr } => {
                         let mut tmp_used = Self::uses_temp_in_ir_lit(dest, temp_lookup);
@@ -157,16 +156,16 @@ impl LivenessAnalyzer {
         }
     }
 
-    fn uses_temp_in_ir_lit(ir_lit: &IRValueType, temp: usize) -> bool {
+    fn uses_temp_in_ir_lit(ir_lit: &IROperand, temp: usize) -> bool {
         match ir_lit {
-            IRValueType::ExtendedTemp { id, .. } => *id == temp,
-            IRValueType::ArgOut { temp: id, .. } => *id == temp,
-            IRValueType::RetOut { temp: id, .. } => *id == temp,
+            IROperand::Temp { id, .. } => *id == temp,
+            IROperand::CallArg { temp: id, .. } => *id == temp,
+            IROperand::Return { temp: id, .. } => *id == temp,
             _ => false
         }
     }
 
-    fn is_temp_used_bin_op(dest: &IRValueType, op1: &IRValueType, op2: &IRValueType, temp_lookup: usize) -> bool {
+    fn is_temp_used_bin_op(dest: &IROperand, op1: &IROperand, op2: &IROperand, temp_lookup: usize) -> bool {
         [
             dest.as_ext_temp() == Some(temp_lookup),
             op1.as_ext_temp() == Some(temp_lookup),
@@ -180,8 +179,8 @@ impl LivenessAnalyzer {
         ].iter().any(|c| *c) 
     }
 
-    fn is_temp_used_in_arg_out(temp_lookup: usize, arg_out: &IRValueType) -> bool {
-        if let IRValueType::ArgOut { temp, .. } = arg_out {
+    fn is_temp_used_in_arg_out(temp_lookup: usize, arg_out: &IROperand) -> bool {
+        if let IROperand::CallArg { temp, .. } = arg_out {
             *temp == temp_lookup
         }
         else {
@@ -189,8 +188,8 @@ impl LivenessAnalyzer {
         }
     }
 
-    fn is_temp_used_in_ret_out(temp_lookup: usize, arg_out: &IRValueType) -> bool {
-        if let IRValueType::RetOut { temp, .. } = arg_out {
+    fn is_temp_used_in_ret_out(temp_lookup: usize, arg_out: &IROperand) -> bool {
+        if let IROperand::Return { temp, .. } = arg_out {
             *temp == temp_lookup
         }
         else {
@@ -215,7 +214,7 @@ mod tests {
 
     use crate::ir_instr::*;
     use crate::ir_liveness::LivenessAnalyzer;
-    use crate::ir_types::*;
+    use crate::ir_operands::*;
 
     fn next_temp(temp: &mut usize) -> usize {
         let curr = *temp;
@@ -236,30 +235,30 @@ mod tests {
             body: vec![
                 IR::Instr(IRInstr::Mov { 
                     // temp 0
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    src: IRValueType::Const(IRImmVal::Int32(32))
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IROperand::Const(IRImmVal::Int32(32))
                 }),
                 IR::Instr(IRInstr::Mov { 
                     // temp 1
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    src: IRValueType::Const(IRImmVal::Int32(32))
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IROperand::Const(IRImmVal::Int32(32))
                 }),
                 IR::Instr(IRInstr::Add { 
                     // temp 2
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    op1: IRValueType::ExtendedTemp { id: 0, size: REG_SIZE_8 }, 
-                    op2: IRValueType::ExtendedTemp { id: 1, size: REG_SIZE_8 }
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IROperand::Temp { id: 0, size: REG_SIZE_8 }, 
+                    op2: IROperand::Temp { id: 1, size: REG_SIZE_8 }
                 }),
                 IR::Instr(IRInstr::Mov { 
                     // temp 3
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    src: IRValueType::Const(IRImmVal::Int32(32))
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IROperand::Const(IRImmVal::Int32(32))
                 }),
                 IR::Instr(IRInstr::Sub { 
                     // temp 4
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    op1: IRValueType::ExtendedTemp { id: 2, size: REG_SIZE_8 }, 
-                    op2: IRValueType::ExtendedTemp { id: 3, size: REG_SIZE_8 }
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IROperand::Temp { id: 2, size: REG_SIZE_8 }, 
+                    op2: IROperand::Temp { id: 3, size: REG_SIZE_8 }
                 }),
             ],
         };
@@ -281,17 +280,17 @@ mod tests {
             params: vec![],
             body: vec![
                 IR::Instr(IRInstr::Mov {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    src: IRValueType::Const(IRImmVal::Int32(10)) // temp 0
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IROperand::Const(IRImmVal::Int32(10)) // temp 0
                 }),
                 IR::Instr(IRInstr::Mov {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 },
-                    src: IRValueType::Const(IRImmVal::Int32(20)) // temp 1 (never used)
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 },
+                    src: IROperand::Const(IRImmVal::Int32(20)) // temp 1 (never used)
                 }),
                 IR::Instr(IRInstr::Add {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 },
-                    op1: IRValueType::ExtendedTemp { id: 0, size: REG_SIZE_8 },
-                    op2: IRValueType::Const(IRImmVal::Int32(5)) // temp 2
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 },
+                    op1: IROperand::Temp { id: 0, size: REG_SIZE_8 },
+                    op2: IROperand::Const(IRImmVal::Int32(5)) // temp 2
                 }),
             ],
         };
@@ -314,22 +313,22 @@ mod tests {
             params: vec![],
             body: vec![
                 IR::Instr(IRInstr::Mov {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    src: IRValueType::Const(IRImmVal::Int32(5)) // temp 0
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IROperand::Const(IRImmVal::Int32(5)) // temp 0
                 }),
                 IR::Instr(IRInstr::Mov {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    src: IRValueType::Const(IRImmVal::Int32(10)) // temp 1
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    src: IROperand::Const(IRImmVal::Int32(10)) // temp 1
                 }),
                 IR::Instr(IRInstr::Add {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    op1: IRValueType::ExtendedTemp { id: 0, size: REG_SIZE_8 },
-                    op2: IRValueType::Const(IRImmVal::Int32(1)) // temp 2
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IROperand::Temp { id: 0, size: REG_SIZE_8 },
+                    op2: IROperand::Const(IRImmVal::Int32(1)) // temp 2
                 }),
                 IR::Instr(IRInstr::Mul {
-                    dest: IRValueType::ExtendedTemp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
-                    op1: IRValueType::ExtendedTemp { id: 1, size: REG_SIZE_8 },
-                    op2: IRValueType::Const(IRImmVal::Int32(2)) // temp 3
+                    dest: IROperand::Temp { id: next_temp(&mut temp), size: REG_SIZE_8 }, 
+                    op1: IROperand::Temp { id: 1, size: REG_SIZE_8 },
+                    op2: IROperand::Const(IRImmVal::Int32(2)) // temp 3
                 }),
             ],
         };

@@ -4,13 +4,12 @@
 use crate::Codegen;
 use crate::ComptFnProps;
 use kagc_ir::ir_instr::*;
-use kagc_ir::ir_instr::IRInstr;
 use kagc_ir::ir_liveness::LiveRange;
 use kagc_ir::ir_liveness::LivenessAnalyzer;
-use kagc_ir::ir_types::IRValueType;
-use kagc_ir::ir_types::TempId;
-use kagc_ir::ir_types::IRCondOp;
-use kagc_ir::ir_types::IRImmVal;
+use kagc_ir::ir_operands::IROperand;
+use kagc_ir::ir_operands::TempId;
+use kagc_ir::ir_operands::IRImmVal;
+use kagc_ir::ir_operands::IRAddr;
 use kagc_ir::LabelId;
 
 use std::cell::RefCell;
@@ -436,7 +435,7 @@ impl Codegen for Aarch64Codegen {
         output_str
     }
     
-    fn gen_asm_load(&mut self, dest: &IRValueType, addr: &IRAddr) -> String {
+    fn gen_asm_load(&mut self, dest: &IROperand, addr: &IRAddr) -> String {
         let compt_fun = self.get_current_fn_props_mut();
         let stack_size = compt_fun.stack_size;
         let is_leaf_fn = compt_fun.is_leaf;
@@ -488,7 +487,7 @@ impl Codegen for Aarch64Codegen {
         output_code
     }
 
-    fn gen_asm_store(&mut self, src: &IRValueType, addr: &IRAddr) -> String {
+    fn gen_asm_store(&mut self, src: &IROperand, addr: &IRAddr) -> String {
         let compt_fun = self.get_current_fn_props_mut();
         let stack_size = compt_fun.stack_size;
         let is_leaf_fn = compt_fun.is_leaf;
@@ -515,13 +514,13 @@ impl Codegen for Aarch64Codegen {
         }
     }
 
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, _: &[(usize, IRValueType)], _return_type: &Option<IRValueType>) -> String {
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, _: &[(usize, IROperand)], _return_type: &Option<IROperand>) -> String {
         let mut output_str: String = String::new();
         output_str.push_str(&format!("\tBL _{fn_name}"));
         output_str
     }
     
-    fn gen_ir_mov_asm(&mut self, dest: &IRValueType, src: &IRValueType) -> String {
+    fn gen_ir_mov_asm(&mut self, dest: &IROperand, src: &IROperand) -> String {
         let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
         let reg_name: String = dest_reg.1.name_aarch64();
 
@@ -529,19 +528,19 @@ impl Codegen for Aarch64Codegen {
         format!("\tMOV {}, {}", reg_name, operand)
     }
     
-    fn gen_ir_add_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String {
+    fn gen_ir_add_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         self.gen_ir_bin_op_asm(dest, op1, op2, "ADD")
     }
 
-    fn gen_ir_sub_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String {
+    fn gen_ir_sub_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         self.gen_ir_bin_op_asm(dest, op1, op2, "SUB")
     }
     
-    fn gen_ir_mul_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String {
+    fn gen_ir_mul_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         self.gen_ir_bin_op_asm(dest, op1, op2, "MUL")
     }
     
-    fn gen_ir_div_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String {
+    fn gen_ir_div_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         self.gen_ir_bin_op_asm(dest, op1, op2, "DIV")
     }
     
@@ -564,7 +563,7 @@ impl Codegen for Aarch64Codegen {
         format!(".LB_{}:", ir_label.0)
     }
 
-    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRValueType) -> String {
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IROperand) -> String {
         let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
         let dest_reg_name: &str = &dest_reg.1.name_aarch64();
 
@@ -598,7 +597,7 @@ impl Codegen for Aarch64Codegen {
         output_str
     }
 
-    fn gen_cond_jmp_asm(&mut self, op1: &IRValueType, op2: &IRValueType, operation: IRCondOp, label_id: LabelId) -> String {
+    fn gen_cond_jmp_asm(&mut self, op1: &IROperand, op2: &IROperand, operation: IRCondOp, label_id: LabelId) -> String {
         let compare_operator: &str = match operation {
             IRCondOp::IRLThan => "BGE",
             IRCondOp::IRGThan => "BLE",
@@ -646,15 +645,10 @@ impl Codegen for Aarch64Codegen {
         output.push_str("\tBL _k_memcpy\n");
         output
     }
-
-    fn gen_ir_reg_alloc(&mut self, dest: &IRValueType) -> String {
-        let _ = self.resolve_register(dest);
-        String::new()
-    }
 }
 
 impl Aarch64Codegen {
-    fn gen_ir_bin_op_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType, operation: &str) -> String {
+    fn gen_ir_bin_op_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand, operation: &str) -> String {
         let compt_props = self.get_current_fn_props_mut();
         let stack_size = compt_props.stack_size;
         let next_slot = compt_props.next_stack_slot();
@@ -685,9 +679,9 @@ impl Aarch64Codegen {
     }
 
     /// Extract the IRLitType as an operand(String)
-    fn extract_operand(&mut self, irlit: &IRValueType) -> String {
+    fn extract_operand(&mut self, irlit: &IROperand) -> String {
         match irlit {
-            IRValueType::Const(irlit_val) => {
+            IROperand::Const(irlit_val) => {
                 match irlit_val {
                     IRImmVal::Int32(value) => format!("{:#x}", *value),
                     IRImmVal::Int64(value) => format!("{:#x}", *value),
@@ -697,12 +691,12 @@ impl Aarch64Codegen {
                 }
             },
 
-            IRValueType::ExtendedTemp { id, .. } => {
+            IROperand::Temp { id, .. } => {
                 let src_reg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
                 src_reg.name_aarch64()
             },
 
-            IRValueType::RetIn { position, size } => {
+            IROperand::CallValue { position, size } => {
                 let src_reg = AllocedReg {
                     idx: *position,
                     size: *size,
@@ -717,26 +711,26 @@ impl Aarch64Codegen {
 
     /// Get the compile time register mapping of an IR literal type. 
     /// Returns temporary ID with its mapped AllocedReg.
-    fn resolve_register(&mut self, irlit: &IRValueType) -> (TempId, AllocedReg) {
+    fn resolve_register(&mut self, irlit: &IROperand) -> (TempId, AllocedReg) {
         match irlit {
-            IRValueType::ExtendedTemp { 
+            IROperand::Temp { 
                 id, 
                 size 
             } => (*id, self.get_or_allocate_temp_register(*id, *size)),
             
-            IRValueType::ArgOut { 
+            IROperand::CallArg { 
                 temp, 
                 size, 
                 position 
             } => (*temp, self.get_or_allocate_specific_register(*position, *temp, *size)),
             
-            IRValueType::RetOut { 
+            IROperand::Return { 
                 position,
                 temp,
                 size
             } => (*temp, self.get_or_allocate_specific_register(*position, *temp, *size)),
 
-            IRValueType::ArgIn { size, position } => {
+            IROperand::Param { size, position } => {
                 let reg = AllocedReg {
                     idx: *position,
                     size: *size,
@@ -745,7 +739,7 @@ impl Aarch64Codegen {
                 (0, reg)
             },
 
-            IRValueType::RetIn { size, position } => {
+            IROperand::CallValue { size, position } => {
                 let reg = AllocedReg {
                     idx: *position,
                     size: *size,

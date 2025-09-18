@@ -4,10 +4,10 @@
 use std::collections::HashMap;
 
 use kagc_ir::ir_instr::*;
-use kagc_ir::ir_instr::IRInstr;
 use kagc_ir::ir_liveness::LiveRange;
-use kagc_ir::ir_types::IRValueType;
-use kagc_ir::ir_types::IRCondOp;
+use kagc_ir::ir_operands::IROperand;
+use kagc_ir::ir_operands::IRAddr;
+use kagc_ir::ir_instr::IRCondOp;
 use kagc_ir::LabelId;
 
 use kagc_types::builtins::obj::KObjType;
@@ -84,50 +84,45 @@ pub trait Codegen {
                     
                     IRInstr::MemCpy { .. } => self.gen_ir_mem_cpy(),
 
-                    IRInstr::RegAlloc { dest, .. } => self.gen_ir_reg_alloc(dest),
-                     
                     _ => todo!()
                 }
             },
         }
     }
 
-    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRValueType) -> String;
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IROperand) -> String;
 
-    fn gen_cond_jmp_asm(&mut self, op1: &IRValueType, op2: &IRValueType, operation: IRCondOp, label_id: LabelId) -> String;
+    fn gen_cond_jmp_asm(&mut self, op1: &IROperand, op2: &IROperand, operation: IRCondOp, label_id: LabelId) -> String;
 
     /// Generates assembly for a function call expression.
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IRValueType)], return_type: &Option<IRValueType>) -> String;
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IROperand)], return_type: &Option<IROperand>) -> String;
 
     /// Allocate memory
     fn gen_ir_mem_alloc(&mut self, size: usize, ob_type: &KObjType) -> String;
-
-    /// Allocate register
-    fn gen_ir_reg_alloc(&mut self, dest: &IRValueType) -> String;
 
     /// Allocate memory
     fn gen_ir_mem_cpy(&mut self) -> String;
 
     /// Generates AArch64 assembly for an addition operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_add_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
+    fn gen_ir_add_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String;
 
     /// Generates AArch64 assembly for an subtraction operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_sub_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
+    fn gen_ir_sub_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String;
 
     /// Generates AArch64 assembly for an multiplication operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_mul_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
+    fn gen_ir_mul_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String;
     
     /// Generates AArch64 assembly for an division operation.
     /// The result is stored in `dest`, using `op1` and `op2` as operands.
-    fn gen_ir_div_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String;
+    fn gen_ir_div_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String;
 
     /// Generates AArch64 assembly for a move (assignment) operation.
     /// Moves the value from `src` into `dest`, handling both registers 
     /// and immediates.
-    fn gen_ir_mov_asm(&mut self, dest: &IRValueType, src: &IRValueType) -> String;
+    fn gen_ir_mov_asm(&mut self, dest: &IROperand, src: &IROperand) -> String;
 
     /// Generates AArch64 assembly for a function definition.
     /// Handles function prologue, body, and epilogue based on 
@@ -143,9 +138,9 @@ pub trait Codegen {
 
     fn gen_ir_jump_asm(&mut self, label_id: usize) -> String;
     
-    fn gen_asm_load(&mut self, dest: &IRValueType, addr: &IRAddr) -> String;
+    fn gen_asm_load(&mut self, dest: &IROperand, addr: &IRAddr) -> String;
     
-    fn gen_asm_store(&mut self, src: &IRValueType, addr: &IRAddr) -> String;
+    fn gen_asm_store(&mut self, src: &IROperand, addr: &IRAddr) -> String;
 
     fn gen_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String;
 
