@@ -14,8 +14,7 @@ use kagc_comp_unit::source::ParsingStage;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
 use kagc_lexer::Tokenizer;
-use kagc_lowering::aarch64::Aarch64IRGen;
-use kagc_lowering::IRGen;
+use kagc_lowering::IRLowerer;
 use kagc_parser::builder::ParserBuilder;
 use kagc_parser::SharedParserCtx;
 use kagc_scope::ctx::builder::ScopeCtxBuilder;
@@ -89,7 +88,7 @@ impl Compiler {
         let rm = Aarch64RegMgr::new();
 
         // AST to IR generator
-        let mut lowerer = Aarch64IRGen::new(self.ctx.clone());
+        let mut lowerer = IRLowerer::new(self.ctx.clone());
 
         let mut final_irs = vec![];
 

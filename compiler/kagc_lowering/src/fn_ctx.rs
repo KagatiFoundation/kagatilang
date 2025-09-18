@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use kagc_ast::ASTOperation;
-use kagc_ir::{ir_operands::TempId, LabelId};
+use kagc_ir::ir_operands::TempId;
+use kagc_ir::LabelId;
 use kagc_symbol::function::INVALID_FUNC_ID;
-use kagc_target::reg::RegIdx;
 
 use crate::typedefs::*;
 
@@ -15,12 +15,6 @@ pub struct FnCtx {
 
     /// Counter for generating fresh temporary variable IDs.
     pub temp_counter: TempCounter,
-
-    /// Optional preferred register for allocation.
-    pub reg_counter: Option<RegIdx>,
-
-    /// Forces the next value to use `reg_counter` instead of a temporary.
-    pub force_reg_use: bool,
 
     /// Marks whether the next return is an early return.
     pub early_return: bool,
@@ -46,8 +40,6 @@ impl FnCtx {
         Self {
             stack_offset: Default::default(), 
             temp_counter: 0, 
-            reg_counter: Default::default(), 
-            force_reg_use: Default::default(), 
             early_return: Default::default(), 
             prev_ast_kind: None,
             parent_ast_kind: ASTOperation::AST_FUNCTION,
@@ -55,16 +47,6 @@ impl FnCtx {
             force_label_use: 0,
             var_offsets: HashMap::new()
         }
-    }
-
-    pub fn force_reg_use(&mut self, reg: RegIdx) {
-        self.force_reg_use = true;
-        self.reg_counter = Some(reg);
-    }
-
-    pub fn clear_reg_hint(&mut self) {
-        self.force_reg_use = false;
-        self.reg_counter = None;
     }
 
     pub fn change_parent_ast_kind(&mut self, new_op: ASTOperation) {
