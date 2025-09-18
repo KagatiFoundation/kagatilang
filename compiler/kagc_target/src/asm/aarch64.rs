@@ -1,41 +1,32 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::collections::{HashMap, VecDeque};
-
-use kagc_types::LitTypeVariant;
-
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use crate::reg::*;
 
 pub const REG_64BIT: usize = 64;
 pub const REG_32BIT: usize = 32;
 
 impl AllocedReg {
-    pub fn lit_type(&self) -> LitTypeVariant {
-        match self.size {
-            REG_32BIT => LitTypeVariant::I32,
-            REG_64BIT => LitTypeVariant::I64,
-            _ => LitTypeVariant::None
+    pub fn name_aarch64(&self) -> String {
+        if self.size == REG_SIZE_4 {
+            format!("w{}", self.idx)
         }
-    }
-
-    pub fn early_return() -> Self {
-        AllocedReg {
-            idx: EARLY_RETURN,
-            size: 0,
-            status: RegStatus::Invalid
+        else {
+            format!("x{}", self.idx)
         }
     }
 }
 
 #[derive(Debug)]
-pub struct Aarch64RegManager2 {
+pub struct Aarch64RegMgr {
     available_registers: Vec<bool>,
     register_map: HashMap<usize, RegState>,
     pub spilled_stack: VecDeque<usize>,
 }
 
-impl Aarch64RegManager2 {
+impl Aarch64RegMgr {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
@@ -74,7 +65,7 @@ impl Aarch64RegManager2 {
     }
 }
 
-impl RegManager2 for Aarch64RegManager2 {
+impl RegMgr for Aarch64RegMgr {
     fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg {
         for i in 8..32 {
             // x29 and x30 are reserved registers
@@ -270,8 +261,8 @@ impl RegManager2 for Aarch64RegManager2 {
 mod tests {
     use crate::asm::aarch64::*;
 
-    fn setup_manager() -> Aarch64RegManager2 {
-        Aarch64RegManager2::new()
+    fn setup_manager() -> Aarch64RegMgr {
+        Aarch64RegMgr::new()
     }
 
     #[test]

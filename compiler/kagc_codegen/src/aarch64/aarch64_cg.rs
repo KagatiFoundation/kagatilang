@@ -92,7 +92,7 @@ impl ComptFnProps {
 pub struct Aarch64Codegen {
     pub ctx: Rc<RefCell<CompilerCtx>>,
 
-    reg_manager: Aarch64RegManager2,
+    reg_manager: Aarch64RegMgr,
 
     compt_fn_props: Option<ComptFnProps>,
 
@@ -109,7 +109,7 @@ pub struct Aarch64Codegen {
 
 impl Aarch64Codegen {
     #[allow(clippy::new_without_default)]
-    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, rm: Aarch64RegManager2) -> Self {
+    pub fn new(ctx: Rc<RefCell<CompilerCtx>>, rm: Aarch64RegMgr) -> Self {
         Self {
             ctx,
             reg_manager: rm,
@@ -280,7 +280,7 @@ impl Aarch64Codegen {
         else {
             "[SP]".to_string()
         };
-        format!("\tSTR {}, {dest_addr}\n", reg.name())
+        format!("\tSTR {}, {dest_addr}\n", reg.name_aarch64())
     }
 
     /// Load register from stack pointer (SP)
@@ -292,7 +292,7 @@ impl Aarch64Codegen {
         else {
             "[SP]".to_string()
         };
-        format!("\tLDR {}, {src_addr}\n", reg.name())
+        format!("\tLDR {}, {src_addr}\n", reg.name_aarch64())
     }
 
     /// Spill register to frame pointer (x29)
@@ -304,7 +304,7 @@ impl Aarch64Codegen {
         else {
             "[x29]".to_string()
         };
-        format!("\tSTR {}, {dest_addr}\n", reg.name())
+        format!("\tSTR {}, {dest_addr}\n", reg.name_aarch64())
     }
 
     /// Load register from frame pointer (x29)
@@ -316,7 +316,7 @@ impl Aarch64Codegen {
         else {
             "[x29]".to_string()
         };
-        format!("\tLDR {}, {src_addr}\n", reg.name())
+        format!("\tLDR {}, {src_addr}\n", reg.name_aarch64())
     }
 
     fn gen_reg_spill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
@@ -501,8 +501,8 @@ impl Codegen for Aarch64Codegen {
                 output_code.push_str(
                     &format!(
                         "\tLDR {}, [{}, {}]", 
-                        dest_reg.name(), 
-                        src_reg.1.name(), 
+                        dest_reg.name_aarch64(), 
+                        src_reg.1.name_aarch64(), 
                         format_args!("#{}", *off * 8)
                     )
                 );
@@ -530,8 +530,8 @@ impl Codegen for Aarch64Codegen {
                 let dest_reg = self.resolve_register(base).1;
                 format!(
                     "\tSTR {}, [{}, {}]", 
-                    src_reg.name(), 
-                    dest_reg.name(), 
+                    src_reg.name_aarch64(), 
+                    dest_reg.name_aarch64(), 
                     format_args!("#{}", off * 8)
                 )
             }
@@ -546,7 +546,7 @@ impl Codegen for Aarch64Codegen {
     
     fn gen_ir_mov_asm(&mut self, dest: &IRValueType, src: &IRValueType) -> String {
         let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
-        let reg_name: String = dest_reg.1.name();
+        let reg_name: String = dest_reg.1.name_aarch64();
 
         let operand: String = self.extract_operand(src);
         format!("\tMOV {}, {}", reg_name, operand)
@@ -589,7 +589,7 @@ impl Codegen for Aarch64Codegen {
 
     fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRValueType) -> String {
         let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
-        let dest_reg_name: &str = &dest_reg.1.name();
+        let dest_reg_name: &str = &dest_reg.1.name_aarch64();
 
         let mut output_str: String = String::new();
         if let Some(c_item) = self.ctx.borrow().const_pool.get(pool_idx) {
@@ -642,9 +642,9 @@ impl Codegen for Aarch64Codegen {
 
         // load the parameter
         let x0 = self.allocate_specific_register(0, REG_SIZE_8);
-        let load_size = format!("MOV {}, {:#x}", x0.name(), size);
+        let load_size = format!("MOV {}, {:#x}", x0.name_aarch64(), size);
         let x1 = self.allocate_specific_register(1, REG_SIZE_8);
-        let load_type = format!("MOV {}, {:#x}", x1.name(), ob_type.value());
+        let load_type = format!("MOV {}, {:#x}", x1.name_aarch64(), ob_type.value());
 
         output.push_str(&format!(
         "{load_size}
@@ -660,7 +660,7 @@ impl Codegen for Aarch64Codegen {
     fn gen_ir_mem_cpy(&mut self) -> String {
         let mut output = "".to_string();
 
-        for reg in Aarch64RegManager2::caller_saved_regs() {
+        for reg in Aarch64RegMgr::caller_saved_regs() {
             if self.temp_reg_map.find_temp_by_reg(reg).is_some() {
                 // let alive = self.is_temp_alive_after(temp, 1);
             }
@@ -683,7 +683,7 @@ impl Aarch64Codegen {
         let next_slot = compt_props.next_stack_slot();
 
         let dest_reg = self.resolve_register(dest).1;
-        let reg_name: String = dest_reg.name();
+        let reg_name: String = dest_reg.name_aarch64();
 
         let op1: String = self.extract_operand(op1);
         let op2: String = self.extract_operand(op2);
@@ -722,7 +722,7 @@ impl Aarch64Codegen {
 
             IRValueType::ExtendedTemp { id, .. } => {
                 let src_reg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
-                src_reg.name()
+                src_reg.name_aarch64()
             },
 
             IRValueType::RetIn { position, size } => {
@@ -731,7 +731,7 @@ impl Aarch64Codegen {
                     size: *size,
                     status: RegStatus::Free,
                 };
-                src_reg.name()
+                src_reg.name_aarch64()
             }
 
             _ => unimplemented!()

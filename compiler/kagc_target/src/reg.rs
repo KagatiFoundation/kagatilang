@@ -22,7 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub struct RegAllocError;
+pub enum RegAllocError {
+    ReservedRegister,
+    NoRegisterAvailable
+}
 
 /// Register size
 pub type RegSize = usize;
@@ -64,7 +67,7 @@ pub enum AllocStrategy {
 }
 
 /// Represents the status of a register at a given moment.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub enum RegStatus {
     /// The register is currently allocated and in use.
     Alloced,
@@ -92,29 +95,6 @@ pub struct AllocedReg {
     pub status: RegStatus,
 }
 
-impl AllocedReg {
-    pub fn no_reg() -> Self {
-        Self {
-            size: 0xFFFFFFFF,
-            idx: INVALID_REG_IDX,
-            status: RegStatus::Invalid
-        }
-    }
-
-    pub fn is_valid(&self) -> bool {
-        self.idx != INVALID_REG_IDX
-    }
-
-    pub fn name(&self) -> String {
-        if self.size == REG_SIZE_4 {
-            format!("w{}", self.idx)
-        }
-        else {
-            format!("x{}", self.idx)
-        }
-    }
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct RegState {
     pub idx: usize,
@@ -134,7 +114,7 @@ impl RegState {
 
 pub type RegAllocResult = Result<AllocedReg, RegAllocError>;
 
-pub trait RegManager2 {
+pub trait RegMgr {
     fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg;
 
     fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg;

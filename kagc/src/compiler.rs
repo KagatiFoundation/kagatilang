@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use kagc_codegen::x86::X86Codegen;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
@@ -14,7 +15,6 @@ use kagc_ctx::CompilerCtx;
 use kagc_lexer::Tokenizer;
 use kagc_lowering::aarch64::Aarch64IRGen;
 use kagc_lowering::IRGen;
-use kagc_codegen::aarch64::Aarch64Codegen;
 use kagc_parser::builder::ParserBuilder;
 use kagc_parser::SharedParserCtx;
 use kagc_scope::ctx::builder::ScopeCtxBuilder;
@@ -22,7 +22,7 @@ use kagc_scope::manager::ScopeManager;
 use kagc_scope::scope::Scope;
 use kagc_sema::resolver::Resolver;
 use kagc_sema::SemanticAnalyzer;
-use kagc_target::asm::aarch64::Aarch64RegManager2;
+use kagc_target::asm::aarch64::Aarch64RegMgr;
 
 #[derive(Debug, Clone)]
 pub struct Compiler {
@@ -85,7 +85,7 @@ impl Compiler {
         let mut resolv = Resolver::new(self.ctx.clone());
 
         // Register manager for Aarch64
-        let rm = Aarch64RegManager2::new();
+        let rm = Aarch64RegMgr::new();
 
         // AST to IR generator
         let mut lowerer = Aarch64IRGen::new(self.ctx.clone());
@@ -120,7 +120,7 @@ impl Compiler {
 
         // IR to Aarch64 ASM generator
         // let mut cg = Aarch64Codegen::new(self.ctx.clone(), rm);
-        let mut cg = Aarch64Codegen::new(self.ctx.clone(), rm);
+        let mut cg = X86Codegen::new();
         let code = cg.gen_asm(&mut final_irs);
         println!("{code}");
         Ok(())

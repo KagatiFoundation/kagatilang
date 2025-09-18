@@ -1,19 +1,44 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::collections::HashMap;
+
 use kagc_ir::ir_instr::IRAddr;
+use kagc_ir::ir_instr::IRFunc;
 use kagc_ir::ir_instr::IR;
+use kagc_ir::ir_types::IRCondOp;
 use kagc_ir::ir_types::IRValueType;
 use kagc_ir::ir_types::IRImmVal;
 use kagc_ir::ir_instr::IRReturn;
 use kagc_ir::ir_instr::IRLoop;
+use kagc_ir::ir_types::TempId;
+use kagc_ir::LabelId;
+use kagc_target::asm::x86::X86Reg;
+use kagc_target::asm::x86::X86RegMgr;
+use kagc_target::asm::x86::X86RegName;
+use kagc_target::reg::RegStatus;
+use kagc_target::reg::REG_SIZE_8;
 
 use crate::Codegen;
 
-pub struct X86Codegen;
+#[derive(Default)]
+struct X86TRMap {
+    mapping: HashMap<TempId, String>
+}
+
+pub struct X86Codegen {
+    rm: X86RegMgr,
+    mapping: X86TRMap
+}
 
 impl X86Codegen {
- 
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            rm: X86RegMgr::new(),
+            mapping: X86TRMap::default()
+        }
+    }
 }
 
 impl X86Codegen {
@@ -30,7 +55,7 @@ impl X86Codegen {
 }
 
 impl Codegen for X86Codegen {
-    fn gen_ir_fn_asm(&mut self, fn_ir: &mut kagc_ir::ir_instr::IRFunc) -> String {
+    fn gen_ir_fn_asm(&mut self, fn_ir: &mut IRFunc) -> String {
         let mut output = String::new();
         output.push_str(
             &format!(
@@ -91,7 +116,7 @@ impl Codegen for X86Codegen {
 
         if stack_size != 0 {
             output.push_str(
-                &format!("SUB rsp, #{stack_size}")
+                &format!("PUSH rbp\nMOV rbp, rsp\nSUB rsp, {stack_size}")
             );
         }
 
@@ -104,7 +129,7 @@ impl Codegen for X86Codegen {
         output.push_str("PUSH rbp\nMOV rbp, rsp");
         if stack_size != 0 {
             output.push_str(
-                &format!("SUB rsp, #{stack_size}")
+                &format!("SUB rsp, {stack_size}")
             );
         }
         output
@@ -113,9 +138,7 @@ impl Codegen for X86Codegen {
     fn gen_leaf_fn_epl(&self, stack_size: usize) -> String {
         let mut output = String::new();
         if stack_size != 0 {
-            output.push_str(
-                &format!("ADD rsp, #{stack_size}\n")
-            );
+            output.push_str("LEAVE\n");
         }
         output.push_str("RET");
         output
@@ -126,14 +149,15 @@ impl Codegen for X86Codegen {
     }
 
     fn gen_asm_store(&mut self, src: &IRValueType, addr: &IRAddr) -> String {
+        let src_reg = self.extract_operand(src);
         match addr {
             IRAddr::StackOff(stack_off) => {
-                let off = *stack_off;
+                let off = (*stack_off + 1) * 8;
                 if off == 0 {
-                    "MOV [rbp], rax".to_string()
+                    format!("MOV QWORD PTR [rbp], {src}", src = src_reg)
                 }
                 else {
-                    format!("MOV [rbp-{off}], rax")
+                    format!("MOV QWORD PTR [rbp-{off}], {src}", src = src_reg)
                 }
             },
             _ => panic!()
@@ -141,24 +165,37 @@ impl Codegen for X86Codegen {
     }
 
     fn gen_asm_load(&mut self, dest: &IRValueType, addr: &IRAddr) -> String {
-        todo!()
+        let d = self.resolve_register(dest).1;
+        match addr {
+            IRAddr::StackOff(stack_off) => {
+                let off = (*stack_off + 1) * 8;
+                if off == 0 {
+                    format!("MOV {dest}, QWORD PTR [rbp]", dest = d.name())
+                }
+                else {
+                    format!("MOV {dest}, QWORD PTR [rbp-{off}]", dest = d.name())
+                }
+            },
+            _ => panic!()
+        }
     }
 
     fn gen_ir_add_asm(&mut self, dest: &IRValueType, op1: &IRValueType, op2: &IRValueType) -> String {
         let mut output = "".to_string();
+        let dest_reg = self.resolve_register(dest).1;
         let first_value = self.extract_operand(op1);
-        output.push_str(&format!("MOV rax, {first_value}"));
-
         let second_value = self.extract_operand(op2);
-        output.push_str(&format!("ADD rax, {second_value}"));
+
+        output.push_str(&format!("MOV {dest}, {first_value}\n", dest = dest_reg.name()));
+        output.push_str(&format!("ADD {dest}, {second_value}", dest = dest_reg.name()));
         output
     }
 
-    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &kagc_ir::ir_types::IRValueType) -> String {
+    fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IRValueType) -> String {
         todo!()
     }
 
-    fn gen_cond_jmp_asm(&mut self, op1: &kagc_ir::ir_types::IRValueType, op2: &kagc_ir::ir_types::IRValueType, operation: kagc_ir::ir_types::IRCondOp, label_id: kagc_ir::LabelId) -> String {
+    fn gen_cond_jmp_asm(&mut self, op1: &IRValueType, op2: &IRValueType, operation: IRCondOp, label_id: LabelId) -> String {
         todo!()
     }
 
@@ -191,8 +228,12 @@ impl Codegen for X86Codegen {
     }
 
     fn gen_ir_mov_asm(&mut self, dest: &IRValueType, src: &IRValueType) -> String {
-        
-        todo!()
+        let s = self.extract_operand(src);
+        let d = self.resolve_register(dest).1;
+
+        let mut output = String::new();
+        output.push_str(&format!("MOV {dest}, {src}", dest = d.name(), src = s));
+        output
     }
 
     fn gen_ir_return_asm(&mut self, ir_return: &IRReturn) -> String {
@@ -221,14 +262,44 @@ impl X86Codegen {
                     IRImmVal::Int32(value) => format!("{:#x}", *value),
                     IRImmVal::U8(value) => format!("{:#x}", *value),
                     IRImmVal::Str(value, ..) => value.clone(),
-                    IRImmVal::Null => "#0".to_string(), // Null is just '0' under the hood. LOL
+                    IRImmVal::Null => "0".to_string(), // Null is just '0' under the hood. LOL
                     _ => todo!()
                 }
             },
 
-            _ => unimplemented!()
+            IRValueType::ExtendedTemp { id, .. } => {
+                let reg = self.mapping.mapping.get(id).unwrap_or_else(|| panic!());
+                reg.clone()
+            }
+
+            IRValueType::RetIn { size, .. } => {
+                let src_reg = X86Reg {
+                    name: X86RegName::RAX,
+                    size: *size,
+                    status: RegStatus::Free,
+                };
+                src_reg.name().to_string()
+            }
+
+            _ => todo!("{irlit:#?}")
         }
     }
 
-    // fn resolve_register(&mut self, irlit: &IRValueType) -> Alloced
+    fn resolve_register(&mut self, irlit: &IRValueType) -> (TempId, X86Reg) {
+        match irlit {
+            IRValueType::ExtendedTemp { id, size } => {
+                let reg = self.rm.allocate(*size).ok().unwrap();
+                self.mapping.mapping.insert(*id, reg.name().to_string());
+                (*id, reg)
+            },
+
+            IRValueType::RetOut { temp, .. } => {
+                let reg = self.rm.allocate_fixed_register(X86RegName::RAX, REG_SIZE_8).ok().unwrap();
+                self.mapping.mapping.insert(*temp, reg.name().to_string());
+                (*temp, reg)
+            },
+
+            _ => panic!()
+        }
+    }
 }

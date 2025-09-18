@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 
-use crate::reg::AllocedReg;
 use crate::reg::RegAllocError;
-use crate::reg::RegAllocResult;
+use crate::reg::RegSize;
 use crate::reg::RegStatus;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -26,11 +25,24 @@ pub enum X86RegName {
     R15,
 }
 
-impl X86RegName {
+/// X86 register
+#[derive(Debug, Clone, Copy)]
+pub struct X86Reg {
+    /// The size of the allocated register (e.g., 32-bit, 64-bit).
+    pub size: RegSize,
+
+    /// The (numeric) name of the register.
+    pub name: X86RegName,
+
+    /// The current status of the allocated register.
+    pub status: RegStatus,
+}
+
+impl X86Reg {
     /// Return textual name depending on requested size (in bytes).
     /// size: 8 => "rax", 4 => "eax", 2 => "ax", 1 => "al"
-    pub fn name_x86(&self, size: usize) -> &'static str {
-        match (self, size) {
+    pub fn name(&self) -> &'static str {
+        match (self.name, self.size) {
             (X86RegName::RAX, 8) => "rax",
             (X86RegName::RAX, 4) => "eax",
             (X86RegName::RAX, 2) => "ax",
@@ -110,6 +122,8 @@ impl X86RegName {
     }
 }
 
+pub type X86RegAllocRes = Result<X86Reg, RegAllocError>;
+
 #[derive(Default, Debug)]
 pub struct X86RegMgr {
     /// the pool order we will try for allocations (stable order)
@@ -122,7 +136,7 @@ pub struct X86RegMgr {
     reserved_registers: HashSet<X86RegName>,
 
     /// mapping of currently allocated registers -> AllocedReg
-    register_map: HashMap<X86RegName, AllocedReg>,
+    register_map: HashMap<X86RegName, X86Reg>,
 
     /// stack of spilled registers for bookkeeping
     spilled_stack: VecDeque<X86RegName>,
@@ -161,7 +175,7 @@ impl X86RegMgr {
     }
 
     /// Try to allocate any free register from the allocatable pool.
-    pub fn allocate(&mut self, size: usize) -> RegAllocResult {
+    pub fn allocate(&mut self, size: usize) -> X86RegAllocRes {
         for &candidate in &self.allocatable_registers {
             if self.available_registers.contains(&candidate) {
                 return self.allocate_reg(candidate, size);
@@ -171,7 +185,7 @@ impl X86RegMgr {
     }
 
     /// Try to allocate a specific register.
-    pub fn allocate_reg(&mut self, name: X86RegName, size: usize) -> RegAllocResult {
+    pub fn allocate_reg(&mut self, name: X86RegName, size: usize) -> X86RegAllocRes {
         if self.reserved_registers.contains(&name) {
             return Err(RegAllocError::ReservedRegister);
         }
@@ -182,12 +196,12 @@ impl X86RegMgr {
         }
 
         if self.available_registers.remove(&name) {
-            let alloc = AllocedReg {
-                idx: name as usize,
+            let alloc = X86Reg {
+                name,
                 size,
                 status: RegStatus::Alloced,
             };
-            self.register_map.insert(name, alloc.clone());
+            self.register_map.insert(name, alloc);
             Ok(alloc)
         } else {
             self.spill_and_mark_available(name, size)
@@ -200,14 +214,14 @@ impl X86RegMgr {
         }
     }
 
-    pub fn spill_and_mark_available(&mut self, name: X86RegName, size: usize) -> RegAllocResult {
+    pub fn spill_and_mark_available(&mut self, name: X86RegName, size: usize) -> X86RegAllocRes {
         if self.register_map.contains_key(&name) {
             self.register_map.remove(&name);
             self.spilled_stack.push_back(name);
             self.available_registers.insert(name);
 
-            Ok(AllocedReg {
-                idx: name as usize,
+            Ok(X86Reg {
+                name,
                 size,
                 status: RegStatus::Spilled,
             })
@@ -216,7 +230,7 @@ impl X86RegMgr {
         }
     }
 
-    pub fn allocate_fixed_register(&mut self, name: X86RegName, size: usize) -> RegAllocResult {
+    pub fn allocate_fixed_register(&mut self, name: X86RegName, size: usize) -> X86RegAllocRes {
         if self.reserved_registers.contains(&name) {
             return Err(RegAllocError::ReservedRegister);
         }
@@ -226,20 +240,20 @@ impl X86RegMgr {
         }
         
         self.available_registers.remove(&name);
-        let alloc = AllocedReg {
-            idx: name as usize,
+        let alloc = X86Reg {
+            name,
             size,
             status: RegStatus::Alloced,
         };
-        self.register_map.insert(name, alloc.clone());
+        self.register_map.insert(name, alloc);
         Ok(alloc)
     }
 
     pub fn restore_spilled(&mut self) -> Option<X86RegName> {
         if let Some(r) = self.spilled_stack.pop_back() {
             self.available_registers.remove(&r); // now occupied by restored value
-            let alloc = AllocedReg {
-                idx: r as usize,
+            let alloc = X86Reg {
+                name: r,
                 size: 8,
                 status: RegStatus::Alloced,
             };
@@ -275,13 +289,13 @@ mod tests {
         let mut alloc = X86RegMgr::new();
         let reg = alloc.allocate(REG_SIZE_8).ok().unwrap();
         assert_eq!(reg.status, RegStatus::Alloced);
-        assert_eq!(reg.idx, X86RegName::RBX as usize);
+        assert_eq!(reg.name, X86RegName::RBX);
         
         let reg = alloc.allocate(REG_SIZE_8).ok().unwrap();
-        assert_eq!(reg.idx, X86RegName::R10 as usize);
+        assert_eq!(reg.name, X86RegName::R10);
 
         let reg = alloc.allocate(REG_SIZE_8).ok().unwrap();
-        assert_eq!(reg.idx, X86RegName::R11 as usize);
+        assert_eq!(reg.name, X86RegName::R11);
     }
 
     #[test]
