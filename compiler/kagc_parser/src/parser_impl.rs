@@ -23,22 +23,24 @@ SOFTWARE.
 */
 
 use core::panic;
-use std::{cell::RefCell, collections::HashMap};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
-use kagc_ast::{record::*, *};
+use kagc_ast::record::*;
+use kagc_ast::*;
 use kagc_comp_unit::file_pool::FilePoolIdx;
 use kagc_ctx::CompilerCtx;
-use kagc_errors::diagnostic::{Diagnostic, Severity};
+use kagc_errors::diagnostic::Diagnostic;
+use kagc_errors::diagnostic::Severity;
 use kagc_scope::scope::ScopeType;
-use kagc_span::span::{SourcePos, Span};
+use kagc_span::span::SourcePos;
+use kagc_span::span::Span;
 use kagc_symbol::{function::*, *};
 use kagc_token::*;
-use kagc_types::{
-    record::RecordFieldType, 
-    LitType, 
-    LitTypeVariant
-};
+use kagc_types::record::RecordFieldType;
+use kagc_types::LitType;
+use kagc_types::LitTypeVariant;
 
 /// A type alias representing the result of parsing, which can either
 /// be an AST node on successful parsing or a ParseError indicating a

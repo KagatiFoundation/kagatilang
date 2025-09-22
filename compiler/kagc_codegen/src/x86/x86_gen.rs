@@ -65,6 +65,8 @@ pub struct X86Codegen {
     /// IP is used to track the execution of instructions inside 
     /// a function.
     func_ip: usize,
+
+    la: LivenessAnalyzer
 }
 
 impl X86Codegen {
@@ -74,7 +76,8 @@ impl X86Codegen {
             rm: X86RegMgr::new(),
             temp_reg_map: X86TRMap::default(),
             compt_fn_props: None,
-            func_ip: 0
+            func_ip: 0,
+            la: LivenessAnalyzer::default()
         }
     }
 }
@@ -146,7 +149,8 @@ impl Codegen for X86Codegen {
             return format!(".extern _{}\n", fn_ir.name);
         }
 
-        let temp_liveness: HashMap<usize, LiveRange> = LivenessAnalyzer::analyze_fn_temps(fn_ir);
+        self.la.analyze_fn_temps(fn_ir);
+        let temp_liveness = self.la.liveness_info.clone();
 
         // generate the code for function body
         self.switch_to_func_scope(
@@ -154,7 +158,7 @@ impl Codegen for X86Codegen {
                 is_leaf: fn_ir.is_leaf, 
                 stack_size: fn_ir.params.len() * 8,
                 liveness_info: temp_liveness,
-                _next_stack_slot: 0,
+                next_stack_slot: 0,
             }
         );
 

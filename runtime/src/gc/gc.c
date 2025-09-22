@@ -1,5 +1,4 @@
 #include "gc/gc.h"
-#include "gc/gc_str.h"
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -50,6 +49,7 @@ void object_delete(K_Object *obj) {
     }
 }
 
+/*
 void kgc_alloc_fail()   { 
     const char msg[] = "kgc_alloc failed\n";
     write(STDERR_FILENO, msg, sizeof(msg)-1);
@@ -87,3 +87,4 @@ void kgc_add_child(gc_object_t* parent, gc_object_t* child) {
 
     kgc_retain(child);  // child ref count incremented
 }
+    */

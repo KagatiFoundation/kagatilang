@@ -67,7 +67,7 @@ pub enum AllocStrategy {
 }
 
 /// Represents the status of a register at a given moment.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
 pub enum RegStatus {
     /// The register is currently allocated and in use.
     Alloced,
@@ -83,7 +83,7 @@ pub enum RegStatus {
 }
 
 /// Stores information about an allocated register.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllocedReg {
     /// The size of the allocated register (e.g., 32-bit, 64-bit).
     pub size: RegSize,

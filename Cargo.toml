@@ -18,5 +18,5 @@ members = [
     "compiler/kagc_const",
     "compiler/kagc_span",
     "compiler/kagc_codegen",
-    "kagc"
+    "kagc",
 ]

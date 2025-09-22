@@ -2,14 +2,17 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_liveness::LiveRange;
 use kagc_ir::ir_operands::IROperand;
 use kagc_ir::ir_operands::IRAddr;
 use kagc_ir::ir_instr::IRCondOp;
+use kagc_ir::ir_operands::TempId;
 use kagc_ir::LabelId;
 
+use kagc_target::reg::AllocedReg;
 use kagc_types::builtins::obj::KObjType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,19 +29,16 @@ pub(crate) enum IRToASMState {
 /// - `stack_size`: The amount of stack space allocated for this function.
 #[derive(Debug, Clone)]
 pub(crate) struct ComptFnProps {
-    pub stack_size:     usize,
-
-    pub _next_stack_slot:   usize,
-    
-    pub liveness_info:  HashMap<usize, LiveRange>,
-    
-    pub is_leaf:        bool,
+    pub stack_size:         usize,
+    pub next_stack_slot:    usize,
+    pub liveness_info:      Rc<HashMap<usize, LiveRange>>,
+    pub is_leaf:            bool,
 }
 
 impl ComptFnProps {
     pub fn next_stack_slot(&mut self) -> usize {
-        let slot = self._next_stack_slot;
-        self._next_stack_slot += 1;
+        let slot = self.next_stack_slot;
+        self.next_stack_slot += 1;
         slot
     }
 }
@@ -149,4 +149,61 @@ pub trait Codegen {
     fn gen_leaf_fn_epl(&self, stack_size: usize) -> String;
 
     fn gen_non_leaf_fn_epl(&self, stack_size: usize) -> String;
+}
+
+pub trait CustomMap<K, V> {
+    fn get(&self, key: K) -> Option<&V>;
+
+    fn reverse_get(&self, value: V) -> Option<K>;
+}
+
+
+#[derive(Debug, Default)]
+pub struct TRMap {
+    pub reg_map: HashMap<TempId, AllocedReg>
+}
+
+impl CustomMap<TempId, AllocedReg> for TRMap {
+    fn get(&self, temp_id: TempId) -> Option<&AllocedReg> {
+        self.reg_map.get(&temp_id)
+    }
+
+    fn reverse_get(&self, reg_idx: AllocedReg) -> Option<TempId> {
+        self.reg_map
+            .iter()
+            .find(|(_, reg)| {
+                reg.idx == reg_idx.idx
+            })
+            .map(|(temp, _)| *temp)
+    }
+}
+
+impl TRMap {
+    pub fn drop(&mut self, key: &TempId) -> Option<AllocedReg> {
+        self.reg_map.remove(key)
+    }
+
+    pub fn clear_mappings(&mut self) {
+        self.reg_map.clear();
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SpillMap {
+    pub reg_map: HashMap<AllocedReg, AllocedReg>
+}
+
+impl CustomMap<AllocedReg, AllocedReg> for SpillMap {
+    fn get(&self, key: AllocedReg) -> Option<&AllocedReg> {
+        self.reg_map.get(&key)
+    }
+
+    fn reverse_get(&self, value: AllocedReg) -> Option<AllocedReg> {
+        self.reg_map
+            .iter()
+            .find(|(_, reg)| {
+                reg.idx == value.idx
+            })
+            .map(|(temp, _)| temp.clone())
+    }
 }

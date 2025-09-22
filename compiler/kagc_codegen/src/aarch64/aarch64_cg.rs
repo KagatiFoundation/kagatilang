@@ -3,8 +3,10 @@
 
 use crate::Codegen;
 use crate::ComptFnProps;
+use crate::CustomMap;
+use crate::SpillMap;
+use crate::TRMap;
 use kagc_ir::ir_instr::*;
-use kagc_ir::ir_liveness::LiveRange;
 use kagc_ir::ir_liveness::LivenessAnalyzer;
 use kagc_ir::ir_operands::IROperand;
 use kagc_ir::ir_operands::TempId;
@@ -13,7 +15,8 @@ use kagc_ir::ir_operands::IRAddr;
 use kagc_ir::LabelId;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::HashSet;
+use std::fmt::format;
 use std::rc::Rc;
 
 use kagc_const::pool::ConstEntry;
@@ -24,35 +27,6 @@ use kagc_target::{asm::aarch64::*, reg::*};
 use kagc_types::builtins::obj::KObjType;
 
 use crate::IRToASMState;
-
-#[derive(Debug, Default)]
-pub struct TempRegMap {
-    pub reg_map: HashMap<TempId, AllocedReg>
-}
-
-impl TempRegMap {
-    pub fn drop(&mut self, key: &TempId) -> Option<AllocedReg> {
-        self.reg_map.remove(key)
-    }
-
-    /// Get temporary ID associated with the given register.
-    pub fn find_temp_by_reg(&self, reg_idx: RegIdx) -> Option<TempId> {
-        self.reg_map
-            .iter()
-            .find(|(_, reg)| {
-                reg.idx == reg_idx
-            })
-            .map(|(temp, _)| *temp)
-    }
-
-    pub fn find_reg_by_temp(&self, temp_id: TempId) -> Option<&AllocedReg> {
-        self.reg_map.get(&temp_id)
-    }
-
-    pub fn clear_mappings(&mut self) {
-        self.reg_map.clear();
-    }
-}
 
 /// Handles the translation of IR (Intermediate Representation) to 
 /// AArch64 assembly.
@@ -72,7 +46,9 @@ pub struct Aarch64Codegen {
 
     compt_fn_props: Option<ComptFnProps>,
 
-    temp_reg_map: TempRegMap,
+    temp_reg_map: TRMap,
+
+    spill_map: SpillMap,
 
     /// Instruction Pointer:
     /// IP is used to track the execution of instructions inside 
@@ -81,6 +57,11 @@ pub struct Aarch64Codegen {
 
     /// Code generators state
     state: IRToASMState,
+
+    /// Liveness analyzer
+    la: LivenessAnalyzer,
+
+    refill_stack: HashSet<RegIdx>
 }
 
 impl Aarch64Codegen {
@@ -90,9 +71,12 @@ impl Aarch64Codegen {
             ctx,
             reg_manager: rm,
             compt_fn_props: None,
-            temp_reg_map: TempRegMap { reg_map: HashMap::new() },
+            temp_reg_map: TRMap::default(),
             func_ip: 0,
-            state: IRToASMState::Global
+            state: IRToASMState::Global,
+            la: LivenessAnalyzer::default(),
+            refill_stack: HashSet::new(),
+            spill_map: SpillMap::default()
         }
     }
 
@@ -147,15 +131,6 @@ impl Aarch64Codegen {
     /// Align the given address into an address divisible by 16.
     fn align_to_16(value: usize) -> usize {
         (value + 16 - 1) & !15
-    }
-
-    fn is_temp_alive_after(&self, temp: TempId, n_instrs: usize) -> bool {
-        let compt_props = self._get_current_fn_props();
-        let (start, end) = compt_props.liveness_info
-            .get(&temp)
-            .unwrap_or_else(|| panic!("Untracked temp id '{temp}'"));
-
-        (*start + *end) <= (self.func_ip + n_instrs)
     }
 
     fn drop_temp(&mut self, temp: usize) {
@@ -349,10 +324,8 @@ impl Codegen for Aarch64Codegen {
         let mut output_str: String = "".to_string();
 
         // Temporary liveness information of this function
-        let temp_liveness: HashMap<usize, LiveRange> = LivenessAnalyzer::analyze_fn_temps(fn_ir);
-
-        // Heap memory manager
-        // let _heap_liveness = HeapLivenessAnalyer::analyze(fn_ir);
+        self.la.analyze_fn_temps(fn_ir);
+        let temp_liveness = self.la.liveness_info.clone();
 
         let stack_size: usize = self.pre_compute_fn_stack_size(fn_ir).unwrap();
 
@@ -369,12 +342,11 @@ impl Codegen for Aarch64Codegen {
                 is_leaf: fn_ir.is_leaf, 
                 stack_size,
                 liveness_info: temp_liveness,
-                _next_stack_slot: 0,
+                next_stack_slot: 0,
             }
         );
 
         let mut fn_body_asm = String::new();
-
         for body_ir in &mut fn_ir.body {
             let _body_asm: String = self.gen_asm_from_ir_node(body_ir);
             self.try_dropping_all_temps();
@@ -514,10 +486,97 @@ impl Codegen for Aarch64Codegen {
         }
     }
 
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, _: &[(usize, IROperand)], _return_type: &Option<IROperand>) -> String {
-        let mut output_str: String = String::new();
-        output_str.push_str(&format!("\tBL _{fn_name}"));
-        output_str
+    fn gen_ir_fn_call_asm(
+        &mut self,
+        fn_name: String,
+        args: &[(usize, IROperand)],
+        _return_type: &Option<IROperand>,
+    ) -> String {
+        self.try_dropping_all_temps();
+        let mut out = String::new();
+        let args_count = args.len();
+
+        let mut regs_to_spill: Vec<AllocedReg> = Vec::new();
+        for reg in Aarch64RegMgr::caller_saved_regs(REG_SIZE_8) {
+            if reg.idx < args_count {
+                continue;
+            }
+            if let Some(temp) = self.temp_reg_map.reverse_get(reg.clone()) {
+                if self.la.is_temp_alive_after(temp, self.func_ip + 1) {
+                    regs_to_spill.push(reg);
+                }
+            }
+        }
+
+        if regs_to_spill.is_empty() {
+            out.push_str(&format!("\tBL _{fn_name}\n"));
+            return out;
+        }
+
+        let mut transfer_regs: Vec<AllocedReg> = Vec::with_capacity(regs_to_spill.len());
+        for _ in 0..regs_to_spill.len() {
+            transfer_regs.push(self.reg_manager.allocate_callee_saved_register(REG_SIZE_8));
+        }
+
+        let spilled_transfer_count = transfer_regs
+            .iter()
+            .filter(|tr| tr.status == RegStatus::Spilled)
+            .count();
+        let dyn_size = spilled_transfer_count * 8;
+        if dyn_size > 0 {
+            out.push_str(&format!("\tSUB SP, SP, #{}\n", dyn_size));
+        }
+
+        let mut stack_offset = 0usize;
+        for tr in &transfer_regs {
+            if tr.status == RegStatus::Spilled {
+                out.push_str(&format!(
+                    "\tSTR {}, [SP, #{}]\n",
+                    tr.name_aarch64(),
+                    stack_offset
+                ));
+                stack_offset += 8;
+            }
+        }
+
+        let mut spills: SpillMap = SpillMap::default();
+
+        for (i, orig_reg) in regs_to_spill.iter().enumerate() {
+            let tr = &transfer_regs[i];
+            out.push_str(&format!(
+                "\tMOV {}, {}\n",
+                tr.name_aarch64(),
+                orig_reg.name_aarch64()
+            ));
+            spills.reg_map.insert(orig_reg.clone(), tr.clone());
+        }
+
+        out.push_str(&format!("\tBL _{fn_name}\n"));
+
+        for (i, orig_reg) in regs_to_spill.iter().enumerate() {
+            let tr = &transfer_regs[i];
+            out.push_str(&format!(
+                "\tMOV {}, {}\n",
+                orig_reg.name_aarch64(),
+                tr.name_aarch64()
+            ));
+        }
+
+        if dyn_size > 0 {
+            let mut offset = 0usize;
+            for tr in &transfer_regs {
+                if tr.status == RegStatus::Spilled {
+                    out.push_str(&format!(
+                        "\tLDR {}, [SP, #{}]\n",
+                        tr.name_aarch64(),
+                        offset
+                    ));
+                    offset += 8;
+                }
+            }
+            out.push_str(&format!("\tADD SP, SP, #{}\n", dyn_size));
+        }
+        out
     }
     
     fn gen_ir_mov_asm(&mut self, dest: &IROperand, src: &IROperand) -> String {
@@ -627,7 +686,8 @@ impl Codegen for Aarch64Codegen {
         {load_type}
         BL _object_new
         CBNZ x0, 1f
-        BL _obj_alloc_fail\n1:
+        BL _obj_alloc_fail
+        1:
         " 
         ));
         output
@@ -635,13 +695,6 @@ impl Codegen for Aarch64Codegen {
 
     fn gen_ir_mem_cpy(&mut self) -> String {
         let mut output = "".to_string();
-
-        for reg in Aarch64RegMgr::caller_saved_regs() {
-            if self.temp_reg_map.find_temp_by_reg(reg).is_some() {
-                // let alive = self.is_temp_alive_after(temp, 1);
-            }
-        }
-
         output.push_str("\tBL _k_memcpy\n");
         output
     }
@@ -653,13 +706,16 @@ impl Aarch64Codegen {
         let stack_size = compt_props.stack_size;
         let next_slot = compt_props.next_stack_slot();
 
+        let mut output = "".to_string();
         let dest_reg = self.resolve_register(dest).1;
         let reg_name: String = dest_reg.name_aarch64();
 
         let op1: String = self.extract_operand(op1);
-        let op2: String = self.extract_operand(op2);
+        output.push_str(&self.refill_spilled_registers());
 
-        let mut output = "".to_string();
+        let op2: String = self.extract_operand(op2);
+        output.push_str(&self.refill_spilled_registers());
+
         output.push_str(
             &self.gen_reg_spill(
                 &dest_reg, 
@@ -693,6 +749,9 @@ impl Aarch64Codegen {
 
             IROperand::Temp { id, .. } => {
                 let src_reg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
+                if src_reg.status == RegStatus::Spilled {
+                    self.refill_stack.insert(src_reg.idx);
+                }
                 src_reg.name_aarch64()
             },
 
@@ -716,6 +775,14 @@ impl Aarch64Codegen {
 
             _ => unimplemented!("{irlit:#?}")
         }
+    }
+
+    fn refill_spilled_registers(&mut self) -> String {
+        let mut output = "".to_string();
+        for rs in &self.refill_stack {
+            output.push_str(&format!("LDR x{rs}, [SP, #0]\n"));
+        }
+        output
     }
 
     /// Get the compile time register mapping of an IR literal type. 

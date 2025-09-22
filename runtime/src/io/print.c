@@ -12,3 +12,7 @@ void print(K_Object *obj) {
     write(STDOUT_FILENO, obj->data, obj->ob_size);
     fflush(stdout);
 }
+
+void print_int(int x) {
+    printf("%d\n", x);
+}

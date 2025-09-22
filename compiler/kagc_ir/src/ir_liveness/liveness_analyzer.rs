@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use crate::ir_operands::IRAddr;
 use crate::ir_instr::IRFunc;
 use crate::ir_instr::IRInstr;
@@ -13,7 +14,9 @@ use crate::ir_operands::TempId;
 pub type LiveRange = (usize, usize);
 
 #[derive(Debug, Default)]
-pub struct LivenessAnalyzer;
+pub struct LivenessAnalyzer {
+    pub liveness_info: Rc<HashMap<TempId, LiveRange>>
+}
 
 impl LivenessAnalyzer {
     /// Computes the live range of temporary values in an IR function.
@@ -30,7 +33,7 @@ impl LivenessAnalyzer {
     ///
     /// This function finds each temporary’s first and last usage, then calculates how long 
     /// it remains live before being unused.
-    pub fn analyze_fn_temps(ir_func: &IRFunc) -> HashMap<TempId, LiveRange> {
+    pub fn analyze_fn_temps(&mut self, ir_func: &IRFunc) {
         let mut temp_liveness: HashMap<TempId, LiveRange> = HashMap::new();
         let live_set: HashMap<usize, usize> = Self::find_temp_appearances(&ir_func.body);
 
@@ -46,7 +49,7 @@ impl LivenessAnalyzer {
                 temp_liveness.insert(*temp_idx, (*first_occurrence, live_range));
             }
         }
-        temp_liveness
+        self.liveness_info = Rc::new(temp_liveness);
     }
 
     fn find_temp_appearances(body: &[IR]) -> HashMap<usize, usize> {
@@ -202,8 +205,16 @@ impl LivenessAnalyzer {
         if p2 >= p1 {
             p2 - p1
         } else {
-            panic!("End index should not be less than the start index!");
+            panic!("End index cannot be less than the start index!");
         }
+    }
+
+    pub fn is_temp_alive_after(&self, temp_lookup: TempId, n_instrs: usize) -> bool {
+        let (start, end) = self.liveness_info
+            .get(&temp_lookup)
+            .unwrap_or_else(|| panic!("Untracked temp id '{temp_lookup}'"));
+
+        (*start + *end) <= n_instrs
     }
 }
 
@@ -262,7 +273,9 @@ mod tests {
                 }),
             ],
         };
-        let analysis_res = LivenessAnalyzer::analyze_fn_temps(&fn_ir);
+        let mut a = LivenessAnalyzer::default();
+        a.analyze_fn_temps(&fn_ir);
+        let analysis_res = a.liveness_info;
         assert_eq!(analysis_res.get(&0), Some(&(0, 2)));
         assert_eq!(analysis_res.get(&2), Some(&(2, 2)));
         assert_eq!(analysis_res.get(&4), Some(&(4, 0)));
@@ -295,7 +308,9 @@ mod tests {
             ],
         };
 
-        let analysis_res = LivenessAnalyzer::analyze_fn_temps(&fn_ir);
+        let mut a = LivenessAnalyzer::default();
+        a.analyze_fn_temps(&fn_ir);
+        let analysis_res = a.liveness_info;
         assert_eq!(analysis_res.get(&0), Some(&(0, 2))); // used in add
         assert_eq!(analysis_res.get(&1), Some(&(1, 0))); // never used, live range = 0
         assert_eq!(analysis_res.get(&2), Some(&(2, 0))); // last temp, never used afterwards
@@ -333,11 +348,12 @@ mod tests {
             ],
         };
 
-        let analysis_res = LivenessAnalyzer::analyze_fn_temps(&fn_ir);
+        let mut a = LivenessAnalyzer::default();
+        a.analyze_fn_temps(&fn_ir);
+        let analysis_res = a.liveness_info;
         assert_eq!(analysis_res.get(&0), Some(&(0, 2))); // used in add
         assert_eq!(analysis_res.get(&1), Some(&(1, 2))); // used in mul
         assert_eq!(analysis_res.get(&2), Some(&(2, 0))); // last temp in add chain
         assert_eq!(analysis_res.get(&3), Some(&(3, 0))); // last temp in mul chain
     }
-
 }

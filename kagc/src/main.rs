@@ -22,14 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-pub mod compiler;
-
 use std::io::Error;
 
-use compiler::Compiler;
+use kagc::compile_file;
 
 fn main() -> Result<(), Error> {
-    let mut comp = Compiler::new();
-    // comp.compile("/Users/rigelstar/kagc/lib/std/net.kag")
-    comp.compile("/Users/rigelstar/Desktop/KagatiFoundation/bichara/examples/ex1.kag")
+    compile_file("/Users/rigelstar/Desktop/KagatiFoundation/kagatilang/examples/ex1.kag")
 }

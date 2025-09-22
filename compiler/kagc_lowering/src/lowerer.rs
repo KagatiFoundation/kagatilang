@@ -653,7 +653,7 @@ impl IRLowerer {
             actual_params.push(
                 (
                     param_reg_idx, 
-                    IROperand::Temp{ 
+                    IROperand::Temp { 
                         id: tmp_reg_loc, 
                         size: reg_sz 
                     }
@@ -662,11 +662,10 @@ impl IRLowerer {
         }
 
         for (rev_idx, last_instr) in last_instrs.iter().rev().enumerate() {
-            let param_tmp = fn_ctx.next_temp();
             param_instrs.push(
                 IRInstr::Mov {
                     dest: IROperand::CallArg { 
-                        temp: param_tmp, 
+                        temp: fn_ctx.next_temp(), 
                         position: rev_idx, 
                         size: last_instr.1.to_reg_size() 
                     }, 
