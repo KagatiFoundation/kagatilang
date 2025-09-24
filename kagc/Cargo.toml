@@ -21,7 +21,7 @@ kagc_parser = { path = "../compiler/kagc_parser" }
 kagc_sema = { path = "../compiler/kagc_sema" }
 kagc_lexer = { path = "../compiler/kagc_lexer" }
 kagc_lowering = { path = "../compiler/kagc_lowering" }
-kagc_ir = { path = "../compiler/kagc_ir" }
+kagc_mir = { path = "../compiler/kagc_mir" }
 kagc_comp_unit = { path = "../compiler/kagc_comp_unit" }
 kagc_scope = { path = "../compiler/kagc_scope" }
 kagc_codegen = { path = "../compiler/kagc_codegen" }

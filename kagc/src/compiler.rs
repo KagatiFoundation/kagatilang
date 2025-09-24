@@ -13,7 +13,7 @@ use kagc_comp_unit::ImportResolver;
 use kagc_comp_unit::source::ParsingStage;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
-use kagc_ir::ir_instr::IR;
+use kagc_mir::ir_instr::IR;
 use kagc_lexer::Tokenizer;
 use kagc_lowering::IRLowerer;
 use kagc_parser::builder::ParserBuilder;

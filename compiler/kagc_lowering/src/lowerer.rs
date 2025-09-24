@@ -7,8 +7,9 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
-use kagc_ir::ir_instr::*;
-use kagc_ir::ir_operands::*;
+use kagc_mir::ir_instr::*;
+use kagc_mir::ir_operands::*;
+use kagc_mir::GCOBJECT_BUFFER_IDX;
 use kagc_symbol::*;
 use kagc_target::reg::*;
 use kagc_types::*;
@@ -18,8 +19,7 @@ use kagc_ctx::CompilerCtx;
 use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::Severity;
-use kagc_ir::gc::GCOBJECT_BUFFER_IDX;
-use kagc_ir::LabelId;
+use kagc_mir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_types::builtins::obj::KObjType;
 

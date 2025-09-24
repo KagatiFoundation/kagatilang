@@ -1,5 +1,5 @@
 [package]
-name = "kagc_ir"
+name = "kagc_mir"
 version = "0.1.0"
 edition = "2021"
 

@@ -3,18 +3,12 @@
 
 use std::collections::HashMap;
 
-use kagc_ir::ir_operands::IRAddr;
-use kagc_ir::ir_instr::IRFunc;
-use kagc_ir::ir_instr::IR;
-use kagc_ir::ir_liveness::LiveRange;
-use kagc_ir::ir_liveness::LivenessAnalyzer;
-use kagc_ir::ir_instr::IRCondOp;
-use kagc_ir::ir_operands::IROperand;
-use kagc_ir::ir_operands::IRImmVal;
-use kagc_ir::ir_instr::IRReturn;
-use kagc_ir::ir_instr::IRLoop;
-use kagc_ir::ir_operands::TempId;
-use kagc_ir::LabelId;
+use kagc_mir::ir_operands::*;
+use kagc_mir::ir_instr::*;
+use kagc_mir::ir_liveness::LiveRange;
+use kagc_mir::ir_liveness::LivenessAnalyzer;
+use kagc_mir::ir_instr::IRCondOp;
+use kagc_mir::LabelId;
 use kagc_symbol::StorageClass;
 use kagc_target::asm::x86::X86Reg;
 use kagc_target::asm::x86::X86RegMgr;
@@ -307,7 +301,7 @@ impl Codegen for X86Codegen {
         todo!()
     }
 
-    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, kagc_ir::ir_operands::IROperand)], return_type: &Option<kagc_ir::ir_operands::IROperand>) -> String {
+    fn gen_ir_fn_call_asm(&mut self, fn_name: String, params: &[(usize, IROperand)], return_type: &Option<IROperand>) -> String {
         todo!()
     }
 
@@ -319,15 +313,15 @@ impl Codegen for X86Codegen {
         todo!()
     }
 
-    fn gen_ir_sub_asm(&mut self, dest: &kagc_ir::ir_operands::IROperand, op1: &kagc_ir::ir_operands::IROperand, op2: &kagc_ir::ir_operands::IROperand) -> String {
+    fn gen_ir_sub_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         todo!()
     }
 
-    fn gen_ir_mul_asm(&mut self, dest: &kagc_ir::ir_operands::IROperand, op1: &kagc_ir::ir_operands::IROperand, op2: &kagc_ir::ir_operands::IROperand) -> String {
+    fn gen_ir_mul_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         todo!()
     }
 
-    fn gen_ir_div_asm(&mut self, dest: &kagc_ir::ir_operands::IROperand, op1: &kagc_ir::ir_operands::IROperand, op2: &kagc_ir::ir_operands::IROperand) -> String {
+    fn gen_ir_div_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
         todo!()
     }
 
@@ -348,7 +342,7 @@ impl Codegen for X86Codegen {
         todo!()
     }
 
-    fn gen_ir_label_asm(&mut self, ir_label: &kagc_ir::ir_instr::IRLabel) -> String {
+    fn gen_ir_label_asm(&mut self, ir_label: &IRLabel) -> String {
         todo!()
     }
 

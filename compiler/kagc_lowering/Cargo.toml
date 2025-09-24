@@ -13,6 +13,6 @@ kagc_symbol = { path = "../kagc_symbol" }
 kagc_types = { path = "../kagc_types" }
 kagc_ctx = { path = "../kagc_ctx" }
 kagc_utils = { path = "../kagc_utils" }
-kagc_ir = { path = "../kagc_ir" }
+kagc_mir = { path = "../kagc_mir" }
 kagc_const = { path = "../kagc_const" }
 kagc_errors = { path = "../kagc_errors" }

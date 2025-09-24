@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use kagc_ast::ASTOperation;
-use kagc_ir::ir_operands::TempId;
-use kagc_ir::LabelId;
+use kagc_mir::ir_operands::TempId;
+use kagc_mir::LabelId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use crate::typedefs::*;

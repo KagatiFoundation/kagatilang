@@ -12,7 +12,7 @@ members = [
     "compiler/kagc_ctx",
     "compiler/kagc_parser",
     "compiler/kagc_utils",
-    "compiler/kagc_ir",
+    "compiler/kagc_mir",
     "compiler/kagc_scope",
     "compiler/kagc_comp_unit",
     "compiler/kagc_const",

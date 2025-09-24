@@ -4,13 +4,13 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use kagc_ir::ir_instr::*;
-use kagc_ir::ir_liveness::LiveRange;
-use kagc_ir::ir_operands::IROperand;
-use kagc_ir::ir_operands::IRAddr;
-use kagc_ir::ir_instr::IRCondOp;
-use kagc_ir::ir_operands::TempId;
-use kagc_ir::LabelId;
+use kagc_mir::ir_instr::*;
+use kagc_mir::ir_liveness::LiveRange;
+use kagc_mir::ir_operands::IROperand;
+use kagc_mir::ir_operands::IRAddr;
+use kagc_mir::ir_instr::IRCondOp;
+use kagc_mir::ir_operands::TempId;
+use kagc_mir::LabelId;
 
 use kagc_target::reg::AllocedReg;
 use kagc_target::reg::RegMgr;
