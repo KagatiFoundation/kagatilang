@@ -14,7 +14,7 @@ use kagc_mir::LabelId;
 
 use kagc_types::builtins::obj::KObjType;
 
-use crate::reg::AllocedReg;
+use crate::reg::AllocedRegister;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IRToASMState {
@@ -161,15 +161,15 @@ pub trait CustomMap<K, V> {
 
 #[derive(Debug, Default)]
 pub struct TRMap {
-    pub reg_map: HashMap<TempId, AllocedReg>
+    pub reg_map: HashMap<TempId, AllocedRegister>
 }
 
-impl CustomMap<TempId, AllocedReg> for TRMap {
-    fn get(&self, temp_id: TempId) -> Option<&AllocedReg> {
+impl CustomMap<TempId, AllocedRegister> for TRMap {
+    fn get(&self, temp_id: TempId) -> Option<&AllocedRegister> {
         self.reg_map.get(&temp_id)
     }
 
-    fn reverse_get(&self, reg_idx: AllocedReg) -> Option<TempId> {
+    fn reverse_get(&self, reg_idx: AllocedRegister) -> Option<TempId> {
         self.reg_map
             .iter()
             .find(|(_, reg)| {
@@ -180,7 +180,7 @@ impl CustomMap<TempId, AllocedReg> for TRMap {
 }
 
 impl TRMap {
-    pub fn drop(&mut self, key: &TempId) -> Option<AllocedReg> {
+    pub fn drop(&mut self, key: &TempId) -> Option<AllocedRegister> {
         self.reg_map.remove(key)
     }
 

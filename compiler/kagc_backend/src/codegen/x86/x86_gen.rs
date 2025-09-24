@@ -5,14 +5,11 @@ use std::collections::HashMap;
 
 use kagc_mir::ir_operands::*;
 use kagc_mir::ir_instr::*;
-use kagc_mir::ir_liveness::LiveRange;
 use kagc_mir::ir_liveness::LivenessAnalyzer;
 use kagc_mir::ir_instr::IRCondOp;
 use kagc_mir::LabelId;
 use kagc_symbol::StorageClass;
-use crate::asm::x86::X86Reg;
-use crate::asm::x86::X86RegMgr;
-use crate::asm::x86::X86RegName;
+use crate::regalloc::x86::*;
 use crate::codegen::Codegen;
 use crate::codegen::ComptFnProps;
 use crate::reg::RegStatus;

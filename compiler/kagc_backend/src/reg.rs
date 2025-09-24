@@ -83,7 +83,7 @@ pub enum RegStatus {
 
 /// Stores information about an allocated register.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocedReg {
+pub struct AllocedRegister {
     /// The size of the allocated register (e.g., 32-bit, 64-bit).
     pub size: RegSize,
 
@@ -111,22 +111,22 @@ impl RegState {
     }
 }
 
-pub type RegAllocResult = Result<AllocedReg, RegAllocError>;
+pub type RegAllocResult = Result<AllocedRegister, RegAllocError>;
 
-pub trait RegMgr: Debug {
-    fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg;
+pub trait RegisterAllocator: Debug {
+    fn allocate_register(&mut self, alloc_size: usize) -> AllocedRegister;
 
-    fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg;
+    fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedRegister;
     
-    fn allocate_param_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg;
+    fn allocate_param_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedRegister;
 
-    fn allocate_param_register(&mut self, alloc_size: usize) -> AllocedReg;
+    fn allocate_param_register(&mut self, alloc_size: usize) -> AllocedRegister;
 
     fn free_register(&mut self, reg: usize);
 
-    fn spill_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg;
+    fn spill_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedRegister;
     
-    fn spill_param_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg;
+    fn spill_param_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedRegister;
     
     fn restore_register(&mut self) -> usize;
 

@@ -1,18 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::asm::aarch64::Aarch64RegMgr;
-use crate::codegen::Codegen;
-use crate::codegen::ComptFnProps;
-use crate::codegen::CustomMap;
-use crate::codegen::IRToASMState;
-use crate::codegen::TRMap;
-use crate::reg::AllocStrategy;
-use crate::reg::AllocedReg;
-use crate::reg::RegIdx;
-use crate::reg::RegSize;
-use crate::reg::RegStatus;
-use crate::reg::REG_SIZE_8;
+use crate::regalloc::aarch64::Aarch64RegMgr;
+use crate::codegen::*;
+use crate::reg::*;
 
 use kagc_mir::ir_instr::*;
 use kagc_mir::ir_liveness::LivenessAnalyzer;
@@ -67,7 +58,7 @@ pub struct Aarch64Codegen {
     /// Liveness analyzer
     la: LivenessAnalyzer,
 
-    refill_stack: HashSet<(AllocedReg, usize)>
+    refill_stack: HashSet<(AllocedRegister, usize)>
 }
 
 impl Aarch64Codegen {
@@ -140,7 +131,7 @@ impl Aarch64Codegen {
     }
 
     fn drop_temp(&mut self, temp: usize) {
-        let freed_reg: Option<AllocedReg> = self.temp_reg_map.drop(&temp);
+        let freed_reg: Option<AllocedRegister> = self.temp_reg_map.drop(&temp);
 
         if let Some(reg) = freed_reg {
             self.reg_manager.free_register(reg.idx);
@@ -229,7 +220,7 @@ impl Aarch64Codegen {
     }
 
     /// Spill register to stack pointer (SP)
-    fn gen_str_sp(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> String {
+    fn gen_str_sp(&self, reg: &AllocedRegister, stack_size: usize, slot: usize) -> String {
         let stack_off = stack_size - (slot * 8);
         let dest_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
             format!("[SP, {stack_off:#x}]")
@@ -241,7 +232,7 @@ impl Aarch64Codegen {
     }
 
     /// Load register from stack pointer (SP)
-    fn gen_ldr_sp(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> String {
+    fn gen_ldr_sp(&self, reg: &AllocedRegister, stack_size: usize, slot: usize) -> String {
         let stack_off = stack_size - (slot * 8);
         let src_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
             format!("[SP, {stack_off:#x}]")
@@ -253,7 +244,7 @@ impl Aarch64Codegen {
     }
 
     /// Spill register to frame pointer (x29)
-    fn gen_str_fp(&self, reg: &AllocedReg, slot: usize) -> String {
+    fn gen_str_fp(&self, reg: &AllocedRegister, slot: usize) -> String {
         let stack_off = slot * 8;
         let dest_addr = if stack_off != 0 { // if not at the beginning of the frame pointer
             format!("[x29, -{stack_off:#x}]")
@@ -265,7 +256,7 @@ impl Aarch64Codegen {
     }
 
     /// Load register from frame pointer (x29)
-    fn gen_ldr_fp(&self, reg: &AllocedReg, slot: usize) -> String {
+    fn gen_ldr_fp(&self, reg: &AllocedRegister, slot: usize) -> String {
         let stack_off = slot * 8;
         let src_addr = if stack_off != 0 { // if not at the beginning of the frame pointer
             format!("[x29, -{stack_off:#x}]")
@@ -276,14 +267,14 @@ impl Aarch64Codegen {
         format!("\tLDR {}, {src_addr}\n", reg.name_aarch64())
     }
 
-    fn gen_reg_spill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
+    fn gen_reg_spill(&self, reg: &AllocedRegister, stack_size: usize, slot: usize) -> Option<String> {
         if reg.status != RegStatus::Spilled {
             return None;
         }
         Some(self.gen_str_sp(reg, stack_size, slot))
     }
 
-    fn _gen_reg_unspill(&self, reg: &AllocedReg, stack_size: usize, slot: usize) -> Option<String> {
+    fn _gen_reg_unspill(&self, reg: &AllocedRegister, stack_size: usize, slot: usize) -> Option<String> {
         if reg.status != RegStatus::Spilled {
             return None;
         }
@@ -520,7 +511,7 @@ impl Codegen for Aarch64Codegen {
         self.try_dropping_all_temps();
         let mut out = String::new();
 
-        let mut regs_to_spill: Vec<AllocedReg> = Vec::new();
+        let mut regs_to_spill: Vec<AllocedRegister> = Vec::new();
         for (reg_idx, reg) in Aarch64RegMgr::caller_saved_regs(REG_SIZE_8).iter().enumerate() {
             if reg_idx < _args.len() {
                 out.push_str(&format!("SKIP: {reg_idx}\n"));
@@ -632,7 +623,7 @@ impl Codegen for Aarch64Codegen {
     }
 
     fn gen_load_global_asm(&mut self, pool_idx: usize, dest: &IROperand) -> String {
-        let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
+        let dest_reg: (usize, AllocedRegister) = self.resolve_register(dest);
         let dest_reg_name: &str = &dest_reg.1.name_aarch64();
 
         let mut output_str: String = String::new();
@@ -775,7 +766,7 @@ impl Aarch64Codegen {
             }
 
             IROperand::Return { size, .. } => {
-                let reg = AllocedReg {
+                let reg = AllocedRegister {
                     idx: 0,
                     size: *size,
                     status: RegStatus::Free
@@ -787,7 +778,7 @@ impl Aarch64Codegen {
         }
     }
 
-    fn maybe_spill_register(&mut self, temp: TempId, reg: &AllocedReg) -> Option<String> {
+    fn maybe_spill_register(&mut self, temp: TempId, reg: &AllocedRegister) -> Option<String> {
         if reg.status != RegStatus::Spilled {
             return None;
         }
@@ -823,7 +814,7 @@ impl Aarch64Codegen {
 
     /// Get the compile time register mapping of an IR literal type. 
     /// Returns temporary ID with its mapped AllocedReg.
-    fn resolve_register(&mut self, irlit: &IROperand) -> (TempId, AllocedReg) {
+    fn resolve_register(&mut self, irlit: &IROperand) -> (TempId, AllocedRegister) {
         match irlit {
             IROperand::Temp { 
                 id, 
@@ -842,7 +833,7 @@ impl Aarch64Codegen {
                 temp,
                 ..
             } => {
-                let src = AllocedReg {
+                let src = AllocedRegister {
                     idx: 0,
                     size: REG_SIZE_8,
                     status: RegStatus::Free
@@ -851,7 +842,7 @@ impl Aarch64Codegen {
             }
 
             IROperand::Param { size, position } => {
-                let reg = AllocedReg {
+                let reg = AllocedRegister {
                     idx: *position,
                     size: *size,
                     status: RegStatus::Free
@@ -863,10 +854,7 @@ impl Aarch64Codegen {
                 temp,
                 size, 
                 ..
-            } => {
-                let aa = (*temp, self.get_or_allocate_specific_register(0, *temp, *size));
-                aa
-            }
+            } => (*temp, self.get_or_allocate_specific_register(0, *temp, *size)),
 
             _ => {
                 println!("{irlit:#?}");
@@ -875,31 +863,31 @@ impl Aarch64Codegen {
         }
     }
     
-    fn get_or_allocate_temp_register(&mut self, temp_value: usize, sz: usize) -> AllocedReg {
+    fn get_or_allocate_temp_register(&mut self, temp_value: usize, sz: usize) -> AllocedRegister {
         self.temp_reg_map
             .reg_map
             .get(&temp_value)
             .cloned()
             .unwrap_or_else(|| {
-                let alloced_reg: AllocedReg = self.allocate_register(sz);
+                let alloced_reg: AllocedRegister = self.allocate_register(sz);
                 self.temp_reg_map.reg_map.insert(temp_value, alloced_reg.clone());
                 alloced_reg
             })
     }
     
-    fn get_or_allocate_specific_register(&mut self, reg: RegIdx, temp: usize, sz: RegSize) -> AllocedReg {
+    fn get_or_allocate_specific_register(&mut self, reg: RegIdx, temp: usize, sz: RegSize) -> AllocedRegister {
         self.temp_reg_map
             .reg_map
             .get(&temp)
             .cloned()
             .unwrap_or_else(|| {
-                let alloced_reg: AllocedReg = self.allocate_specific_register(reg, sz);
+                let alloced_reg: AllocedRegister = self.allocate_specific_register(reg, sz);
                 self.temp_reg_map.reg_map.insert(temp, alloced_reg.clone());
                 alloced_reg
             })
     }
     
-    fn allocate_register(&mut self, sz: RegSize) -> AllocedReg {
+    fn allocate_register(&mut self, sz: RegSize) -> AllocedRegister {
         assert_ne!(sz, 0);
         let reg_mgr = &mut self.reg_manager;
         let reg = reg_mgr.allocate_register(sz);
@@ -907,7 +895,7 @@ impl Aarch64Codegen {
         reg
     }
     
-    fn allocate_specific_register(&mut self, reg: RegIdx, sz: RegSize) -> AllocedReg {
+    fn allocate_specific_register(&mut self, reg: RegIdx, sz: RegSize) -> AllocedRegister {
         assert_ne!(sz, 0);
         let reg_mgr = &mut self.reg_manager;
         let reg = reg_mgr.allocate_register_with_idx(sz, reg, AllocStrategy::Spill);

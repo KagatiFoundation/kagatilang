@@ -3,13 +3,12 @@
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use crate::reg;
 use crate::reg::*;
 
 pub const REG_64BIT: usize = 64;
 pub const REG_32BIT: usize = 32;
 
-impl AllocedReg {
+impl AllocedRegister {
     pub fn name_aarch64(&self) -> String {
         if self.size == REG_SIZE_4 {
             format!("w{}", self.idx)
@@ -46,7 +45,7 @@ impl Aarch64RegMgr {
     ///
     /// # Parameters
     /// - `alloc_size`: The size (in bytes or units) associated with the allocation.
-    pub fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg {
+    pub fn allocate_register(&mut self, alloc_size: usize) -> AllocedRegister {
         for reg_idx in 8..32 {
             // x29 and x30 are reserved registers
             if reg_idx == 29 || reg_idx == 30 {
@@ -63,7 +62,7 @@ impl Aarch64RegMgr {
                         status: RegStatus::Alloced
                     }
                 );
-                return AllocedReg {
+                return AllocedRegister {
                     idx: reg_idx,
                     size: alloc_size,
                     status: RegStatus::Alloced,
@@ -73,7 +72,7 @@ impl Aarch64RegMgr {
         self.spill_register(alloc_size, None)
     }
 
-    pub fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg {
+    pub fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedRegister {
         if !(0..=32).contains(&idx) {
             panic!("Index '{idx}' is not a valid register index!");
         }
@@ -94,7 +93,7 @@ impl Aarch64RegMgr {
                 }
             );
 
-            let a = AllocedReg {
+            let a = AllocedRegister {
                 idx,
                 size: alloc_size,
                 status: RegStatus::Alloced
@@ -110,7 +109,7 @@ impl Aarch64RegMgr {
         }
     }
 
-    pub fn allocate_param_register(&mut self, alloc_size: usize) -> AllocedReg {
+    pub fn allocate_param_register(&mut self, alloc_size: usize) -> AllocedRegister {
         for i in 0..8 {
             if self.available_registers[i] {
                 self.available_registers[i] = false;
@@ -124,7 +123,7 @@ impl Aarch64RegMgr {
                     }
                 );
 
-                return AllocedReg {
+                return AllocedRegister {
                     idx: i,
                     size: alloc_size,
                     status: RegStatus::Alloced
@@ -134,7 +133,7 @@ impl Aarch64RegMgr {
         self.spill_param_register(alloc_size, None) 
     }
 
-    pub fn allocate_param_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg {
+    pub fn allocate_param_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedRegister {
         assert!((0..=7).contains(&idx));
         
         if self.available_registers[idx] {
@@ -149,7 +148,7 @@ impl Aarch64RegMgr {
                 }
             );
 
-            return AllocedReg {
+            return AllocedRegister {
                 idx,
                 size: alloc_size,
                 status: RegStatus::Alloced
@@ -173,12 +172,12 @@ impl Aarch64RegMgr {
     
     /// The instruction using this register will spill the register 
     /// before using it.
-    fn spill_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg {
+    fn spill_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedRegister {
         assert!(!matches!(idx, Some(29) | Some(30)));
 
         if let Some(i) = idx {
             if self.register_map.contains_key(&i) {
-                return AllocedReg { 
+                return AllocedRegister { 
                     size: alloc_size, 
                     idx: i,
                     status: RegStatus::Spilled, 
@@ -188,7 +187,7 @@ impl Aarch64RegMgr {
         else {
             for reg_idx in 8..32 {
                 if self.register_map.contains_key(&reg_idx) {
-                    return AllocedReg { 
+                    return AllocedRegister { 
                         size: alloc_size, 
                         idx: reg_idx,
                         status: RegStatus::Spilled,
@@ -199,7 +198,7 @@ impl Aarch64RegMgr {
         panic!("Automatic spilling function called even when other registers are free! Aborting...");
     }
 
-    pub fn spill_param_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg {
+    pub fn spill_param_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedRegister {
         if let Some(i) = idx {
             if self.register_map.contains_key(&i) {
                 return self.spill_and_mark_available(i, alloc_size);
@@ -217,12 +216,12 @@ impl Aarch64RegMgr {
         }
     }
 
-    fn spill_and_mark_available(&mut self, reg_to_spill: usize, alloc_size: usize) -> AllocedReg {
+    fn spill_and_mark_available(&mut self, reg_to_spill: usize, alloc_size: usize) -> AllocedRegister {
         self.spilled_stack.push_back(reg_to_spill);
         // self.available_registers[reg_to_spill] = true; 
         self.register_map.remove(&reg_to_spill);
 
-        AllocedReg { 
+        AllocedRegister { 
             size: alloc_size, 
             idx: reg_to_spill,
             status: RegStatus::Spilled,
@@ -233,24 +232,24 @@ impl Aarch64RegMgr {
         idx <= 17
     }
 
-    pub fn caller_saved_regs(size: RegSize) -> Vec<AllocedReg> {
+    pub fn caller_saved_regs(size: RegSize) -> Vec<AllocedRegister> {
         if size == REG_SIZE_8 {
             (0..=18).map(|idx| {
-                AllocedReg {
+                AllocedRegister {
                     idx: idx as usize,
                     size: REG_SIZE_8,
                     status: RegStatus::Free
                 }
-            }).collect::<Vec<AllocedReg>>()
+            }).collect::<Vec<AllocedRegister>>()
         }
         else {
             (0..=18).map(|idx| {
-                AllocedReg {
+                AllocedRegister {
                     idx: idx as usize,
                     size: REG_SIZE_4,
                     status: RegStatus::Free
                 }
-            }).collect::<Vec<AllocedReg>>()
+            }).collect::<Vec<AllocedRegister>>()
         }
     }
 
@@ -280,7 +279,7 @@ impl Aarch64RegMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::asm::aarch64::*;
+    use crate::regalloc::aarch64::*;
 
     fn setup_manager() -> Aarch64RegMgr {
         Aarch64RegMgr::new()

@@ -290,7 +290,7 @@ impl X86RegMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::asm::x86::{X86RegMgr, X86RegName};
+    use crate::regalloc::x86::{X86RegMgr, X86RegName};
     use crate::reg::{RegStatus, REG_SIZE_8};
 
     #[test]

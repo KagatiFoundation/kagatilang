@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_backend::codegen::aarch64::Aarch64Codegen;
-use kagc_backend::codegen::x86::X86Codegen;
+use kagc_backend::regalloc::aarch64::Aarch64RegMgr;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
@@ -23,7 +23,6 @@ use kagc_scope::manager::ScopeManager;
 use kagc_scope::scope::Scope;
 use kagc_sema::resolver::Resolver;
 use kagc_sema::SemanticAnalyzer;
-use kagc_backend::asm::aarch64::Aarch64RegMgr;
 
 #[derive(Debug, Clone)]
 pub struct Compiler {
