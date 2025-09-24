@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+use std::fmt::Debug;
+
 pub enum RegAllocError {
     ReservedRegister,
     NoRegisterAvailable
@@ -76,10 +78,7 @@ pub enum RegStatus {
     Free,
 
     /// The register has been spilled to memory.
-    Spilled,
-
-    /// The register is in an invalid state (e.g., uninitialized or corrupted).
-    Invalid,
+    Spilled
 }
 
 /// Stores information about an allocated register.
@@ -114,7 +113,7 @@ impl RegState {
 
 pub type RegAllocResult = Result<AllocedReg, RegAllocError>;
 
-pub trait RegMgr {
+pub trait RegMgr: Debug {
     fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg;
 
     fn allocate_register_with_idx(&mut self, alloc_size: usize, idx: RegIdx, strat: AllocStrategy) -> AllocedReg;

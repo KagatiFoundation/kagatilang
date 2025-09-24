@@ -53,12 +53,11 @@ pub enum IROperand {
     },
 
     CallValue {
-        position: usize, // TODO: Remove this field
+        temp: TempId,
         size: usize
     },
 
     Return {
-        position: usize, // TODO: Remove this field
         temp: TempId,
         size: usize
     },
@@ -103,8 +102,8 @@ impl IROperand {
             Self::Temp { id, .. } => id.to_string(),
             Self::CallArg { temp, .. } => temp.to_string(),
             Self::Param { position, .. } => position.to_string(),
-            Self::CallValue { position, .. } => position.to_string(),
-            Self::Return { position, .. } => position.to_string(),
+            Self::CallValue { temp, .. } => temp.to_string(),
+            Self::Return { temp, .. } => temp.to_string(),
         }
     }
 

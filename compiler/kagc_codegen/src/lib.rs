@@ -3,6 +3,7 @@
 
 pub mod x86;
 pub mod aarch64;
+pub mod lsvm;
 
 mod codegen;
 

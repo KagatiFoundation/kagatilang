@@ -39,13 +39,11 @@ impl LivenessAnalyzer {
 
         for (temp_idx, first_occurrence) in &live_set {
             if let Some(last_occurrence) = Self::find_last_usage(&ir_func.body, *temp_idx) {
-
                 let live_range: usize = Self::calc_ir_dist(
                     ir_func.body.len(), 
                     *first_occurrence, 
                     last_occurrence
                 );
-
                 temp_liveness.insert(*temp_idx, (*first_occurrence, live_range));
             }
         }
@@ -108,47 +106,51 @@ impl LivenessAnalyzer {
         match ir {
             IR::Instr(instr) => {
                 match instr {
-                    IRInstr::Mov { dest, src } => Self::uses_temp_in_ir_lit(dest, temp_lookup) || Self::uses_temp_in_ir_lit(src, temp_lookup),
+                    IRInstr::Mov { dest, src } => Self::uses_temp_in_ir_operand(dest, temp_lookup) || Self::uses_temp_in_ir_operand(src, temp_lookup),
                     IRInstr::Add { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Sub { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Mul { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
                     IRInstr::Div { dest, op1, op2 } => Self::is_temp_used_bin_op(dest, op1, op2, temp_lookup),
 
                     IRInstr::Load { dest, addr } => {
-                        let mut tmp_used = Self::uses_temp_in_ir_lit(dest, temp_lookup);
+                        let mut tmp_used = Self::uses_temp_in_ir_operand(dest, temp_lookup);
                         if let IRAddr::BaseOff(base, _) = addr {
-                            tmp_used |= Self::uses_temp_in_ir_lit(base, temp_lookup);
+                            tmp_used |= Self::uses_temp_in_ir_operand(base, temp_lookup);
                         }
                         tmp_used
                     },
 
                     IRInstr::Store { src, addr } => {
-                        let mut tmp_used = Self::uses_temp_in_ir_lit(src, temp_lookup);
+                        let mut tmp_used = Self::uses_temp_in_ir_operand(src, temp_lookup);
                         if let IRAddr::BaseOff(base, ..) = addr {
-                            tmp_used |= Self::uses_temp_in_ir_lit(base, temp_lookup);
+                            tmp_used |= Self::uses_temp_in_ir_operand(base, temp_lookup);
                         }
                         tmp_used
                     }
 
-                    IRInstr::Call { params, .. } => {
-                        params.iter().any(|param| {
-                            Self::uses_temp_in_ir_lit(&param.1, temp_lookup)
-                        })
+                    IRInstr::Call { params, dest, .. } => {
+                        let tmp_used = params.iter().any(|param| {
+                            Self::uses_temp_in_ir_operand(&param.1, temp_lookup)
+                        });
+                        if let Some(ret) = dest {
+                            tmp_used || Self::uses_temp_in_ir_operand(ret, temp_lookup)
+                        }
+                        else {
+                            tmp_used
+                        }
                     },
 
                     IRInstr::CondJump { op1, op2, .. } => {
                         [
                             op1.as_ext_temp() == Some(temp_lookup),
                             op2.as_ext_temp() == Some(temp_lookup),
-                            Self::is_temp_used_in_ret_out(temp_lookup, op1),
-                            Self::is_temp_used_in_arg_out(temp_lookup, op1),
-                            Self::is_temp_used_in_ret_out(temp_lookup, op2),
-                            Self::is_temp_used_in_arg_out(temp_lookup, op2),
+                            Self::uses_temp_in_ir_operand(op1, temp_lookup),
+                            Self::uses_temp_in_ir_operand(op2, temp_lookup),
                         ].iter().any(|c| *c)
                     },
 
                     IRInstr::MemCpy { dest } => {
-                        Self::uses_temp_in_ir_lit(dest, temp_lookup)
+                        Self::uses_temp_in_ir_operand(dest, temp_lookup)
                     }
 
                     _ => false
@@ -159,10 +161,11 @@ impl LivenessAnalyzer {
         }
     }
 
-    fn uses_temp_in_ir_lit(ir_lit: &IROperand, temp: usize) -> bool {
-        match ir_lit {
+    fn uses_temp_in_ir_operand(op: &IROperand, temp: usize) -> bool {
+        match op {
             IROperand::Temp { id, .. } => *id == temp,
             IROperand::CallArg { temp: id, .. } => *id == temp,
+            IROperand::CallValue { temp: id, .. } => *id == temp,
             IROperand::Return { temp: id, .. } => *id == temp,
             _ => false
         }
@@ -173,31 +176,10 @@ impl LivenessAnalyzer {
             dest.as_ext_temp() == Some(temp_lookup),
             op1.as_ext_temp() == Some(temp_lookup),
             op2.as_ext_temp() == Some(temp_lookup),
-            Self::is_temp_used_in_arg_out(temp_lookup, dest),
-            Self::is_temp_used_in_ret_out(temp_lookup, dest),
-            Self::is_temp_used_in_arg_out(temp_lookup, op1),
-            Self::is_temp_used_in_ret_out(temp_lookup, op1),
-            Self::is_temp_used_in_arg_out(temp_lookup, op2),
-            Self::is_temp_used_in_ret_out(temp_lookup, op2),
+            Self::uses_temp_in_ir_operand(dest, temp_lookup),
+            Self::uses_temp_in_ir_operand(op1, temp_lookup),
+            Self::uses_temp_in_ir_operand(op2, temp_lookup),
         ].iter().any(|c| *c) 
-    }
-
-    fn is_temp_used_in_arg_out(temp_lookup: usize, arg_out: &IROperand) -> bool {
-        if let IROperand::CallArg { temp, .. } = arg_out {
-            *temp == temp_lookup
-        }
-        else {
-            false
-        }
-    }
-
-    fn is_temp_used_in_ret_out(temp_lookup: usize, arg_out: &IROperand) -> bool {
-        if let IROperand::Return { temp, .. } = arg_out {
-            *temp == temp_lookup
-        }
-        else {
-            false
-        }
     }
 
     fn calc_ir_dist(n: usize, p1: usize, p2_rev: usize) -> usize {
@@ -212,9 +194,9 @@ impl LivenessAnalyzer {
     pub fn is_temp_alive_after(&self, temp_lookup: TempId, n_instrs: usize) -> bool {
         let (start, end) = self.liveness_info
             .get(&temp_lookup)
-            .unwrap_or_else(|| panic!("Untracked temp id '{temp_lookup}'"));
+            .unwrap_or_else(|| panic!("Untracked temp id '{temp_lookup:#}'"));
 
-        (*start + *end) <= n_instrs
+        n_instrs < (*start + *end)
     }
 }
 

@@ -241,8 +241,8 @@ impl IRLowerer {
             size: rec_creation.fields.len() * 8,
             ob_type: KObjType::KRec,
             dest: IROperand::CallValue { 
-                position: 0, 
-                size: REG_SIZE_8
+                size: REG_SIZE_8,
+                temp: fn_ctx.next_temp()
             }
         };
 
@@ -629,62 +629,73 @@ impl IRLowerer {
     }
 
     fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
-        let mut param_instrs = vec![];
+        let mut func_call_instrs = vec![];
         let mut actual_params = vec![];
 
         let num_args = func_call_expr.args.len();
         let mut last_instrs = vec![];
 
         for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
-            let param_reg_idx = num_args - 1 - rev_idx;
-            let current_tmp = fn_ctx.temp_counter;
-            let p_instr = self.__gen_expr(param_expr, fn_ctx, None)?;
+            let rev_param_position = num_args - 1 - rev_idx;
+            // let current_tmp = fn_ctx.temp_counter;
+            // let param_temp = fn_ctx.next_temp();
+            let param_eval_instrs = self.__gen_expr(
+                param_expr, 
+                fn_ctx, 
+                None
+                // Some(IROperand::CallArg {
+                    // position: rev_param_position,
+                    // size: REG_SIZE_8,
+                    // temp: param_temp
+                // })
+            )?;
 
-            let last_instr = p_instr.last().unwrap().clone();
+            let last_instr = param_eval_instrs.last().unwrap().clone();
             last_instrs.push((last_instr, param_expr.result_type()));
 
-            let new_temp = fn_ctx.temp_counter;
-            let tmp_reg_loc = current_tmp + (new_temp - current_tmp) - 1;
+            // let new_temp = fn_ctx.temp_counter;
+            // let tmp_reg_loc = current_tmp + (new_temp - current_tmp) - 1;
 
-            let reg_sz = param_expr.result_type().to_reg_size();
-            assert_ne!(reg_sz, 0);
+            let value_size = param_expr.result_type().to_reg_size();
+            assert_ne!(value_size, 0);
 
-            param_instrs.extend(p_instr);
-            actual_params.push(
-                (
-                    param_reg_idx, 
-                    IROperand::Temp { 
-                        id: tmp_reg_loc, 
-                        size: reg_sz 
-                    }
-                )
-            );
+            func_call_instrs.extend(param_eval_instrs);
+            // actual_params.push(
+            //     (
+            //         rev_param_position, 
+            //         IROperand::CallArg { 
+            //             temp: tmp_reg_loc, 
+            //             size: value_size,
+            //             position: rev_param_position
+            //         }
+            //     )
+            // );
         }
 
-        for (rev_idx, last_instr) in last_instrs.iter().rev().enumerate() {
-            param_instrs.push(
+        for (param_position , last_instr) in last_instrs.iter().rev().enumerate() {
+            func_call_instrs.push(
                 IRInstr::Mov {
                     dest: IROperand::CallArg { 
                         temp: fn_ctx.next_temp(), 
-                        position: rev_idx, 
+                        position: param_position, 
                         size: last_instr.1.to_reg_size() 
                     }, 
                     src: last_instr.0.dest().unwrap()
                 }
             );
+            let param = func_call_instrs.last().unwrap();
+            actual_params.push((param_position, param.dest().unwrap().clone()));
         }
 
-        let dest = dest.unwrap_or(IROperand::CallValue {
-            position: 0,
-            size: REG_SIZE_8,
-        });
-
-        param_instrs.push(IRInstr::Call {
+        func_call_instrs.push(IRInstr::Call {
             fn_name: func_call_expr.symbol_name.clone(),
             params: actual_params,
-            return_type: Some(dest)
+            dest: Some(IROperand::CallValue { 
+                temp: fn_ctx.next_temp(), 
+                size: REG_SIZE_8 
+            })
         });
-        Ok(param_instrs)
+        Ok(func_call_instrs)
     }
 
     fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
@@ -697,16 +708,10 @@ impl IRLowerer {
                 if !curr_fn.return_type.is_void() {
                     let reg_sz = curr_fn.return_type.to_reg_size();
                     assert_ne!(reg_sz, 0);
-
-                    let ret_tmp = fn_ctx.next_temp();
                     let ret_stmt_instrs = self.gen_ir_expr(
                         ret_stmt.left.as_mut().unwrap(), 
                         fn_ctx, 
-                        Some(IROperand::Return {
-                            temp: ret_tmp,
-                            position: 0,
-                            size: reg_sz
-                        })
+                        None
                     )?;
                     ret_stmt_instrs.iter().for_each(|instr| ret_instrs.push(IR::Instr(instr.clone())));
                 }
@@ -863,8 +868,8 @@ impl IRLowerer {
             size: ob_size,
             ob_type: obj.ob_type.clone(),
             dest: IROperand::CallValue { 
-                position: 0, 
-                size: REG_SIZE_8
+                size: REG_SIZE_8,
+                temp: fn_ctx.next_temp()
             }
         };
         let gc_obj_dest = gc_alloc.dest().unwrap();

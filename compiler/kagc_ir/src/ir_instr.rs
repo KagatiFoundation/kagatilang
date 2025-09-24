@@ -73,11 +73,11 @@ pub enum IRInstr {
         /// 
         /// `usize`: The parameter's position in the argument list.
         /// 
-        /// `IRLitType`: The parameter.
+        /// `IROperand`: The parameter.
         params: Vec<(usize, IROperand)>,
 
         /// Return type of the function call.
-        return_type: Option<IROperand>
+        dest: Option<IROperand>
     },
 
     /**
@@ -174,7 +174,7 @@ impl IRInstr {
             Self::Sub { dest, .. } => Some(dest.clone()),
             Self::Mul { dest, .. } => Some(dest.clone()),
             Self::Div { dest, .. } => Some(dest.clone()),
-            Self::Call { return_type, .. } => return_type.clone(),
+            Self::Call { dest, .. } => dest.clone(),
             Self::Load { dest, .. } => Some(dest.clone()),
             Self::LoadGlobal { dest, .. } => Some(dest.clone()),
 

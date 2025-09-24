@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use crate::reg;
 use crate::reg::*;
 
 pub const REG_64BIT: usize = 64;
@@ -36,64 +37,34 @@ impl Aarch64RegMgr {
         }
     }
 
-    fn spill_and_mark_available(&mut self, reg_to_spill: usize, alloc_size: usize) -> AllocedReg {
-        self.spilled_stack.push_back(reg_to_spill);
-        self.available_registers[reg_to_spill] = true; 
-        self.register_map.remove(&reg_to_spill);
-
-        AllocedReg { 
-            size: alloc_size, 
-            idx: reg_to_spill,
-            status: RegStatus::Spilled,
-        }
-    }
-
-    pub fn is_caller_saved(idx: RegIdx) -> bool {
-        idx <= 17
-    }
-
-    pub fn caller_saved_regs(size: RegSize) -> Vec<AllocedReg> {
-        if size == REG_SIZE_8 {
-            (0..=18).map(|idx| {
-                AllocedReg {
-                    idx: idx as usize,
-                    size: REG_SIZE_8,
-                    status: RegStatus::Invalid
-                }
-            }).collect::<Vec<AllocedReg>>()
-        }
-        else {
-            (0..=18).map(|idx| {
-                AllocedReg {
-                    idx: idx as usize,
-                    size: REG_SIZE_4,
-                    status: RegStatus::Invalid
-                }
-            }).collect::<Vec<AllocedReg>>()
-        }
-    }
-
+    /// Allocates a general-purpose register for the given size.
+    /// 
+    /// Scans registers x8–x28 (skipping reserved x29 and x30), marks 
+    /// the first available one as allocated, and returns its allocation 
+    /// record. If no free registers remain, spills an active register to 
+    /// make room.
+    ///
+    /// # Parameters
+    /// - `alloc_size`: The size (in bytes or units) associated with the allocation.
     pub fn allocate_register(&mut self, alloc_size: usize) -> AllocedReg {
-        for i in 8..32 {
+        for reg_idx in 8..32 {
             // x29 and x30 are reserved registers
-            if i == 29 || i == 30 {
+            if reg_idx == 29 || reg_idx == 30 {
                 continue;
             }
 
-            if self.available_registers[i] {
-                self.available_registers[i] = false;
-
+            if self.available_registers[reg_idx] {
+                self.available_registers[reg_idx] = false;
                 self.register_map.insert(
-                    i, 
+                    reg_idx, 
                     RegState { 
-                        idx: i, 
+                        idx: reg_idx, 
                         curr_alloced_size: alloc_size, 
                         status: RegStatus::Alloced
                     }
                 );
-
                 return AllocedReg {
-                    idx: i,
+                    idx: reg_idx,
                     size: alloc_size,
                     status: RegStatus::Alloced,
                 };
@@ -193,53 +164,39 @@ impl Aarch64RegMgr {
         }
     }
 
-    pub fn allocate_callee_saved_register(&mut self, size: RegSize) -> AllocedReg {
-        for idx in 19..28 {
-            if self.available_registers[idx] {
-                self.available_registers[idx] = false;
-                self.register_map.insert(
-                    idx, 
-                    RegState { 
-                        idx, 
-                        curr_alloced_size: size, 
-                        status: RegStatus::Alloced
-                    }
-                );
-
-                return AllocedReg {
-                    idx,
-                    size,
-                    status: RegStatus::Alloced
-                };
-            }
-        }
-        self.spill_register(size, Some(19))
-    }
-
     pub fn free_register(&mut self, reg: usize) {
         if let Some((&index, _)) = self.register_map.iter().find(|(_, reg_state)| reg_state.idx == reg) {
             self.available_registers[index] = true;
             self.register_map.remove(&index);
         }
     }
-
+    
+    /// The instruction using this register will spill the register 
+    /// before using it.
     fn spill_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg {
         assert!(!matches!(idx, Some(29) | Some(30)));
 
         if let Some(i) = idx {
             if self.register_map.contains_key(&i) {
-                return self.spill_and_mark_available(i, alloc_size);
+                return AllocedReg { 
+                    size: alloc_size, 
+                    idx: i,
+                    status: RegStatus::Spilled, 
+                };
             }
-            panic!("No general-purpose registers available and stack is full!");
         }
         else {
-            for i in 8..32 {
-                if self.register_map.contains_key(&i) {
-                    return self.spill_and_mark_available(i, alloc_size);
+            for reg_idx in 8..32 {
+                if self.register_map.contains_key(&reg_idx) {
+                    return AllocedReg { 
+                        size: alloc_size, 
+                        idx: reg_idx,
+                        status: RegStatus::Spilled,
+                    };
                 }
             }
-            panic!("No general-purpose registers available and stack is full!");
         }
+        panic!("Automatic spilling function called even when other registers are free! Aborting...");
     }
 
     pub fn spill_param_register(&mut self, alloc_size: usize, idx: Option<RegIdx>) -> AllocedReg {
@@ -257,6 +214,43 @@ impl Aarch64RegMgr {
                 }
             }
             panic!("No general-purpose registers available and stack is full!");
+        }
+    }
+
+    fn spill_and_mark_available(&mut self, reg_to_spill: usize, alloc_size: usize) -> AllocedReg {
+        self.spilled_stack.push_back(reg_to_spill);
+        // self.available_registers[reg_to_spill] = true; 
+        self.register_map.remove(&reg_to_spill);
+
+        AllocedReg { 
+            size: alloc_size, 
+            idx: reg_to_spill,
+            status: RegStatus::Spilled,
+        }
+    }
+
+    pub fn is_caller_saved(idx: RegIdx) -> bool {
+        idx <= 17
+    }
+
+    pub fn caller_saved_regs(size: RegSize) -> Vec<AllocedReg> {
+        if size == REG_SIZE_8 {
+            (0..=18).map(|idx| {
+                AllocedReg {
+                    idx: idx as usize,
+                    size: REG_SIZE_8,
+                    status: RegStatus::Free
+                }
+            }).collect::<Vec<AllocedReg>>()
+        }
+        else {
+            (0..=18).map(|idx| {
+                AllocedReg {
+                    idx: idx as usize,
+                    size: REG_SIZE_4,
+                    status: RegStatus::Free
+                }
+            }).collect::<Vec<AllocedReg>>()
         }
     }
 

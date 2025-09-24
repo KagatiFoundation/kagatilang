@@ -13,6 +13,7 @@ use kagc_ir::ir_operands::TempId;
 use kagc_ir::LabelId;
 
 use kagc_target::reg::AllocedReg;
+use kagc_target::reg::RegMgr;
 use kagc_types::builtins::obj::KObjType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +74,7 @@ pub trait Codegen {
                     IRInstr::Mul { dest, op1, op2 } => self.gen_ir_mul_asm(dest, op1, op2),
                     IRInstr::Div { dest, op1, op2 } => self.gen_ir_div_asm(dest, op1, op2),
                     
-                    IRInstr::Call { fn_name, params, return_type } => self.gen_ir_fn_call_asm(fn_name.clone(), params, return_type),
+                    IRInstr::Call { fn_name, params, dest } => self.gen_ir_fn_call_asm(fn_name.clone(), params, dest),
 
                     IRInstr::Jump { label_id } => self.gen_ir_jump_asm(*label_id),
 
@@ -185,25 +186,5 @@ impl TRMap {
 
     pub fn clear_mappings(&mut self) {
         self.reg_map.clear();
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct SpillMap {
-    pub reg_map: HashMap<AllocedReg, AllocedReg>
-}
-
-impl CustomMap<AllocedReg, AllocedReg> for SpillMap {
-    fn get(&self, key: AllocedReg) -> Option<&AllocedReg> {
-        self.reg_map.get(&key)
-    }
-
-    fn reverse_get(&self, value: AllocedReg) -> Option<AllocedReg> {
-        self.reg_map
-            .iter()
-            .find(|(_, reg)| {
-                reg.idx == value.idx
-            })
-            .map(|(temp, _)| temp.clone())
     }
 }

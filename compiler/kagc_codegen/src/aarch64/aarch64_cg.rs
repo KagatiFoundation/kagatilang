@@ -4,7 +4,6 @@
 use crate::Codegen;
 use crate::ComptFnProps;
 use crate::CustomMap;
-use crate::SpillMap;
 use crate::TRMap;
 use kagc_ir::ir_instr::*;
 use kagc_ir::ir_liveness::LivenessAnalyzer;
@@ -15,8 +14,9 @@ use kagc_ir::ir_operands::IRAddr;
 use kagc_ir::LabelId;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt::format;
+use std::panic;
 use std::rc::Rc;
 
 use kagc_const::pool::ConstEntry;
@@ -48,7 +48,7 @@ pub struct Aarch64Codegen {
 
     temp_reg_map: TRMap,
 
-    spill_map: SpillMap,
+    spill_map: HashMap<TempId, usize>, // TempId --> (Reg, Stack Slot)
 
     /// Instruction Pointer:
     /// IP is used to track the execution of instructions inside 
@@ -61,7 +61,7 @@ pub struct Aarch64Codegen {
     /// Liveness analyzer
     la: LivenessAnalyzer,
 
-    refill_stack: HashSet<RegIdx>
+    refill_stack: HashSet<(AllocedReg, usize)>
 }
 
 impl Aarch64Codegen {
@@ -76,12 +76,12 @@ impl Aarch64Codegen {
             state: IRToASMState::Global,
             la: LivenessAnalyzer::default(),
             refill_stack: HashSet::new(),
-            spill_map: SpillMap::default()
+            spill_map: HashMap::default(),
         }
     }
 
     pub fn gen_asm(&mut self, irs: &mut [IR]) -> String {
-        // println!("{:#?}", irs);
+        println!("{:#?}", irs);
         // return String::new();
 
         let mut output: Vec<String> = vec![];
@@ -231,7 +231,7 @@ impl Aarch64Codegen {
         else {
             "[SP]".to_string()
         };
-        format!("\tSTR {}, {dest_addr}\n", reg.name_aarch64())
+        format!("\tEE STR {}, {dest_addr}\n", reg.name_aarch64())
     }
 
     /// Load register from stack pointer (SP)
@@ -255,7 +255,7 @@ impl Aarch64Codegen {
         else {
             "[x29]".to_string()
         };
-        format!("\tSTR {}, {dest_addr}\n", reg.name_aarch64())
+        format!("\t22 STR {}, {dest_addr}\n", reg.name_aarch64())
     }
 
     /// Load register from frame pointer (x29)
@@ -311,6 +311,11 @@ impl Aarch64Codegen {
 
         // clear temp-reg mappings
         self.temp_reg_map.clear_mappings();
+
+        // reset everything
+        self.reg_manager.reset();
+
+        self.compt_fn_props = None;
     }
 }
 
@@ -351,12 +356,13 @@ impl Codegen for Aarch64Codegen {
             let _body_asm: String = self.gen_asm_from_ir_node(body_ir);
             self.try_dropping_all_temps();
             self.advance_ip();
-            fn_body_asm.push_str(&format!("\t{}\n", _body_asm.trim()));
+
+            if !_body_asm.is_empty() {
+                fn_body_asm.push_str(&format!("\t{}\n", _body_asm.trim()));
+            }
         }
 
         output_str.push_str(&fn_body_asm);
-
-        // reset IP and scope before moving into another function
         self.reset();
 
         if fn_ir.is_leaf {
@@ -447,6 +453,12 @@ impl Codegen for Aarch64Codegen {
             IRAddr::BaseOff(base, off) => {
                 let src_reg = self.resolve_register(base);
                 output_code.push_str(
+                    &self.maybe_spill_register(
+                        src_reg.0, 
+                        &src_reg.1
+                    ).unwrap_or_default()
+                );
+                output_code.push_str(
                     &format!(
                         "\tLDR {}, [{}, {}]", 
                         dest_reg.name_aarch64(), 
@@ -464,7 +476,10 @@ impl Codegen for Aarch64Codegen {
         let stack_size = compt_fun.stack_size;
         let is_leaf_fn = compt_fun.is_leaf;
 
-        let src_reg = self.resolve_register(src).1;
+        let mut output = "".to_string();
+        let (temp, src_reg) = self.resolve_register(src);
+        output.push_str(&self.maybe_spill_register(temp, &src_reg).unwrap_or_default());
+        
         match addr {
             IRAddr::StackOff(stack_off) => {
                 if is_leaf_fn {
@@ -475,13 +490,17 @@ impl Codegen for Aarch64Codegen {
                 }
             },
             IRAddr::BaseOff(base, off) => {
-                let dest_reg = self.resolve_register(base).1;
-                format!(
-                    "\tSTR {}, [{}, {}]", 
-                    src_reg.name_aarch64(), 
-                    dest_reg.name_aarch64(), 
-                    format_args!("#{}", off * 8)
-                )
+                let (temp, dest_reg) = self.resolve_register(base);
+                output.push_str(&self.maybe_spill_register(temp, &dest_reg).unwrap_or_default());
+                output.push_str(
+                    &format!(
+                        "\tRR STR {}, [{}, {}]", 
+                        src_reg.name_aarch64(), 
+                        dest_reg.name_aarch64(), 
+                        format_args!("#{}", off * 8)
+                    )
+                );
+                output
             }
         }
     }
@@ -489,102 +508,86 @@ impl Codegen for Aarch64Codegen {
     fn gen_ir_fn_call_asm(
         &mut self,
         fn_name: String,
-        args: &[(usize, IROperand)],
+        _args: &[(usize, IROperand)],
         _return_type: &Option<IROperand>,
     ) -> String {
         self.try_dropping_all_temps();
         let mut out = String::new();
-        let args_count = args.len();
 
         let mut regs_to_spill: Vec<AllocedReg> = Vec::new();
-        for reg in Aarch64RegMgr::caller_saved_regs(REG_SIZE_8) {
-            if reg.idx < args_count {
+        for (reg_idx, reg) in Aarch64RegMgr::caller_saved_regs(REG_SIZE_8).iter().enumerate() {
+            if reg_idx < _args.len() {
+                out.push_str(&format!("SKIP: {reg_idx}\n"));
                 continue;
             }
             if let Some(temp) = self.temp_reg_map.reverse_get(reg.clone()) {
-                if self.la.is_temp_alive_after(temp, self.func_ip + 1) {
-                    regs_to_spill.push(reg);
+                let must_spill = self.la.is_temp_alive_after(temp, self.func_ip);
+                if must_spill {
+                    regs_to_spill.push(reg.clone());
+                    let ns = self.get_current_fn_props_mut().next_stack_slot();
+
+                    // register must be spilled before another instruciton uses it
+                    self.spill_map.insert(temp, ns);
+                    // no temporary should hold this specific register now. it has 
+                    // to be freed
+                    self.temp_reg_map.drop(&temp);
+                    // enjoy your freedom, lovely register
+                    self.reg_manager.free_register(reg_idx);
                 }
             }
         }
 
         if regs_to_spill.is_empty() {
+            if let Some(ret) = _return_type {
+                let reg = self.resolve_register(ret);
+                out.push_str(&self.maybe_spill_register(reg.0, &reg.1).unwrap_or_default());
+            }
             out.push_str(&format!("\tBL _{fn_name}\n"));
             return out;
         }
 
-        let mut transfer_regs: Vec<AllocedReg> = Vec::with_capacity(regs_to_spill.len());
-        for _ in 0..regs_to_spill.len() {
-            transfer_regs.push(self.reg_manager.allocate_callee_saved_register(REG_SIZE_8));
-        }
-
-        let spilled_transfer_count = transfer_regs
-            .iter()
-            .filter(|tr| tr.status == RegStatus::Spilled)
-            .count();
-        let dyn_size = spilled_transfer_count * 8;
+        let dyn_size = regs_to_spill.len() * 8;
         if dyn_size > 0 {
             out.push_str(&format!("\tSUB SP, SP, #{}\n", dyn_size));
         }
 
         let mut stack_offset = 0usize;
-        for tr in &transfer_regs {
-            if tr.status == RegStatus::Spilled {
-                out.push_str(&format!(
-                    "\tSTR {}, [SP, #{}]\n",
-                    tr.name_aarch64(),
-                    stack_offset
-                ));
-                stack_offset += 8;
-            }
+        println!("Spills: {regs_to_spill:#?}");
+        for tr in &regs_to_spill {
+            out.push_str(&format!(
+                "\tYY STR {}, [SP, #{}]\n",
+                tr.name_aarch64(),
+                stack_offset
+            ));
+            stack_offset += 8;
+            self.reg_manager.free_register(tr.idx);
         }
 
-        let mut spills: SpillMap = SpillMap::default();
-
-        for (i, orig_reg) in regs_to_spill.iter().enumerate() {
-            let tr = &transfer_regs[i];
-            out.push_str(&format!(
-                "\tMOV {}, {}\n",
-                tr.name_aarch64(),
-                orig_reg.name_aarch64()
-            ));
-            spills.reg_map.insert(orig_reg.clone(), tr.clone());
+        if let Some(ret) = _return_type {
+            let reg = self.resolve_register(ret);
+            out.push_str(&self.maybe_spill_register(reg.0, &reg.1).unwrap_or_default());
         }
 
         out.push_str(&format!("\tBL _{fn_name}\n"));
-
-        for (i, orig_reg) in regs_to_spill.iter().enumerate() {
-            let tr = &transfer_regs[i];
-            out.push_str(&format!(
-                "\tMOV {}, {}\n",
-                orig_reg.name_aarch64(),
-                tr.name_aarch64()
-            ));
-        }
-
-        if dyn_size > 0 {
-            let mut offset = 0usize;
-            for tr in &transfer_regs {
-                if tr.status == RegStatus::Spilled {
-                    out.push_str(&format!(
-                        "\tLDR {}, [SP, #{}]\n",
-                        tr.name_aarch64(),
-                        offset
-                    ));
-                    offset += 8;
-                }
-            }
-            out.push_str(&format!("\tADD SP, SP, #{}\n", dyn_size));
-        }
         out
     }
     
     fn gen_ir_mov_asm(&mut self, dest: &IROperand, src: &IROperand) -> String {
-        let dest_reg: (usize, AllocedReg) = self.resolve_register(dest);
-        let reg_name: String = dest_reg.1.name_aarch64();
+        let mut output_str = "".to_string();
+        let dest_reg = self.resolve_register(dest);
+        output_str.push_str(
+            &self.maybe_spill_register(
+                dest_reg.0, 
+                &dest_reg.1
+            ).unwrap_or_default()
+        );
 
-        let operand: String = self.extract_operand(src);
-        format!("\tMOV {}, {}", reg_name, operand)
+        let reg_name: String = dest_reg.1.name_aarch64();
+        let operand: String = self.operand_to_string(src);
+        output_str.push_str(&self.refill_spilled_registers());
+
+        if reg_name == operand { "".to_string() }
+        else { format!("\tMOV {}, {}", reg_name, operand) }
     }
     
     fn gen_ir_add_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand) -> String {
@@ -667,62 +670,67 @@ impl Codegen for Aarch64Codegen {
         };
         
         let mut output_str: String = String::new();
-        output_str.push_str(&format!("\tCMP {}, {}\n", self.extract_operand(op1), self.extract_operand(op2)));
+        output_str.push_str(&format!("\tCMP {}, {}\n", self.operand_to_string(op1), self.operand_to_string(op2)));
         output_str.push_str(&format!("{compare_operator} .LB_{label_id}"));
         output_str
     }
 
     fn gen_ir_mem_alloc(&mut self, size: usize, ob_type: &KObjType) -> String {
         let mut output = "".to_string();
+        {
+            // load the parameter
+            let x0 = self.allocate_specific_register(0, REG_SIZE_8);
+            output.push_str(
+                &self.maybe_spill_register(
+                    0xFFFFFFFF, 
+                    &x0
+                ).unwrap_or_default()
+            );
+            output.push_str(&format!("MOV {}, {:#x}", x0.name_aarch64(), size));
+        }
+        
+        {
+            let x1 = self.allocate_specific_register(1, REG_SIZE_8);
+            output.push_str(
+                &self.maybe_spill_register(
+                    0xFFFFFFF0, 
+                    &x1
+                ).unwrap_or_default()
+            );
+            output.push_str(&format!("MOV {}, {:#x}", x1.name_aarch64(), ob_type.value()));
+        }
 
-        // load the parameter
-        let x0 = self.allocate_specific_register(0, REG_SIZE_8);
-        let load_size = format!("MOV {}, {:#x}", x0.name_aarch64(), size);
-        let x1 = self.allocate_specific_register(1, REG_SIZE_8);
-        let load_type = format!("MOV {}, {:#x}", x1.name_aarch64(), ob_type.value());
-
-        output.push_str(&format!(
-        "{load_size}
-        {load_type}
-        BL _object_new
+        output.push_str(
+        "BL _object_new
         CBNZ x0, 1f
         BL _obj_alloc_fail
         1:
         " 
-        ));
+        );
         output
     }
 
     fn gen_ir_mem_cpy(&mut self) -> String {
-        let mut output = "".to_string();
-        output.push_str("\tBL _k_memcpy\n");
-        output
+        "\tBL _k_memcpy\n".to_string()
     }
 }
 
 impl Aarch64Codegen {
     fn gen_ir_bin_op_asm(&mut self, dest: &IROperand, op1: &IROperand, op2: &IROperand, operation: &str) -> String {
-        let compt_props = self.get_current_fn_props_mut();
-        let stack_size = compt_props.stack_size;
-        let next_slot = compt_props.next_stack_slot();
-
         let mut output = "".to_string();
-        let dest_reg = self.resolve_register(dest).1;
-        let reg_name: String = dest_reg.name_aarch64();
-
-        let op1: String = self.extract_operand(op1);
-        output.push_str(&self.refill_spilled_registers());
-
-        let op2: String = self.extract_operand(op2);
-        output.push_str(&self.refill_spilled_registers());
+        let dest_reg = self.resolve_register(dest);
+        let reg_name: String = dest_reg.1.name_aarch64();
 
         output.push_str(
-            &self.gen_reg_spill(
-                &dest_reg, 
-                stack_size, 
-                next_slot
+            &self.maybe_spill_register(
+                dest_reg.0, 
+                &dest_reg.1
             ).unwrap_or_default()
         );
+
+        let op1: String = self.operand_to_string(op1);
+        let op2: String = self.operand_to_string(op2);
+        output.push_str(&self.refill_spilled_registers());
 
         output.push_str(
             &format!(
@@ -734,9 +742,8 @@ impl Aarch64Codegen {
         output
     }
 
-    /// Extract the IRLitType as an operand(String)
-    fn extract_operand(&mut self, irlit: &IROperand) -> String {
-        match irlit {
+    fn operand_to_string(&mut self, op: &IROperand) -> String {
+        match op {
             IROperand::Const(irlit_val) => {
                 match irlit_val {
                     IRImmVal::Int32(value) => format!("{:#x}", *value),
@@ -747,43 +754,66 @@ impl Aarch64Codegen {
                 }
             },
 
-            IROperand::Temp { id, .. } => {
-                let src_reg = self.temp_reg_map.reg_map.get(id).unwrap().clone();
-                if src_reg.status == RegStatus::Spilled {
-                    self.refill_stack.insert(src_reg.idx);
+            IROperand::Temp { id, .. } 
+            | IROperand::CallArg { temp: id, .. }
+            | IROperand::CallValue { temp: id, .. } => {
+                if let Some(&reg_stack) = self.spill_map.get(id) {
+                    let src_reg = self.resolve_register(&op.clone()).1;
+                    self.refill_stack.insert((src_reg.clone(), reg_stack));
+                    return src_reg.name_aarch64();
                 }
-                src_reg.name_aarch64()
-            },
-
-            IROperand::CallValue { position, size } => {
-                let src_reg = AllocedReg {
-                    idx: *position,
-                    size: *size,
-                    status: RegStatus::Free,
-                };
-                src_reg.name_aarch64()
+                else if let Some(src_reg) = self.temp_reg_map.reg_map.get(id) {
+                    return src_reg.name_aarch64();
+                }
+                panic!("Impossible scenario! Value '{op:#?}' is nowhere to be found :D! Aborting...");
             }
 
-            IROperand::Return { position, size, .. } => {
+            IROperand::Return { size, .. } => {
                 let reg = AllocedReg {
-                    idx: *position,
+                    idx: 0,
                     size: *size,
                     status: RegStatus::Free
                 };
                 reg.name_aarch64()
             }
 
-            _ => unimplemented!("{irlit:#?}")
+            _ => unimplemented!("{op:#?}")
+        }
+    }
+
+    fn maybe_spill_register(&mut self, temp: TempId, reg: &AllocedReg) -> Option<String> {
+        if reg.status != RegStatus::Spilled {
+            return None;
+        }
+        let (is_leaf, stack_slot) = {
+            let compt_props = self.get_current_fn_props_mut();
+            (compt_props.is_leaf, compt_props.next_stack_slot())
+        };
+
+        self.temp_reg_map.drop(&temp); // drop the register holding this temporary
+        self.spill_map.insert(temp, stack_slot); // mark the spot for the dropped temporary in the stack
+
+        if is_leaf {
+            Some(self.gen_str_sp(reg, 0, stack_slot))
+        }
+        else {
+            Some(self.gen_str_fp(reg, 0))
         }
     }
 
     fn refill_spilled_registers(&mut self) -> String {
         let mut output = "".to_string();
-        for rs in &self.refill_stack {
-            output.push_str(&format!("LDR x{rs}, [SP, #0]\n"));
+        for (reg, stack_slot) in &self.refill_stack {
+            output.push_str(
+                &format!(
+                    "\tLDR {name}, [SP, #{off}]\n", 
+                    name = reg.name_aarch64(),
+                    off = *stack_slot * 8
+                )
+            );
         }
         output
-    }
+   }
 
     /// Get the compile time register mapping of an IR literal type. 
     /// Returns temporary ID with its mapped AllocedReg.
@@ -798,13 +828,21 @@ impl Aarch64Codegen {
                 temp, 
                 size, 
                 position 
-            } => (*temp, self.get_or_allocate_specific_register(*position, *temp, *size)),
+            } => {
+                (*temp, self.get_or_allocate_specific_register(*position, *temp, *size))
+            }
             
             IROperand::Return { 
-                position,
                 temp,
-                size
-            } => (*temp, self.get_or_allocate_specific_register(*position, *temp, *size)),
+                ..
+            } => {
+                let src = AllocedReg {
+                    idx: 0,
+                    size: REG_SIZE_8,
+                    status: RegStatus::Free
+                };
+                (*temp, src)
+            }
 
             IROperand::Param { size, position } => {
                 let reg = AllocedReg {
@@ -815,14 +853,14 @@ impl Aarch64Codegen {
                 (0, reg)
             },
 
-            IROperand::CallValue { size, position } => {
-                let reg = AllocedReg {
-                    idx: *position,
-                    size: *size,
-                    status: RegStatus::Free
-                };
-                (0, reg)
-            },
+            IROperand::CallValue { 
+                temp,
+                size, 
+                ..
+            } => {
+                let aa = (*temp, self.get_or_allocate_specific_register(0, *temp, *size));
+                aa
+            }
 
             _ => {
                 println!("{irlit:#?}");
