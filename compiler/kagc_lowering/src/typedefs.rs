@@ -1,6 +1,6 @@
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_mir::ir_instr::{IRInstr, IR};
-use kagc_target::reg::AllocedReg;
+use kagc_backend::reg::AllocedReg;
 
 pub type CodeGenResult = Result<AllocedReg, Diagnostic>;
 

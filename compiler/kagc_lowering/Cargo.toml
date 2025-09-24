@@ -7,7 +7,7 @@ edition = "2021"
 itertools = "0.13.0"
 lazy_static = "1.4.0"
 
-kagc_target = { path = "../kagc_target" }
+kagc_backend = { path = "../kagc_backend" }
 kagc_ast = { path = "../kagc_ast" }
 kagc_symbol = { path = "../kagc_symbol" }
 kagc_types = { path = "../kagc_types" }

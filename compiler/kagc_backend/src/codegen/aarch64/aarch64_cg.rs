@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::Codegen;
-use crate::ComptFnProps;
-use crate::CustomMap;
-use crate::TRMap;
+use crate::asm::aarch64::Aarch64RegMgr;
+use crate::codegen::Codegen;
+use crate::codegen::ComptFnProps;
+use crate::codegen::CustomMap;
+use crate::codegen::IRToASMState;
+use crate::codegen::TRMap;
+use crate::reg::AllocStrategy;
+use crate::reg::AllocedReg;
+use crate::reg::RegIdx;
+use crate::reg::RegSize;
+use crate::reg::RegStatus;
+use crate::reg::REG_SIZE_8;
+
 use kagc_mir::ir_instr::*;
 use kagc_mir::ir_liveness::LivenessAnalyzer;
 use kagc_mir::ir_operands::IROperand;
@@ -23,10 +32,7 @@ use kagc_const::pool::ConstEntry;
 use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_symbol::StorageClass;
-use kagc_target::{asm::aarch64::*, reg::*};
 use kagc_types::builtins::obj::KObjType;
-
-use crate::IRToASMState;
 
 /// Handles the translation of IR (Intermediate Representation) to 
 /// AArch64 assembly.

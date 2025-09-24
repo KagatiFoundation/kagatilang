@@ -41,3 +41,6 @@ pub const GCOBJECT_BUFFER_OFF: usize = 40; // bytes
 /// of each field (8 bytes on 64-bit systems):
 /// `offset_in_bytes = GCOBJECT_BUFFER_IDX * 8`.
 pub const GCOBJECT_BUFFER_IDX: usize = 5;
+
+pub const REG_SIZE_8: usize = 8;
+pub const REG_SIZE_4: usize = 4;

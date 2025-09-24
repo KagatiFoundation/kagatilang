@@ -203,9 +203,8 @@ impl LivenessAnalyzer {
 #[cfg(test)]
 mod tests {
     use kagc_symbol::StorageClass;
-    use kagc_target::reg::REG_SIZE_8;
 
-    use crate::ir_instr::*;
+    use crate::{ir_instr::*, REG_SIZE_8};
     use crate::ir_liveness::LivenessAnalyzer;
     use crate::ir_operands::*;
 

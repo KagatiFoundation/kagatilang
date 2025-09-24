@@ -3,12 +3,9 @@
 
 use kagc_ast::ASTOperation;
 use kagc_symbol::StorageClass;
-use kagc_target::reg::RegIdx;
-use kagc_target::reg::RegSize;
 use kagc_types::builtins::obj::KObjType;
 
 use crate::{ir_operands::*, LabelId};
-
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum IRCondOp {
@@ -160,8 +157,8 @@ pub enum IRInstr {
 
     /// Mark the register as "allocated"
     RegAlloc2 {
-        idx: RegIdx,
-        size: RegSize,
+        idx: usize,
+        size: usize,
         dest: IROperand
     }
 }

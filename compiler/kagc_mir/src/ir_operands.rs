@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_target::reg::RegSize;
-
 use crate::LabelId;
 
 /// Temporary identifier.
@@ -38,7 +36,7 @@ pub enum IROperand {
 
     Temp {
         id: TempId,
-        size: RegSize
+        size: usize
     },
 
     CallArg {

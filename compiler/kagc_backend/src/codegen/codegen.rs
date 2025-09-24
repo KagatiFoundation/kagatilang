@@ -12,9 +12,9 @@ use kagc_mir::ir_instr::IRCondOp;
 use kagc_mir::ir_operands::TempId;
 use kagc_mir::LabelId;
 
-use kagc_target::reg::AllocedReg;
-use kagc_target::reg::RegMgr;
 use kagc_types::builtins::obj::KObjType;
+
+use crate::reg::AllocedReg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IRToASMState {

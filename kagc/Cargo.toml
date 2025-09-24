@@ -11,7 +11,7 @@ path = "src/main.rs"
 itertools = "0.13.0"
 lazy_static = "1.4.0"
 
-kagc_target = { path = "../compiler/kagc_target" }
+kagc_backend = { path = "../compiler/kagc_backend" }
 kagc_ast = { path = "../compiler/kagc_ast" }
 kagc_symbol = { path = "../compiler/kagc_symbol" }
 kagc_types = { path = "../compiler/kagc_types" }
@@ -24,4 +24,3 @@ kagc_lowering = { path = "../compiler/kagc_lowering" }
 kagc_mir = { path = "../compiler/kagc_mir" }
 kagc_comp_unit = { path = "../compiler/kagc_comp_unit" }
 kagc_scope = { path = "../compiler/kagc_scope" }
-kagc_codegen = { path = "../compiler/kagc_codegen" }

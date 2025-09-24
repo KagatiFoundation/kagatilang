@@ -11,7 +11,7 @@ use kagc_mir::ir_instr::*;
 use kagc_mir::ir_operands::*;
 use kagc_mir::GCOBJECT_BUFFER_IDX;
 use kagc_symbol::*;
-use kagc_target::reg::*;
+use kagc_backend::reg::*;
 use kagc_types::*;
 
 use kagc_const::pool::KagcConst;

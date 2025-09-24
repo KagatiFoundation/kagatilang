@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "compiler/kagc_lowering",
-    "compiler/kagc_target",
+    "compiler/kagc_backend",
     "compiler/kagc_ast",
     "compiler/kagc_symbol",
     "compiler/kagc_types",
@@ -17,6 +17,5 @@ members = [
     "compiler/kagc_comp_unit",
     "compiler/kagc_const",
     "compiler/kagc_span",
-    "compiler/kagc_codegen",
     "kagc",
 ]

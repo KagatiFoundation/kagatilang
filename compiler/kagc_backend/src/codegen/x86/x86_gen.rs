@@ -10,14 +10,13 @@ use kagc_mir::ir_liveness::LivenessAnalyzer;
 use kagc_mir::ir_instr::IRCondOp;
 use kagc_mir::LabelId;
 use kagc_symbol::StorageClass;
-use kagc_target::asm::x86::X86Reg;
-use kagc_target::asm::x86::X86RegMgr;
-use kagc_target::asm::x86::X86RegName;
-use kagc_target::reg::RegStatus;
-use kagc_target::reg::REG_SIZE_8;
-
-use crate::Codegen;
-use crate::ComptFnProps;
+use crate::asm::x86::X86Reg;
+use crate::asm::x86::X86RegMgr;
+use crate::asm::x86::X86RegName;
+use crate::codegen::Codegen;
+use crate::codegen::ComptFnProps;
+use crate::reg::RegStatus;
+use crate::reg::REG_SIZE_8;
 
 #[derive(Default)]
 struct X86TRMap {

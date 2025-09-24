@@ -1,0 +1,11 @@
+[package]
+name = "kagc_backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kagc_types = { path = "../kagc_types" }
+kagc_mir = { path = "../kagc_mir" }
+kagc_const = { path = "../kagc_const" }
+kagc_ctx = { path = "../kagc_ctx" }
+kagc_symbol = { path = "../kagc_symbol" }

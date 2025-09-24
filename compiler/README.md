@@ -11,7 +11,7 @@ This folder contains the core compiler implementation for **Kagati** language. T
 - **kagc_const** – Stores constants used throughout the compiler.  
 - **kagc_ctx** – Maintains the compiler context, including state shared across compilation stages.  
 - **kagc_errors** – Manages error reporting and diagnostic messages.  
-- **kagc_mir** – Represents intermediate representations of the code for analysis and transformation.  
+- **kagc_mir** – Represents mid-level intermediate representations of the code for analysis and transformation.  
 - **kagc_lowering** – Converts high-level AST constructs into lower-level IR suitable for code generation.  
 - **kagc_scope** – Handles scoping rules and symbol visibility.  
 - **kagc_sema** – Performs semantic analysis, including type checking and validation.  

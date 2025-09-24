@@ -1,7 +1,0 @@
-[package]
-name = "kagc_target"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-kagc_types = { path = "../kagc_types" }
