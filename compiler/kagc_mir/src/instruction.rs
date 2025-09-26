@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::operand::IROperand;
+use crate::value::IRValueId;
+
+#[derive(Debug, Clone, Copy)]
+pub struct IRInstructionId(pub usize);
 
 #[derive(Debug)]
 pub enum IRInstruction {
-    Assign {
-        src: IROperand
+    Mov {
+        src: IRValueId
     },
 
     Add {
-        lhs: IROperand,
-        rhs: IROperand
+        lhs: IRValueId,
+        rhs: IRValueId
     }
 }

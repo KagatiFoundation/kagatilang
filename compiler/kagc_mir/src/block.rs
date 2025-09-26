@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::{cell::RefCell, rc::Rc};
+use crate::value::IRValueId;
 
-use crate::value::IRValue;
+#[derive(Debug, Default, Copy, Clone)]
+pub struct IRBlockId(pub usize);
 
 #[derive(Debug, Default)]
 pub struct IRBasicBlock {
-    pub instructions: Vec<Rc<RefCell<IRValue>>>
+    pub id: IRBlockId,
+    pub instructions: Vec<IRValueId>
 }
 
 impl IRBasicBlock {
-    pub fn add_value(&mut self, value: Rc<RefCell<IRValue>>) {
-        self.instructions.push(value);
+    pub fn add_value(&mut self, id: IRValueId) {
+        self.instructions.push(id);
     }
 }

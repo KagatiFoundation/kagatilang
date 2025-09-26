@@ -49,8 +49,8 @@ pub mod value;
 
 pub mod builder;
 
-pub mod operand;
-
 pub mod instruction;
 
 pub mod block;
+
+pub mod function;
