@@ -44,3 +44,13 @@ pub const GCOBJECT_BUFFER_IDX: usize = 5;
 
 pub const REG_SIZE_8: usize = 8;
 pub const REG_SIZE_4: usize = 4;
+
+pub mod value;
+
+pub mod builder;
+
+pub mod operand;
+
+pub mod instruction;
+
+pub mod block;
