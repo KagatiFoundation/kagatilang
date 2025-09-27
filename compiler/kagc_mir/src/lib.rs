@@ -46,11 +46,10 @@ pub const REG_SIZE_8: usize = 8;
 pub const REG_SIZE_4: usize = 4;
 
 pub mod value;
-
-pub mod builder;
-
 pub mod instruction;
-
 pub mod block;
-
 pub mod function;
+pub mod builder;
+pub mod types;
+pub mod module;
+// pub mod analyzer;

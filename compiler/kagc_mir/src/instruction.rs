@@ -1,19 +1,34 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::value::IRValueId;
+use crate::value::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct IRInstructionId(pub usize);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IRInstruction {
     Mov {
-        src: IRValueId
+        result: IRValueId,
+        src: IRValue
     },
 
     Add {
-        lhs: IRValueId,
-        rhs: IRValueId
+        result: IRValueId,
+        lhs: IRValue,
+        rhs: IRValue
+    }
+}
+
+impl IRInstruction {
+    pub fn defines_value(&self) -> bool {
+        matches!(self, Self::Add { .. } | Self::Mov { .. })
+    }
+
+    pub fn get_value_id(&self) -> Option<IRValueId> {
+        match self {
+            IRInstruction::Mov { result, .. } 
+            | IRInstruction::Add { result, .. } => Some(*result)
+        }
     }
 }

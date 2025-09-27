@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::value::IRValueId;
+use crate::instruction::IRInstruction;
 
-#[derive(Debug, Default, Copy, Clone)]
-pub struct IRBlockId(pub usize);
+#[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
+pub struct BlockId(pub usize);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct IRBasicBlock {
-    pub id: IRBlockId,
-    pub instructions: Vec<IRValueId>
-}
-
-impl IRBasicBlock {
-    pub fn add_value(&mut self, id: IRValueId) {
-        self.instructions.push(id);
-    }
+    pub id: BlockId,
+    pub instructions: Vec<IRInstruction>,
+    pub successors: Vec<BlockId>,
+    pub predecessors: Vec<BlockId>
 }
