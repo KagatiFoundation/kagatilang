@@ -31,11 +31,3 @@ pub struct IRFunction {
     pub blocks: HashMap<BlockId, IRBasicBlock>,
     pub entry_block: BlockId,
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_simple_fn_creation() {
-        
-    }
-}

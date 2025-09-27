@@ -1,119 +1,105 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::function::IRFunction;
-use crate::value::*;
-use crate::instruction::*;
-
-pub fn print_liveness(func: &IRFunction) {
-    for block in &func.blocks {
-        for v_id in &block.instructions {
-            let value = &func.values[v_id.0];
-            if let IRValueKind::Instruction(instr) = &value.kind {
-                let used_ids = match instr {
-                    IRInstruction::Mov { src } => vec![src.0],
-                    IRInstruction::Add { lhs, rhs } => vec![lhs.0, rhs.0],
-                };
-                println!("{used_ids:#?}");
-            }
-        }
-    }
-}
-
+use std::collections::HashSet;
 use std::collections::HashMap;
 
-type LiveSet = Vec<IRValueId>;
+use crate::block::BlockId;
+use crate::function::IRFunction;
+use crate::value::IRValueId;
 
-pub struct LivenessAnalyzer;
+#[derive(Debug)]
+pub struct BlockLiveness {
+    pub in_set: HashSet<IRValueId>,
+    pub out_set: HashSet<IRValueId>,
+}
+
+#[derive(Debug)]
+pub struct LivenessAnalyzer {
+    pub block_liveness: HashMap<BlockId, BlockLiveness>
+}
 
 impl LivenessAnalyzer {
-    pub fn compute_live_in(func: &IRFunction) -> HashMap<usize, LiveSet> {
-        let mut live_in: HashMap<usize, LiveSet> = HashMap::new();
-        let mut live_out: HashMap<usize, LiveSet> = HashMap::new();
+    pub fn analyze_function(ir_func: &IRFunction) -> Self {
+        let mut block_liveness = HashMap::new();
+        
+        // compute use[B], def[B]
+        let mut use_map = HashMap::new();
+        let mut def_map = HashMap::new();
 
-        // initialize
-        for block in &func.blocks {
-            live_in.insert(block.id.0, vec![]);
-            live_out.insert(block.id.0, vec![]);
+        // calculate use and definition maps
+        for (bid, block) in &ir_func.blocks {
+            let (use_set, def_set) = block.compute_use_def(block);
+            use_map.insert(*bid, use_set);
+            def_map.insert(*bid, def_set);
+            block_liveness.insert(*bid, BlockLiveness {
+                in_set: HashSet::new(),
+                out_set: HashSet::new(),
+            });
         }
 
         let mut changed = true;
         while changed {
             changed = false;
 
-            for block in func.blocks.iter().rev() {  // reverse post-order
-                // live_out = union of live_in of successors
-                let mut out_set = vec![];
-                for &succ_id in &block.successors {
-                    let succ_in = live_in.get(&succ_id.0).unwrap();
-                    for v in succ_in {
-                        let vv = v.clone();
-                        if !out_set.contains(v) {
-                            out_set.push(vv);
-                        }
-                    }
+            for (bid, block) in &ir_func.blocks {
+                let old_in = block_liveness[bid].in_set.clone();
+                let old_out = block_liveness[bid].out_set.clone();
+
+                let mut out_set = HashSet::<IRValueId>::new();
+                for succ in &block.predecessors {
+                    out_set.extend(&block_liveness[succ].in_set);
                 }
-                live_out.insert(block.id.0, out_set.clone());
+                
+                let mut in_set = use_map[bid].clone();
+                let out_minus_def = out_set.difference(&def_map[bid])
+                    .cloned().collect::<HashSet<_>>();
+                in_set.extend(out_minus_def);
 
-                // live_in = use U (live_out - def)
-                let mut in_set = out_set.clone();
-
-                // remove defs in this block
-                for val_id in &block.instructions {
-                    in_set.retain(|v| *v != *val_id);
-                }
-
-                // add uses in this block
-                for val_id in &block.instructions {
-                    let value = &func.values[val_id.0];
-                    if let IRValueKind::Instruction(instr) = &value.kind {
-                        let used = match instr {
-                            IRInstruction::Add { lhs, rhs } => vec![lhs.clone(), rhs.clone()],
-                            IRInstruction::Mov { src } => vec![src.clone()],
-                        };
-                        for u in &used {
-                            if !in_set.contains(u) {
-                                in_set.push(u.clone());
-                            }
-                        }
-                    }
-                }
-
-                if live_in[&block.id.0] != in_set {
-                    live_in.insert(block.id.0, in_set);
-                    changed = true;
+                if in_set != old_in || out_set != old_out {
+                    block_liveness.insert(*bid, BlockLiveness { in_set, out_set });
                 }
             }
         }
 
-        live_in
+        Self {
+            block_liveness
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::analyzer::LivenessAnalyzer;
-    use crate::builder::IRBuilder;
-    use crate::value::*;
+    use crate::{analyzer::LivenessAnalyzer, builder::IRBuilder, function::FunctionParam, instruction::IRInstruction, types::IRType, value::{IRValue, IRValueId}};
 
     #[test]
     fn test_simple_liveness_analysis() {
         let mut builder = IRBuilder::default();
-
-        let const1 = builder.create_constant(32, IRType::I64);
-
-        let mut func = builder.create_function(
-            "add".to_string(),
-            vec![IRType::I64, IRType::I64], 
+        builder.function(
+            vec![
+                FunctionParam {
+                    id: IRValueId(0),
+                    ty: IRType::I64
+                },
+                FunctionParam {
+                    id: IRValueId(1),
+                    ty: IRType::I64
+                }
+            ], 
             IRType::I64
         );
+        builder.inst(
+            IRInstruction::Add { 
+                result: IRValueId(2), 
+                lhs: IRValue::Var(IRValueId(1)), 
+                rhs: IRValue::Var(IRValueId(0)) 
+            }
+        );
 
-        let add_instr = builder.create_add(const1, func.get_arg(0).unwrap());
-
-        func.values = builder.values.clone();
-        func.blocks =  builder.blocks.clone();
-
-        let la = LivenessAnalyzer::compute_live_in(&func);
-        dbg!(la);
+        let module = builder.build();
+        for func in module.functions.values() {
+            let la_data = LivenessAnalyzer::analyze_function(func);
+            dbg!(la_data);
+        }
     }
 }

@@ -31,4 +31,24 @@ impl IRInstruction {
             | IRInstruction::Add { result, .. } => Some(*result)
         }
     }
+
+    pub fn defs(&self) -> Vec<IRValueId> {
+        match self {
+            IRInstruction::Mov { result, .. } => vec![*result],
+            IRInstruction::Add { result, .. } => vec![*result],
+        }
+    }
+
+    pub fn uses(&self) -> Vec<IRValueId> {
+        match self {
+            IRInstruction::Mov { src, .. } => src.as_value_id().into_iter().collect(),
+            IRInstruction::Add { lhs, rhs, .. } => {
+                lhs
+                .as_value_id()
+                .into_iter()
+                .chain(rhs.as_value_id())
+                .collect()
+            }
+        }
+    }
 }

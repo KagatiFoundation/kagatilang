@@ -52,4 +52,4 @@ pub mod function;
 pub mod builder;
 pub mod types;
 pub mod module;
-// pub mod analyzer;
+pub mod analyzer;

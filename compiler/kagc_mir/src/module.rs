@@ -7,7 +7,7 @@ use crate::function::*;
 
 #[derive(Default, Debug)]
 pub struct Module {
-    functions: HashMap<FunctionId, IRFunction>
+    pub functions: HashMap<FunctionId, IRFunction>
 }
 
 impl Module {
