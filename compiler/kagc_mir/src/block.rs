@@ -9,12 +9,13 @@ use crate::value::IRValueId;
 #[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct BlockId(pub usize);
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct IRBasicBlock {
     pub id: BlockId,
     pub instructions: Vec<IRInstruction>,
     pub successors: Vec<BlockId>,
-    pub predecessors: Vec<BlockId>
+    pub predecessors: Vec<BlockId>,
+    pub terminator: Terminator
 }
 
 impl IRBasicBlock {
@@ -35,4 +36,11 @@ impl IRBasicBlock {
 
         (use_set, def_set)
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Terminator {
+    Jump(BlockId),
+
+    Return(Option<IRValueId>)
 }

@@ -15,6 +15,7 @@ pub struct IRBuilder {
     pub function_blocks: HashMap<FunctionId, HashMap<BlockId, IRBasicBlock>>,
     pub entry_blocks: HashMap<FunctionId, BlockId>,
     pub block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
+    pub block_terminators: HashMap<BlockId, Terminator>,
 
     function_id: usize,
     block_id: usize,
@@ -25,7 +26,7 @@ impl IRBuilder {
         &mut self, 
         params: Vec<FunctionParam>,
         return_type: IRType
-    ) -> FunctionId {
+    ) -> (FunctionId, BlockId) {
         let id = self.next_function_id();
         let func_signature = FunctionSignature { 
             params, 
@@ -36,7 +37,7 @@ impl IRBuilder {
         self.current_function = Some(id); 
         let entry_block = self.block(); 
         self.entry_blocks.insert(id, entry_block); 
-        id
+        (id, entry_block)
     }
 
     pub fn block(&mut self) -> BlockId {
@@ -48,16 +49,24 @@ impl IRBuilder {
         bid
     }
 
+    pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
+        self.block_terminators.insert(bid, term);
+    }
+
     pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
-        if let (Some(_), Some(block_id)) = (self.current_function, self.current_block) {
-            if let Some(instructions) = self.block_instructions.get_mut(&block_id) {
-                instructions.push(instruction.clone());
-                if instruction.defines_value() {
-                    return instruction.get_value_id();
-                }
-            }
+        let block_id = self.current_block.expect("No active block to insert into");
+
+        if self.block_terminators.contains_key(&block_id) {
+            panic!("Cannot add instruction after a terminator in block {:?}", block_id);
         }
-        None
+
+        let value_id = instruction.get_value_id();
+        self.block_instructions
+            .get_mut(&block_id)
+            .expect("Block not found")
+            .push(instruction);
+
+        value_id
     }
 
     pub fn build(&mut self) -> Module {
@@ -65,6 +74,7 @@ impl IRBuilder {
 
         for (func_id, func_blocks) in &mut self.function_blocks {
             for (block_id, block_instrs) in self.block_instructions.iter() {
+                let block_terminator = self.block_terminators.get(block_id).unwrap();
                 if self.block_instructions.contains_key(block_id) {
                     func_blocks.insert(
                         *block_id, 
@@ -72,7 +82,8 @@ impl IRBuilder {
                             id: *block_id, 
                             instructions: block_instrs.clone(), 
                             successors: vec![], 
-                            predecessors: vec![]
+                            predecessors: vec![],
+                            terminator: block_terminator.clone()
                         }
                     );
                 }
@@ -109,30 +120,44 @@ impl IRBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::{builder::IRBuilder, instruction::IRInstruction, types::IRType, value::{IRValue, IRValueId}};
+    use crate::block::{BlockId, Terminator};
+    use crate::builder::IRBuilder;
+    use crate::instruction::IRInstruction;
+    use crate::types::IRType;
+    use crate::value::{IRValue, IRValueId};
 
     #[test]
     fn test_builder() {
         let mut b = IRBuilder::default();
-        b.function(vec![], IRType::I64);
+        let (fid, entry_bid) = b.function(vec![], IRType::I64);
         b.inst(
             IRInstruction::Add {
-                result: IRValueId(3),
+                result: IRValueId(0),
                 lhs: IRValue::Constant(32),
                 rhs: IRValue::Constant(32)
+            }
+        );
+        b.inst(
+            IRInstruction::Mov { 
+                result: IRValueId(1), 
+                src: IRValue::Var(IRValueId(0)) 
             }
         );
 
-        b.block();
-        b.inst(
-            IRInstruction::Add {
-                result: IRValueId(3),
-                lhs: IRValue::Constant(32),
-                rhs: IRValue::Constant(32)
-            }
-        );
+        b.set_terminator(entry_bid, Terminator::Return(Some(IRValueId(3))));
 
         let module = b.build();
-        dbg!(module);
+        assert!(module.functions.contains_key(&fid));
+
+        let func = module.functions.get(&fid).unwrap();
+        assert_eq!(func.blocks.len(), 1);
+        assert_eq!(func.entry_block, BlockId(0));
+        
+        assert!(func.blocks.contains_key(&entry_bid));
+
+        let e_block = func.blocks.get(&entry_bid).unwrap();
+        assert_eq!(e_block.terminator, Terminator::Return(Some(IRValueId(3))));
+
+        assert_eq!(e_block.instructions.len(), 2);
     }
 }

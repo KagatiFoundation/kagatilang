@@ -47,7 +47,7 @@ impl LivenessAnalyzer {
                 let old_out = block_liveness[bid].out_set.clone();
 
                 let mut out_set = HashSet::<IRValueId>::new();
-                for succ in &block.predecessors {
+                for succ in &block.successors {
                     out_set.extend(&block_liveness[succ].in_set);
                 }
                 
@@ -58,6 +58,7 @@ impl LivenessAnalyzer {
 
                 if in_set != old_in || out_set != old_out {
                     block_liveness.insert(*bid, BlockLiveness { in_set, out_set });
+                    changed = true;
                 }
             }
         }
@@ -93,6 +94,14 @@ mod tests {
                 result: IRValueId(2), 
                 lhs: IRValue::Var(IRValueId(1)), 
                 rhs: IRValue::Var(IRValueId(0)) 
+            }
+        );
+
+        builder.inst(
+            IRInstruction::Add { 
+                result: IRValueId(3),
+                lhs: IRValue::Var(IRValueId(1)),
+                rhs: IRValue::Constant(32)
             }
         );
 

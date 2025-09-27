@@ -52,3 +52,28 @@ impl IRInstruction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{instruction::IRInstruction, value::{IRValue, IRValueId}};
+
+    #[test]
+    fn test_simple_instr_construction() {
+        let i1 = IRInstruction::Mov { result: IRValueId(0), src: IRValue::Constant(32) };
+        assert!(i1.defines_value());
+        assert!(i1.uses().is_empty());
+        assert_eq!(i1.get_value_id().unwrap(), IRValueId(0));
+        assert_eq!(i1.defs(), vec![IRValueId(0)]);
+
+        let i_add = IRInstruction::Add {
+            result: IRValueId(1),
+            lhs: IRValue::Var(IRValueId(0)),
+            rhs: IRValue::Constant(32)
+        };
+        assert!(i_add.defines_value());
+        assert!(i_add.uses().len() == 1);
+        assert_eq!(i_add.uses(), vec![IRValueId(0)]);
+        assert!(i_add.defs().len() == 1);
+        assert_eq!(i_add.defs(), vec![IRValueId(1)]);
+    }
+}
