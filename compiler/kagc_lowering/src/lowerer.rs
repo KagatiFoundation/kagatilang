@@ -31,12 +31,13 @@ use kagc_mir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_types::builtins::obj::KObjType;
 
-use crate::errors::IRGenerationError;
 use crate::fn_ctx::FnCtx;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
 
-type ExprLoweringResult = Result<IRValueId, IRGenerationError>;
+type ExprLoweringResult = Result<IRValueId, Diagnostic>;
+
+type StmtLoweringResult = Result<(), Diagnostic>;
 
 pub struct IRLowerer {
     ctx: Rc<RefCell<CompilerCtx>>,
@@ -79,6 +80,30 @@ impl IRLowerer {
             }
         }
         output
+    }
+
+    pub fn lower_irs(&mut self, nodes: &mut [AST]) {
+        for node in nodes {
+            self.lower_ir_node(node, &mut FnCtx::new(0));
+        }
+    }
+
+    pub fn lower_ir_node(&mut self, node: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+        if node.operation == ASTOperation::AST_GLUE {
+            if let Some(left_tree) = node.left.as_mut() {
+                return self.lower_ir_node(left_tree, fn_ctx);
+            }
+            if let Some(right_tree) = node.right.as_mut() {
+                return self.lower_ir_node(right_tree, fn_ctx);
+            }
+        }
+        else if node.operation == ASTOperation::AST_VAR_DECL {
+            return self.lower_variable_declaration(node, fn_ctx);
+        }
+        else if node.operation == ASTOperation::AST_RETURN {
+            return self.lower_return(node, fn_ctx);
+        }
+        panic!()
     }
 
     fn gen_ir_from_node(
@@ -519,6 +544,50 @@ impl IRLowerer {
         )
     }
 
+    fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
+        let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
+            self.ctx.borrow_mut().scope.enter_scope(func_decl.scope_id);
+            (func_decl.func_id, func_decl.scope_id)
+        } else {
+            panic!("Expected FuncStmt but found {:?}", ast);
+        };
+
+        let func_name: String = self.get_func_name(func_id).expect("Function name error!");
+        if let Some(finfo) = self.ctx.borrow().scope.lookup_fn_by_name(func_name.as_str()) {
+            self.current_function = Some(finfo.clone());
+        }
+
+        let mut fn_ctx: FnCtx = FnCtx::new(self.label_id);
+
+        let func_ir_params = self.ctx
+            .borrow()
+            .scope
+            .collect_params(func_scope)
+            .iter()
+            .map(|&sym| {
+                FunctionParam {
+                    id: fn_ctx.next_value_id(),
+                    ty: IRType::from(sym.lit_type.clone())
+                }
+            }).collect::<Vec<FunctionParam>>();
+
+        let (_, _) = self.ir_builder.function(
+            func_ir_params,
+            IRType::from(ast.result_type.clone())
+        );
+
+        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        for body_ast in linearized_body {
+            self.lower_ir_node(body_ast, &mut fn_ctx)?;
+        }
+
+        self.current_function = None;
+        // exit function's scope
+        self.ctx.borrow_mut().scope.exit_scope();
+        self.label_id = fn_ctx.next_label;
+        Ok(())
+    }
+
     fn gen_store_param_ir(
         &self, 
         sym: &Symbol, 
@@ -641,6 +710,52 @@ impl IRLowerer {
         panic!()
     }
 
+    fn lower_variable_declaration(
+        &mut self, 
+        var_ast: &mut AST, 
+        fn_ctx: &mut FnCtx
+    ) -> StmtLoweringResult {
+        let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
+        if let Stmt::VarDecl(var_decl) = var_decl {
+            if var_ast.left.is_none() {
+                panic!("Variable is not assigned a value!");
+            }
+
+            fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
+            let var_decl_value = self.lower_expression_ast(var_ast.left.as_mut().unwrap(), fn_ctx)?;
+
+            let var_stack_off = fn_ctx.next_stack_off();
+            self.ir_builder.inst(
+                IRInstruction::Store { 
+                    src: IRValue::Var(var_decl_value), 
+                    address: IRAddress::StackOffset(var_stack_off) 
+                }
+            );
+
+            if var_ast.result_type.is_gc_alloced() {
+                let data_ptr_value_id = fn_ctx.next_value_id();
+                self.ir_builder.inst(
+                    IRInstruction::Load { 
+                        src: IRAddress::BaseOffset(var_decl_value, GCOBJECT_BUFFER_IDX), 
+                        result: data_ptr_value_id
+                    }
+                );
+                self.ir_builder.inst(
+                    IRInstruction::Store { 
+                        src: IRValue::Var(data_ptr_value_id), 
+                        address: IRAddress::StackOffset(fn_ctx.next_stack_off())
+                    }
+                );
+            }
+
+            fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
+            Ok(())
+        }
+        else {
+            panic!()
+        }
+    }
+
     fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
         let sym_off = *fn_ctx
@@ -655,13 +770,6 @@ impl IRLowerer {
             id: fn_ctx.next_temp(),
             size: reg_sz,
         });
-
-        self.ir_builder.inst(
-            IRInstruction::Load { 
-                src: IRAddress::StackOffset(sym_off), 
-                result: fn_ctx.next_value_id() 
-            }
-        );
 
         Ok(vec![
             IRInstr::Load {
@@ -743,34 +851,59 @@ impl IRLowerer {
                 size: REG_SIZE_8 
             })
         });
-
-        let mut func_call_args = vec![];
-        for (_, arg_expr) in &mut func_call_expr.args {
-            let arg_value = self.lower_expression(arg_expr, fn_ctx).ok().unwrap();
-            func_call_args.push(arg_value);
-        }
-
-        self.ir_builder.inst(
-            IRInstruction::Call {
-                func: func_call_expr.symbol_name.clone(),
-                args: func_call_args,
-                result: None
-            }
-        );
-
         Ok(func_call_instrs)
     }
 
-    fn lower_expression(
-        &mut self, expr: &mut Expr, 
+    fn lower_expression_ast(
+        &mut self, 
+        ast: &mut AST, 
         fn_ctx: &mut FnCtx,
     ) -> ExprLoweringResult {
+        if !ast.kind.is_expr() {
+            panic!("Needed an Expr--but found {ast:#?}");
+        }
+        
+        let expr = ast
+            .kind
+            .as_expr_mut()
+            .unwrap_or_else(|| panic!("Cannot unwrap an expression for some reason. Aborting..."));
+        self.lower_expression(expr, fn_ctx)
+    }
+
+    fn lower_expression(
+        &mut self,
+        expr: &mut Expr,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
         match expr {
-            Expr::LitVal(lit_expr) => self.lower_literal_value_expr(lit_expr, fn_ctx),
-            Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
-            Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
+            Expr::LitVal(lit_expr) =>           self.lower_literal_value_expr(lit_expr, fn_ctx),
+            Expr::Ident(ident_expr) =>           self.lower_identifier_expr(ident_expr, fn_ctx),
+            Expr::Binary(bin_expr) =>              self.lower_binary_expr(bin_expr, fn_ctx),
+            Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
             _ => unimplemented!()
         }
+    }
+
+    fn lower_function_call_expr(
+        &mut self,
+        func_call_expr: &mut FuncCallExpr,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let mut func_call_args = vec![];
+        for (_, arg_expr) in &mut func_call_expr.args {
+            let arg_value_id = self.lower_expression(arg_expr, fn_ctx)?;
+            func_call_args.push(arg_value_id);
+        }
+
+        let call_result_value = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Call { 
+                func: func_call_expr.symbol_name.clone(), 
+                args: func_call_args, 
+                result: Some(call_result_value)
+            }
+        );
+        Ok(call_result_value)
     }
 
     fn lower_literal_value_expr(
@@ -814,7 +947,6 @@ impl IRLowerer {
                 result: value_id 
             }
         );
-
         Ok(value_id)
     }
 
@@ -879,6 +1011,10 @@ impl IRLowerer {
         Ok(add_value_id)
     }
 
+    fn lower_import(&mut self) -> StmtLoweringResult {
+        Ok(())
+    }
+
     fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             let mut ret_instrs: Vec<IR> = vec![]; 
@@ -918,6 +1054,35 @@ impl IRLowerer {
             return Ok(ret_instrs);
         }
         panic!("Expected ReturnStmt but found {:?}", ret_stmt);
+    }
+
+    fn lower_return(
+        &mut self,
+        ret_stmt: &mut AST,
+        fn_ctx: &mut FnCtx
+    ) -> StmtLoweringResult {
+        if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
+            if let Some(curr_fn) = &self.current_function {
+                let curr_block = self.ir_builder
+                    .current_block
+                    .unwrap_or_else(|| panic!("Current block not found! Aborting..."));
+                if !curr_fn.return_type.is_void() {
+                    let return_value_id = self.lower_expression_ast(
+                        ret_stmt.left.as_mut().unwrap(), 
+                        fn_ctx
+                    )?;
+                    self.ir_builder.set_terminator(curr_block, Terminator::Return(Some(return_value_id)));
+                }
+                else {
+                    self.ir_builder.set_terminator(curr_block, Terminator::Return(None));
+                }
+                return Ok(());
+            }
+            else {
+                panic!("Detected ReturnStmt outside a function! Aborting...");
+            }
+        }
+        panic!("Expected ReturnStmt but found {ret_stmt:#?}");
     }
 
     fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
