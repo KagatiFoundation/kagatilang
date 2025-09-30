@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use kagc_ast::ASTOperation;
 use kagc_mir::ir_operands::TempId;
+use kagc_mir::value::IRValueId;
 use kagc_mir::LabelId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
@@ -33,6 +34,8 @@ pub struct FnCtx {
 
     /// Maps variable names to their stack offsets.
     pub var_offsets: HashMap<String, StackOffset>,
+
+    value_id: usize
 }
 
 impl FnCtx {
@@ -45,8 +48,15 @@ impl FnCtx {
             parent_ast_kind: ASTOperation::AST_FUNCTION,
             next_label,
             force_label_use: 0,
-            var_offsets: HashMap::new()
+            var_offsets: HashMap::new(),
+            value_id: 0
         }
+    }
+
+    pub fn next_value_id(&mut self) -> IRValueId {
+        let id = IRValueId(self.value_id);
+        self.value_id += 1;
+        id
     }
 
     pub fn change_parent_ast_kind(&mut self, new_op: ASTOperation) {

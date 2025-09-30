@@ -7,8 +7,16 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
+use kagc_mir::block::Terminator;
+use kagc_mir::builder::IRBuilder;
+use kagc_mir::function::FunctionParam;
+use kagc_mir::instruction::IRAddress;
+use kagc_mir::instruction::IRInstruction;
 use kagc_mir::ir_instr::*;
 use kagc_mir::ir_operands::*;
+use kagc_mir::types::IRType;
+use kagc_mir::value::IRValue;
+use kagc_mir::value::IRValueId;
 use kagc_mir::GCOBJECT_BUFFER_IDX;
 use kagc_symbol::*;
 use kagc_backend::reg::*;
@@ -23,11 +31,13 @@ use kagc_mir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_types::builtins::obj::KObjType;
 
+use crate::errors::IRGenerationError;
 use crate::fn_ctx::FnCtx;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
 
-/// I don't know why I called it "basic"
+type ExprLoweringResult = Result<IRValueId, IRGenerationError>;
+
 pub struct IRLowerer {
     ctx: Rc<RefCell<CompilerCtx>>,
 
@@ -38,6 +48,8 @@ pub struct IRLowerer {
     current_function: Option<FunctionInfo>,
     
     early_return_label_id: Option<usize>,
+
+    pub ir_builder: IRBuilder
 }
 
 impl IRLowerer {
@@ -47,6 +59,7 @@ impl IRLowerer {
             label_id: 0,
             early_return_label_id: None,
             current_function: None,
+            ir_builder: IRBuilder::default()
         }
     }
 
@@ -66,51 +79,6 @@ impl IRLowerer {
             }
         }
         output
-    }
-
-    fn gen_store_param_ir(
-        &self, 
-        sym: &Symbol, 
-        arg_pos: usize, 
-        fn_ctx: &mut FnCtx
-    ) -> CGRes {
-        let mut output = vec![];
-        let reg_sz = sym.lit_type.to_reg_size();
-        assert_ne!(reg_sz, 0);
-
-        let store_arg_value = IROperand::Param { 
-            position: arg_pos, 
-            size: reg_sz 
-        };
-
-        let param_off = fn_ctx.next_stack_off();
-        let store_param_into_stack = IRInstr::Store { 
-            src: store_arg_value.clone(),
-            addr: IRAddr::StackOff(param_off)
-        };
-        output.push(IR::Instr(store_param_into_stack));
-
-        if sym.lit_type.is_gc_alloced() {
-            let load_data_off = IRInstr::Load { 
-                dest: IROperand::Temp { 
-                    id: fn_ctx.next_temp(), 
-                    size: REG_SIZE_8 
-                }, 
-                addr: IRAddr::BaseOff(
-                    store_arg_value, 
-                    GCOBJECT_BUFFER_IDX as i32
-                ) 
-            };
-            let data_off = fn_ctx.next_stack_off();
-            let store_data_off_into_stack = IRInstr::Store { 
-                src: load_data_off.dest().unwrap(), 
-                addr: IRAddr::StackOff(data_off)
-            };
-            output.push(IR::Instr(load_data_off));
-            output.push(IR::Instr(store_data_off_into_stack));
-        }
-        fn_ctx.var_offsets.insert(sym.name.clone(), param_off);
-        Ok(output)
     }
 
     fn gen_ir_from_node(
@@ -475,6 +443,7 @@ impl IRLowerer {
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
+        let mut func_ir_params = vec![];
         let params: Vec<IROperand> = self.ctx
             .borrow()
             .scope
@@ -491,6 +460,13 @@ impl IRLowerer {
                 );
                 fn_body.extend(store_param.ok().unwrap());
 
+                func_ir_params.push(
+                    FunctionParam {
+                        id: fn_ctx.next_value_id(),
+                        ty: IRType::from(sym.lit_type.clone())
+                    }
+                );
+
                 let reg: IROperand = IROperand::Param { 
                     position: virtual_reg, 
                     size: reg_sz 
@@ -498,6 +474,12 @@ impl IRLowerer {
                 virtual_reg += 1;
                 reg
             }).collect();
+
+        // setting up new IR
+        let (_, entry_bid) = self.ir_builder.function(
+            func_ir_params,
+            IRType::from(ast.result_type.clone())
+        );
 
         let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
         for body_ast  in linearized_body {
@@ -520,6 +502,8 @@ impl IRLowerer {
         let calls_fns = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
         let allocs_mem = contains_ops!(ast, ASTOperation::AST_RECORD_CREATE, ASTOperation::AST_STRLIT);
 
+        self.ir_builder.set_terminator(entry_bid, Terminator::Return(None));
+
         Ok(
             vec![IR::Func(
                 IRFunc { 
@@ -533,6 +517,51 @@ impl IRLowerer {
                 }
             )]
         )
+    }
+
+    fn gen_store_param_ir(
+        &self, 
+        sym: &Symbol, 
+        arg_pos: usize, 
+        fn_ctx: &mut FnCtx
+    ) -> CGRes {
+        let mut output = vec![];
+        let reg_sz = sym.lit_type.to_reg_size();
+        assert_ne!(reg_sz, 0);
+
+        let store_arg_value = IROperand::Param { 
+            position: arg_pos, 
+            size: reg_sz 
+        };
+
+        let param_off = fn_ctx.next_stack_off();
+        let store_param_into_stack = IRInstr::Store { 
+            src: store_arg_value.clone(),
+            addr: IRAddr::StackOff(param_off)
+        };
+        output.push(IR::Instr(store_param_into_stack));
+
+        if sym.lit_type.is_gc_alloced() {
+            let load_data_off = IRInstr::Load { 
+                dest: IROperand::Temp { 
+                    id: fn_ctx.next_temp(), 
+                    size: REG_SIZE_8 
+                }, 
+                addr: IRAddr::BaseOff(
+                    store_arg_value, 
+                    GCOBJECT_BUFFER_IDX as i32
+                ) 
+            };
+            let data_off = fn_ctx.next_stack_off();
+            let store_data_off_into_stack = IRInstr::Store { 
+                src: load_data_off.dest().unwrap(), 
+                addr: IRAddr::StackOff(data_off)
+            };
+            output.push(IR::Instr(load_data_off));
+            output.push(IR::Instr(store_data_off_into_stack));
+        }
+        fn_ctx.var_offsets.insert(sym.name.clone(), param_off);
+        Ok(output)
     }
 
     fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
@@ -572,6 +601,13 @@ impl IRLowerer {
                 IRInstr::Store { 
                     src: last_instr.dest().unwrap(), 
                     addr: IRAddr::StackOff(var_stack_off)
+                }
+            );
+
+            self.ir_builder.inst(
+                IRInstruction::Store { 
+                    src: IRValue::Constant(12345), 
+                    address: IRAddress::StackOffset(var_stack_off)
                 }
             );
 
@@ -620,6 +656,13 @@ impl IRLowerer {
             size: reg_sz,
         });
 
+        self.ir_builder.inst(
+            IRInstruction::Load { 
+                src: IRAddress::StackOffset(sym_off), 
+                result: fn_ctx.next_value_id() 
+            }
+        );
+
         Ok(vec![
             IRInstr::Load {
                 dest,
@@ -628,7 +671,12 @@ impl IRLowerer {
         ])
     }
 
-    fn gen_ir_fn_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn gen_ir_fn_call_expr(
+        &mut self, 
+        func_call_expr: &mut FuncCallExpr, 
+        fn_ctx: &mut FnCtx, 
+        dest: Option<IROperand>
+    ) -> CGExprEvalRes {
         let mut func_call_instrs = vec![];
         let mut actual_params = vec![];
 
@@ -695,7 +743,140 @@ impl IRLowerer {
                 size: REG_SIZE_8 
             })
         });
+
+        let mut func_call_args = vec![];
+        for (_, arg_expr) in &mut func_call_expr.args {
+            let arg_value = self.lower_expression(arg_expr, fn_ctx).ok().unwrap();
+            func_call_args.push(arg_value);
+        }
+
+        self.ir_builder.inst(
+            IRInstruction::Call {
+                func: func_call_expr.symbol_name.clone(),
+                args: func_call_args,
+                result: None
+            }
+        );
+
         Ok(func_call_instrs)
+    }
+
+    fn lower_expression(
+        &mut self, expr: &mut Expr, 
+        fn_ctx: &mut FnCtx,
+    ) -> ExprLoweringResult {
+        match expr {
+            Expr::LitVal(lit_expr) => self.lower_literal_value_expr(lit_expr, fn_ctx),
+            Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
+            Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
+            _ => unimplemented!()
+        }
+    }
+
+    fn lower_literal_value_expr(
+        &mut self,
+        lit_expr: &LitValExpr,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        match lit_expr.result_type {
+            LitTypeVariant::I64 => {
+                let value_id = fn_ctx.next_value_id();
+                self.ir_builder.inst(
+                    IRInstruction::Mov { 
+                        result: value_id, 
+                        src: IRValue::Constant(*lit_expr.value.unwrap_i64().expect("No i32 value!"))
+                    }
+                );
+                Ok(value_id)
+            },
+            _ => unimplemented!()
+        }
+    }
+
+    fn lower_identifier_expr(
+        &mut self,
+        ident_expr: &IdentExpr,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
+        let sym_off = *fn_ctx
+            .var_offsets
+            .get(&ident_expr.sym_name)
+            .unwrap_or_else(|| panic!("Undefined symbol bug. This mustn't be happening. Aborting..."));
+
+        let reg_sz: RegSize = sym.lit_type.to_reg_size();
+        assert_ne!(reg_sz, 0);
+
+        let value_id = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Load { 
+                src: IRAddress::StackOffset(sym_off), 
+                result: value_id 
+            }
+        );
+
+        Ok(value_id)
+    }
+
+    fn lower_binary_expr(
+        &mut self,
+        bin_expr: &mut BinExpr,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
+        let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
+        
+        match bin_expr.operation {
+            ASTOperation::AST_ADD => {
+                self.lower_addition(
+                    IRValue::Var(lhs_value_id), 
+                    IRValue::Var(rhs_value_id), 
+                    fn_ctx
+                )
+            },
+            ASTOperation::AST_SUBTRACT => {
+                self.lower_subtraction(
+                    IRValue::Var(lhs_value_id),
+                    IRValue::Var(rhs_value_id), 
+                    fn_ctx
+                )
+            }
+            _ => unimplemented!()
+        }
+    }
+
+    fn lower_addition(
+        &mut self,
+        lhs: IRValue,
+        rhs: IRValue,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let add_value_id = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Add { 
+                result: add_value_id, 
+                lhs, 
+                rhs
+            }
+        );
+        Ok(add_value_id)
+    }
+
+    fn lower_subtraction(
+        &mut self,
+        lhs: IRValue,
+        rhs: IRValue,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let add_value_id = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Add { 
+                result: add_value_id, 
+                lhs, 
+                rhs
+            }
+        );
+        Ok(add_value_id)
     }
 
     fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {

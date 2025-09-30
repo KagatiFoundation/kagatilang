@@ -17,6 +17,22 @@ pub enum IRInstruction {
         result: IRValueId,
         lhs: IRValue,
         rhs: IRValue
+    },
+
+    Store {
+        src: IRValue,
+        address: IRAddress
+    },
+
+    Load {
+        src: IRAddress,
+        result: IRValueId
+    },
+
+    Call {
+        func: String,
+        args: Vec<IRValueId>,
+        result: Option<IRValueId>
     }
 }
 
@@ -27,31 +43,42 @@ impl IRInstruction {
 
     pub fn get_value_id(&self) -> Option<IRValueId> {
         match self {
-            IRInstruction::Mov { result, .. } 
-            | IRInstruction::Add { result, .. } => Some(*result)
+            IRInstruction::Mov { result, .. } | 
+            IRInstruction::Add { result, .. } => Some(*result),
+            _ => None
         }
     }
 
     pub fn defs(&self) -> Vec<IRValueId> {
         match self {
-            IRInstruction::Mov { result, .. } => vec![*result],
-            IRInstruction::Add { result, .. } => vec![*result],
+            IRInstruction::Mov  { result, .. } |
+            IRInstruction::Load { result, .. } |
+            IRInstruction::Add  { result, .. } => vec![*result],
+            _ => vec![]
         }
     }
 
     pub fn uses(&self) -> Vec<IRValueId> {
         match self {
-            IRInstruction::Mov { src, .. } => src.as_value_id().into_iter().collect(),
-            IRInstruction::Add { lhs, rhs, .. } => {
+            IRInstruction::Mov    { src, .. } |
+            IRInstruction::Store  { src, .. } => src.as_value_id().into_iter().collect(),
+            IRInstruction::Add    { lhs, rhs, .. } => {
                 lhs
                     .as_value_id()
                     .into_iter()
                     .chain(rhs.as_value_id())
                     .collect()
-                
             }
+            _ => vec![]
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum IRAddress {
+    StackOffset(usize),
+
+    BaseOffset(IRValueId, usize)
 }
 
 #[cfg(test)]

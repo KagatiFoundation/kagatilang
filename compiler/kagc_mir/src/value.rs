@@ -4,7 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Default, Hash)]
 pub struct IRValueId(pub usize);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum IRValue {
     Constant(i64),
     Var(IRValueId)
