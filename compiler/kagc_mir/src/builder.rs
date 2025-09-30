@@ -146,6 +146,8 @@ mod tests {
 
         b.set_terminator(entry_bid, Terminator::Return(Some(IRValueId(3))));
 
+        assert_eq!(b.block_terminators.len(), 1);
+
         let module = b.build();
         assert!(module.functions.contains_key(&fid));
 

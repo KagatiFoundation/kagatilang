@@ -18,3 +18,17 @@ impl IRValue {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::value::{IRValue, IRValueId};
+
+    #[test]
+    fn test_as_value_id_correctness() {
+        let value = IRValue::Constant(32);
+        assert_eq!(value.as_value_id(), None);
+
+        let value = IRValue::Var(IRValueId(12));
+        assert_eq!(value.as_value_id(), Some(IRValueId(12)));
+    }
+}

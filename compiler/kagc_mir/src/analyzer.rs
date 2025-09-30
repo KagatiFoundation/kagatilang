@@ -29,9 +29,9 @@ impl LivenessAnalyzer {
 
         // calculate use and definition maps
         for (bid, block) in &ir_func.blocks {
-            let (use_set, def_set) = block.compute_use_def(block);
-            use_map.insert(*bid, use_set);
-            def_map.insert(*bid, def_set);
+            let use_defs = block.compute_use_def();
+            use_map.insert(*bid, use_defs.uses.clone());
+            def_map.insert(*bid, use_defs.defs.clone());
             block_liveness.insert(*bid, BlockLiveness {
                 in_set: HashSet::new(),
                 out_set: HashSet::new(),
@@ -71,12 +71,18 @@ impl LivenessAnalyzer {
 
 #[cfg(test)]
 mod tests {
-    use crate::{analyzer::LivenessAnalyzer, builder::IRBuilder, function::FunctionParam, instruction::IRInstruction, types::IRType, value::{IRValue, IRValueId}};
+    use crate::analyzer::LivenessAnalyzer;
+    use crate::block::Terminator;
+    use crate::builder::IRBuilder;
+    use crate::function::FunctionParam;
+    use crate::instruction::IRInstruction;
+    use crate::types::IRType;
+    use crate::value::*;
 
     #[test]
     fn test_simple_liveness_analysis() {
         let mut builder = IRBuilder::default();
-        builder.function(
+        let (_, bid) = builder.function(
             vec![
                 FunctionParam {
                     id: IRValueId(0),
@@ -104,6 +110,8 @@ mod tests {
                 rhs: IRValue::Constant(32)
             }
         );
+
+        builder.set_terminator(bid, Terminator::Return(None));
 
         let module = builder.build();
         for func in module.functions.values() {

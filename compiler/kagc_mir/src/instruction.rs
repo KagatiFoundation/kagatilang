@@ -44,10 +44,11 @@ impl IRInstruction {
             IRInstruction::Mov { src, .. } => src.as_value_id().into_iter().collect(),
             IRInstruction::Add { lhs, rhs, .. } => {
                 lhs
-                .as_value_id()
-                .into_iter()
-                .chain(rhs.as_value_id())
-                .collect()
+                    .as_value_id()
+                    .into_iter()
+                    .chain(rhs.as_value_id())
+                    .collect()
+                
             }
         }
     }
@@ -55,7 +56,7 @@ impl IRInstruction {
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction::IRInstruction, value::{IRValue, IRValueId}};
+    use crate::{instruction::*, value::{IRValue, IRValueId}};
 
     #[test]
     fn test_simple_instr_construction() {
@@ -63,7 +64,7 @@ mod tests {
         assert!(i1.defines_value());
         assert!(i1.uses().is_empty());
         assert_eq!(i1.get_value_id().unwrap(), IRValueId(0));
-        assert_eq!(i1.defs(), vec![IRValueId(0)]);
+        assert_eq!(i1.uses(), vec![IRValueId(1)]);
 
         let i_add = IRInstruction::Add {
             result: IRValueId(1),
