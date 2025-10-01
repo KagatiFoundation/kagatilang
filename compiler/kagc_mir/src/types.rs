@@ -11,16 +11,22 @@ pub type Identifier<'a> = &'a str;
 pub enum IRType {
     I64,
 
+    I32,
+
     #[default]
     Void,
+
+    RawStr
 }
 
 impl From<LitTypeVariant> for IRType {
     fn from(value: LitTypeVariant) -> Self {
         match value {
             LitTypeVariant::I64 => IRType::I64,
+            LitTypeVariant::I32 => IRType::I32,
             LitTypeVariant::Void => IRType::Void,
-            _ => todo!(),
+            LitTypeVariant::RawStr => IRType::RawStr,
+            _ => unimplemented!("{value:#?}"),
         }
     }
 }

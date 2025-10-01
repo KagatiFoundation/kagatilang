@@ -4,16 +4,22 @@
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Default, Hash)]
 pub struct IRValueId(pub usize);
 
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Default)]
+pub struct ParamPosition(pub usize);
+
 #[derive(Debug, Clone, Copy)]
 pub enum IRValue {
     Constant(i64),
-    Var(IRValueId)
+    Var(IRValueId),
+    CallArg(IRValueId),
+    Param(ParamPosition)
 }
 
 impl IRValue {
     pub fn as_value_id(&self) -> Option<IRValueId> {
         match self {
             IRValue::Var(id) => Some(*id),
+            IRValue::CallArg(id) => Some(*id),
             _ => None,
         }
     }
@@ -29,6 +35,9 @@ mod tests {
         assert_eq!(value.as_value_id(), None);
 
         let value = IRValue::Var(IRValueId(12));
+        assert_eq!(value.as_value_id(), Some(IRValueId(12)));
+
+        let value = IRValue::CallArg(IRValueId(12));
         assert_eq!(value.as_value_id(), Some(IRValueId(12)));
     }
 }

@@ -74,7 +74,7 @@ impl IRBuilder {
 
         for (func_id, func_blocks) in &mut self.function_blocks {
             for (block_id, block_instrs) in self.block_instructions.iter() {
-                let block_terminator = self.block_terminators.get(block_id).unwrap();
+                let block_terminator = self.block_terminators.get(block_id).unwrap_or(&Terminator::Return(None));
                 if self.block_instructions.contains_key(block_id) {
                     func_blocks.insert(
                         *block_id, 

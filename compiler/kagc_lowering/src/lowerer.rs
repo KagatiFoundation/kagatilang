@@ -97,13 +97,22 @@ impl IRLowerer {
                 return self.lower_ir_node(right_tree, fn_ctx);
             }
         }
+        else if node.operation == ASTOperation::AST_FUNCTION {
+            return self.lower_function(node);
+        }
         else if node.operation == ASTOperation::AST_VAR_DECL {
             return self.lower_variable_declaration(node, fn_ctx);
         }
         else if node.operation == ASTOperation::AST_RETURN {
             return self.lower_return(node, fn_ctx);
         }
-        panic!()
+        else if node.operation == ASTOperation::AST_IMPORT {
+            return self.lower_import();
+        }
+        else if node.operation == ASTOperation::AST_RECORD_DECL {
+            return self.lower_record_declaration(node);
+        }
+        todo!("{node:#?}");
     }
 
     fn gen_ir_from_node(
@@ -335,6 +344,10 @@ impl IRLowerer {
         self.gen_ir_load_global_var(idx, fn_ctx)
     }
 
+    fn lower_load_string(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+        self.lower_load_heap_allocated_value(idx, fn_ctx)
+    }
+
     fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
 
@@ -468,7 +481,6 @@ impl IRLowerer {
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
-        let mut func_ir_params = vec![];
         let params: Vec<IROperand> = self.ctx
             .borrow()
             .scope
@@ -485,13 +497,6 @@ impl IRLowerer {
                 );
                 fn_body.extend(store_param.ok().unwrap());
 
-                func_ir_params.push(
-                    FunctionParam {
-                        id: fn_ctx.next_value_id(),
-                        ty: IRType::from(sym.lit_type.clone())
-                    }
-                );
-
                 let reg: IROperand = IROperand::Param { 
                     position: virtual_reg, 
                     size: reg_sz 
@@ -499,12 +504,6 @@ impl IRLowerer {
                 virtual_reg += 1;
                 reg
             }).collect();
-
-        // setting up new IR
-        let (_, entry_bid) = self.ir_builder.function(
-            func_ir_params,
-            IRType::from(ast.result_type.clone())
-        );
 
         let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
         for body_ast  in linearized_body {
@@ -526,8 +525,6 @@ impl IRLowerer {
         self.label_id = fn_ctx.next_label;
         let calls_fns = ast.contains_operation(ASTOperation::AST_FUNC_CALL);
         let allocs_mem = contains_ops!(ast, ASTOperation::AST_RECORD_CREATE, ASTOperation::AST_STRLIT);
-
-        self.ir_builder.set_terminator(entry_bid, Terminator::Return(None));
 
         Ok(
             vec![IR::Func(
@@ -672,14 +669,6 @@ impl IRLowerer {
                     addr: IRAddr::StackOff(var_stack_off)
                 }
             );
-
-            self.ir_builder.inst(
-                IRInstruction::Store { 
-                    src: IRValue::Constant(12345), 
-                    address: IRAddress::StackOffset(var_stack_off)
-                }
-            );
-
             result.push(store_var_ir);
 
             if ast.result_type.is_gc_alloced() {
@@ -911,6 +900,10 @@ impl IRLowerer {
         lit_expr: &LitValExpr,
         fn_ctx: &mut FnCtx
     ) -> ExprLoweringResult {
+        if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
+            return self.lower_load_string(*pool_idx, fn_ctx);
+        }
+
         match lit_expr.result_type {
             LitTypeVariant::I64 => {
                 let value_id = fn_ctx.next_value_id();
@@ -922,7 +915,19 @@ impl IRLowerer {
                 );
                 Ok(value_id)
             },
-            _ => unimplemented!()
+
+            LitTypeVariant::U8 => {
+                let value_id = fn_ctx.next_value_id();
+                self.ir_builder.inst(
+                    IRInstruction::Mov { 
+                        result: value_id, 
+                        src: IRValue::Constant(*lit_expr.value.unwrap_u8().expect("No u8 value!") as i64)
+                    }
+                );
+                Ok(value_id)
+            },
+
+            _ => unimplemented!("{lit_expr:#?}")
         }
     }
 
@@ -973,6 +978,20 @@ impl IRLowerer {
                     fn_ctx
                 )
             }
+            ASTOperation::AST_MULTIPLY => {
+                self.lower_multiply(
+                    IRValue::Var(lhs_value_id),
+                    IRValue::Var(rhs_value_id), 
+                    fn_ctx
+                )
+            },
+            ASTOperation::AST_DIVIDE => {
+                self.lower_divide(
+                    IRValue::Var(lhs_value_id),
+                    IRValue::Var(rhs_value_id), 
+                    fn_ctx
+                )
+            }
             _ => unimplemented!()
         }
     }
@@ -1002,7 +1021,41 @@ impl IRLowerer {
     ) -> ExprLoweringResult {
         let add_value_id = fn_ctx.next_value_id();
         self.ir_builder.inst(
-            IRInstruction::Add { 
+            IRInstruction::Subtract { 
+                result: add_value_id, 
+                lhs, 
+                rhs
+            }
+        );
+        Ok(add_value_id)
+    }
+
+    fn lower_divide(
+        &mut self,
+        lhs: IRValue,
+        rhs: IRValue,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let add_value_id = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Divide { 
+                result: add_value_id, 
+                lhs, 
+                rhs
+            }
+        );
+        Ok(add_value_id)
+    }
+
+    fn lower_multiply(
+        &mut self,
+        lhs: IRValue,
+        rhs: IRValue,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let add_value_id = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Multiply { 
                 result: add_value_id, 
                 lhs, 
                 rhs
@@ -1330,12 +1383,38 @@ impl IRLowerer {
         Ok(output)
     }
 
+    fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+        let ctx_borrow = self.ctx.borrow();
+        let obj = ctx_borrow.const_pool.get(idx);
+        if obj.is_none() {
+            panic!("ConstEntry not found! Panic caused by the index: {idx}");
+        }
+
+        let obj = obj.unwrap();
+        let ob_size = self.ctx.borrow().const_pool.size(idx).unwrap();
+
+        let mem_alloc_value_id = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::MemAlloc {
+                ob_ty: obj.ob_type.clone(),
+                size: ob_size,
+                result: mem_alloc_value_id,
+                pool_idx: idx
+            }
+        );
+        Ok(mem_alloc_value_id)
+    }
+
     fn lower_import_to_ir(&self) -> CGRes {
         Ok(vec![])   
     }
 
     fn lower_rec_decl_to_ir(&mut self, _node: &mut AST) -> CGRes {
         Ok(vec![])
+    }
+
+    fn lower_record_declaration(&mut self, _node: &mut AST) -> StmtLoweringResult {
+        Ok(())
     }
 
     fn gen_ir_jump(&self, label_id: LabelId) -> CGRes {
