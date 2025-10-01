@@ -869,6 +869,7 @@ impl IRLowerer {
             Expr::Ident(ident_expr) =>           self.lower_identifier_expr(ident_expr, fn_ctx),
             Expr::Binary(bin_expr) =>              self.lower_binary_expr(bin_expr, fn_ctx),
             Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
+            Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access(rec_field_access, fn_ctx),
             _ => unimplemented!()
         }
     }
@@ -1064,10 +1065,6 @@ impl IRLowerer {
         Ok(add_value_id)
     }
 
-    fn lower_import(&mut self) -> StmtLoweringResult {
-        Ok(())
-    }
-
     fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             let mut ret_instrs: Vec<IR> = vec![]; 
@@ -1251,6 +1248,41 @@ impl IRLowerer {
         ])
     }
 
+    fn lower_record_field_access(
+        &mut self,
+        access: &mut RecordFieldAccessExpr,
+        fn_ctx: &mut FnCtx
+    ) -> ExprLoweringResult {
+        let reg_sz = access.result_type.to_reg_size();
+        assert_ne!(reg_sz, 0);
+
+        // The record's stack offset
+        let rec_stack_off = *fn_ctx
+            .var_offsets
+            .get(&access.rec_alias)
+            .unwrap_or_else(|| panic!("what the fck bro"));
+
+        let base_pointer_value = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Load { 
+                src: IRAddress::StackOffset(rec_stack_off + 1), 
+                result: base_pointer_value 
+            }
+        );
+
+        let field_value = fn_ctx.next_value_id();
+        self.ir_builder.inst(
+            IRInstruction::Load { 
+                src: IRAddress::BaseOffset(
+                    base_pointer_value, 
+                    access.rel_stack_off
+                ), 
+                result: field_value
+            }
+        );
+        Ok(field_value)
+    }
+
     fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
         let ctx_borrow = self.ctx.borrow();
         let obj = ctx_borrow.const_pool.get(idx);
@@ -1407,6 +1439,10 @@ impl IRLowerer {
 
     fn lower_import_to_ir(&self) -> CGRes {
         Ok(vec![])   
+    }
+
+    fn lower_import(&mut self) -> StmtLoweringResult {
+        Ok(())
     }
 
     fn lower_rec_decl_to_ir(&mut self, _node: &mut AST) -> CGRes {
