@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use crate::function::*;
+use crate::instruction::IRAddress;
 use crate::instruction::IRCondition;
 use crate::module::Module;
 use crate::types::*;
@@ -139,6 +140,12 @@ impl IRBuilder {
     pub fn create_move(&mut self, value: IRValue) -> IRValueId {
         let result = self.next_value_id();
         self.inst(IRInstruction::Mov { result, src: value })
+            .expect("create_move: no value ID created")
+    }
+
+    pub fn create_load(&mut self, addr: IRAddress) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::Load { src: addr, result })
             .expect("create_move: no value ID created")
     }
 

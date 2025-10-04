@@ -75,7 +75,7 @@ mod tests {
     use crate::block::Terminator;
     use crate::builder::IRBuilder;
     use crate::function::FunctionParam;
-    use crate::instruction::IRInstruction;
+    use crate::instruction::{IRCondition, IRInstruction};
     use crate::types::IRType;
     use crate::value::*;
 
@@ -113,6 +113,45 @@ mod tests {
 
         builder.set_terminator(bid, Terminator::Return(None));
 
+        let module = builder.build();
+        for func in module.functions.values() {
+            let la_data = LivenessAnalyzer::analyze_function(func);
+            dbg!(la_data);
+        }
+    }
+
+    #[test]
+    fn test_complex_function() {
+        let mut builder = IRBuilder::default();
+        let (_, func_entry) = builder.create_function(vec![], IRType::I64);
+        let loop_entry = builder.create_block("loop-entry");
+        builder.link_blocks(func_entry, loop_entry);
+
+        let add_value = builder.create_add(IRValue::Constant(32), IRValue::Constant(32));
+        let if_else_block = builder.create_block("if-else-block");
+        builder.link_blocks(loop_entry, if_else_block);
+
+        let cond_jump = builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(add_value), IRValue::Constant(64));
+        let if_block = builder.create_block("if-block");
+        let else_block = builder.create_block("else-block");
+        builder.link_blocks_multiple(if_else_block, vec![if_block, else_block]);
+
+        let merge_block = builder.create_block("merge");
+        builder.link_blocks(if_block, merge_block);
+        builder.link_blocks(else_block, merge_block);
+
+        builder.set_terminator(
+            if_else_block,
+            Terminator::CondJump { 
+                cond: cond_jump, 
+                then_block: if_block, 
+                else_block 
+            }
+        );
+
+        builder.set_terminator(if_block, Terminator::Jump(merge_block));
+        builder.set_terminator(else_block, Terminator::Jump(merge_block));
+        
         let module = builder.build();
         for func in module.functions.values() {
             let la_data = LivenessAnalyzer::analyze_function(func);

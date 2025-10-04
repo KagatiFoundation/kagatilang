@@ -7,6 +7,11 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
+use kagc_mir::value::ParamPosition;
+use kagc_symbol::*;
+use kagc_backend::reg::*;
+use kagc_types::*;
+
 use kagc_mir::block::Terminator;
 use kagc_mir::builder::IRBuilder;
 use kagc_mir::function::FunctionParam;
@@ -18,11 +23,6 @@ use kagc_mir::ir_operands::*;
 use kagc_mir::types::IRType;
 use kagc_mir::value::IRValue;
 use kagc_mir::value::IRValueId;
-use kagc_mir::GCOBJECT_BUFFER_IDX;
-use kagc_symbol::*;
-use kagc_backend::reg::*;
-use kagc_types::*;
-
 use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::code::ErrCode;
@@ -35,6 +35,9 @@ use kagc_types::builtins::obj::KObjType;
 use crate::fn_ctx::FnCtx;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
+
+// constants
+use kagc_mir::GCOBJECT_BUFFER_IDX;
 
 type ExprLoweringResult = Result<IRValueId, Diagnostic>;
 
@@ -405,12 +408,14 @@ impl IRLowerer {
                 )
             },
 
-            ASTOperation::AST_GTHAN | ASTOperation::AST_LTHAN   | 
-            ASTOperation::AST_LTEQ  | ASTOperation::AST_GTEQ    | 
-            ASTOperation::AST_NEQ   | ASTOperation::AST_EQEQ => 
-            {
+            ASTOperation::AST_GTHAN     | 
+            ASTOperation::AST_LTHAN     | 
+            ASTOperation::AST_LTEQ      | 
+            ASTOperation::AST_GTEQ      | 
+            ASTOperation::AST_NEQ       | 
+            ASTOperation::AST_EQEQ      => {
                 let parent_ast_kind: ASTOperation = fn_ctx.parent_ast_kind;
-                let is_cond_dependent = (parent_ast_kind == ASTOperation::AST_IF) || (parent_ast_kind == ASTOperation::AST_WHILE);
+                let is_cond_dependent = matches!(parent_ast_kind, ASTOperation::AST_IF | ASTOperation::AST_WHILE);
                 if is_cond_dependent {
                     self.gen_ir_cmp_and_jump(
                         left_dest.dest().unwrap(), 
@@ -637,6 +642,36 @@ impl IRLowerer {
         Ok(output)
     }
 
+    fn lower_function_parameter(&mut self, sym: &Symbol, arg_pos: usize, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+        let param_stack_off = fn_ctx.next_stack_off();
+        self.ir_builder.inst(
+            IRInstruction::Store { 
+                src: IRValue::Param(ParamPosition(arg_pos)), 
+                address: IRAddress::StackOffset(param_stack_off) 
+            }
+        );
+        
+        if sym.lit_type.is_gc_alloced() {
+            let gc_base_value = self.ir_builder.create_load(
+                IRAddress::StackOffset(param_stack_off)
+            );
+            let gc_data_value = self.ir_builder.create_load(
+                IRAddress::BaseOffset(
+                    gc_base_value, 
+                    GCOBJECT_BUFFER_IDX
+                )
+            );
+            self.ir_builder.inst(
+                IRInstruction::Store { 
+                    src: IRValue::Var(gc_data_value), 
+                    address: IRAddress::StackOffset(fn_ctx.next_stack_off()) 
+                }
+            );
+        }
+        fn_ctx.var_offsets.insert(sym.name.clone(), param_stack_off);
+        Ok(())
+    }
+
     fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         let var_decl = ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
@@ -706,11 +741,7 @@ impl IRLowerer {
         panic!()
     }
 
-    fn lower_variable_declaration(
-        &mut self, 
-        var_ast: &mut AST, 
-        fn_ctx: &mut FnCtx
-    ) -> StmtLoweringResult {
+    fn lower_variable_declaration(&mut self, var_ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
             if var_ast.left.is_none() {
@@ -745,11 +776,9 @@ impl IRLowerer {
             }
 
             fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
-            Ok(())
+            return Ok(());
         }
-        else {
-            panic!()
-        }
+        panic!("Required VarDeclStmt--but found {var_ast:#?}! Aborting...");
     }
 
     fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
@@ -896,7 +925,14 @@ impl IRLowerer {
         }
 
         match lit_expr.result_type {
-            LitTypeVariant::I64 |
+            LitTypeVariant::I32 => {
+                let const_value = *lit_expr.value.unwrap_i32().expect("No i32 value!") as i64;
+                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
+            }
+            LitTypeVariant::I64 => {
+                let const_value = *lit_expr.value.unwrap_i64().expect("No i64 value!");
+                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
+            },
             LitTypeVariant::U8 => {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
                 Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
