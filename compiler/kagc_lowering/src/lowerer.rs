@@ -850,15 +850,10 @@ impl IRLowerer {
         Ok(func_call_instrs)
     }
 
-    fn lower_expression_ast(
-        &mut self, 
-        ast: &mut AST, 
-        fn_ctx: &mut FnCtx,
-    ) -> ExprLoweringResult {
+    fn lower_expression_ast(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {ast:#?}");
         }
-        
         let expr = ast
             .kind
             .as_expr_mut()
@@ -866,11 +861,7 @@ impl IRLowerer {
         self.lower_expression(expr, fn_ctx)
     }
 
-    fn lower_expression(
-        &mut self,
-        expr: &mut Expr,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
+    fn lower_expression(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
         match expr {
             Expr::LitVal(lit_expr) =>           self.lower_literal_value_expr(lit_expr, fn_ctx),
             Expr::Ident(ident_expr) =>           self.lower_identifier_expr(ident_expr, fn_ctx),
@@ -881,11 +872,7 @@ impl IRLowerer {
         }
     }
 
-    fn lower_function_call_expr(
-        &mut self,
-        func_call_expr: &mut FuncCallExpr,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
+    fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
         let mut func_call_args = vec![];
         for (_, arg_expr) in &mut func_call_expr.args {
             let arg_value_id = self.lower_expression(arg_expr, fn_ctx)?;
@@ -919,11 +906,7 @@ impl IRLowerer {
         }
     }
 
-    fn lower_identifier_expr(
-        &mut self,
-        ident_expr: &IdentExpr,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
+    fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
         let sym_off = *fn_ctx
             .var_offsets
@@ -943,14 +926,9 @@ impl IRLowerer {
         Ok(value_id)
     }
 
-    fn lower_binary_expr(
-        &mut self,
-        bin_expr: &mut BinExpr,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
+    fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
         let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
-        
         match bin_expr.operation {
             ASTOperation::AST_ADD       => Ok(self.ir_builder.create_add(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             ASTOperation::AST_SUBTRACT  => Ok(self.ir_builder.create_subtract(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
@@ -1007,11 +985,7 @@ impl IRLowerer {
         panic!("Expected ReturnStmt but found {:?}", ret_stmt);
     }
 
-    fn lower_return(
-        &mut self,
-        ret_stmt: &mut AST,
-        fn_ctx: &mut FnCtx
-    ) -> StmtLoweringResult {
+    fn lower_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_unchecked();
