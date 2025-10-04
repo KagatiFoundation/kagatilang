@@ -11,7 +11,12 @@ pub struct IRInstructionId(pub usize);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IRCondition {
-    EqEq
+    EqEq,
+    NEq,
+    GTEq,
+    LTEq,
+    GThan,
+    LThan,
 }
 
 #[derive(Debug, Clone)]
@@ -93,11 +98,11 @@ impl IRInstruction {
             IRInstruction::Load         { result, .. } |
             IRInstruction::MemAlloc     { result, .. } |
             IRInstruction::Subtract     { result, .. } |
-            IRInstruction::Divide     { result, .. } |
+            IRInstruction::Divide       { result, .. } |
             IRInstruction::Multiply     { result, .. } |
-            IRInstruction::LoadGlobal   { result, .. } => Some(*result),
-            IRInstruction::CondJump   { result, .. } => Some(*result),
-            IRInstruction::Call     { result, .. } => *result,
+            IRInstruction::LoadGlobal   { result, .. } |
+            IRInstruction::CondJump     { result, .. } => Some(*result),
+            IRInstruction::Call         { result, .. } => *result,
             _ => None
         }
     }
@@ -109,10 +114,10 @@ impl IRInstruction {
             IRInstruction::Add          { result, .. } |
             IRInstruction::MemAlloc     { result, .. } |
             IRInstruction::Subtract     { result, .. } |
-            IRInstruction::Divide     { result, .. } |
+            IRInstruction::Divide       { result, .. } |
             IRInstruction::Multiply     { result, .. } |
-            IRInstruction::LoadGlobal   { result, .. } => vec![*result],
-            IRInstruction::CondJump   { result, .. } => vec![*result],
+            IRInstruction::LoadGlobal   { result, .. } |
+            IRInstruction::CondJump     { result, .. } => vec![*result],
             IRInstruction::Call { result, .. } => vec![result.unwrap()],
             _ => vec![]
         }
@@ -120,11 +125,11 @@ impl IRInstruction {
 
     pub fn uses(&self) -> Vec<IRValueId> {
         match self {
-            IRInstruction::Mov    { src, .. } |
-            IRInstruction::Store  { src, .. } => src.as_value_id().into_iter().collect(),
-            IRInstruction::Add    { lhs, rhs, .. } |
+            IRInstruction::Mov         { src, .. } |
+            IRInstruction::Store       { src, .. } => src.as_value_id().into_iter().collect(),
+            IRInstruction::Add         { lhs, rhs, .. } |
             IRInstruction::Subtract    { lhs, rhs, .. } |
-            IRInstruction::Divide    { lhs, rhs, .. } |
+            IRInstruction::Divide      { lhs, rhs, .. } |
             IRInstruction::CondJump    { lhs, rhs, .. } |
             IRInstruction::Multiply    { lhs, rhs, .. } => {
                 lhs
