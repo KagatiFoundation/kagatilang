@@ -16,7 +16,8 @@ pub struct IRBasicBlock {
     pub instructions: Vec<IRInstruction>,
     pub successors: Vec<BlockId>,
     pub predecessors: Vec<BlockId>,
-    pub terminator: Terminator
+    pub terminator: Terminator,
+    pub name: String
 }
 
 impl IRBasicBlock {
@@ -56,7 +57,14 @@ impl UseDefSet {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Terminator {
+    /// Unconditional jump
     Jump(BlockId),
+
+    CondJump {
+        cond: IRValueId,
+        then_block: BlockId,
+        else_block: BlockId
+    },
 
     Return(Option<IRValueId>)
 }

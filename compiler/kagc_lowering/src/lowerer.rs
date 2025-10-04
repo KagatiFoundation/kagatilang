@@ -112,6 +112,12 @@ impl IRLowerer {
         else if node.operation == ASTOperation::AST_RECORD_DECL {
             return self.lower_record_declaration(node);
         }
+        else if node.operation == ASTOperation::AST_LOOP {
+            return self.lower_infinite_loop(node, fn_ctx);
+        }
+        else if node.operation == ASTOperation::AST_IF {
+            return self.lower_if_else(node, fn_ctx);
+        }
         todo!("{node:#?}");
     }
 
@@ -568,7 +574,7 @@ impl IRLowerer {
                 }
             }).collect::<Vec<FunctionParam>>();
 
-        let (_, _) = self.ir_builder.function(
+        let (_, _) = self.ir_builder.create_function(
             func_ir_params,
             IRType::from(ast.result_type.clone())
         );
@@ -1113,9 +1119,7 @@ impl IRLowerer {
     ) -> StmtLoweringResult {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
-                let curr_block = self.ir_builder
-                    .current_block
-                    .unwrap_or_else(|| panic!("Current block not found! Aborting..."));
+                let curr_block = self.ir_builder.current_block_unchecked();
                 if !curr_fn.return_type.is_void() {
                     let return_value_id = self.lower_expression_ast(
                         ret_stmt.left.as_mut().unwrap(), 
@@ -1152,6 +1156,73 @@ impl IRLowerer {
         loop_body.extend(self.gen_ir_label(label_end)?);
         Ok(loop_body)
     }
+
+    fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+        let prev_block_id = self.ir_builder.current_block_unchecked();
+        let loop_header_id = self.ir_builder.create_block("loop-header");
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_header_id));
+
+        let loop_body_id = self.ir_builder.create_block("loop_body");
+        self.ir_builder.set_terminator(loop_header_id, Terminator::Jump(loop_body_id));
+
+        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        for body_ast in linearized_body {
+            self.lower_ir_node(body_ast, fn_ctx)?;
+        }
+
+        self.ir_builder.set_terminator(loop_body_id, Terminator::Jump(loop_header_id));
+        Ok(())
+    }
+
+    fn lower_if_else(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+        if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
+            self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
+        }
+
+        // Evaluate the condition and store the resilt in a register.
+        // Every if-else must have the `left` branch set in the main if-else AST tree.
+        let if_entry_block = self.ir_builder.create_block("if-header");
+        
+        // lower the condition expression in the entry block
+        let if_stmt_cond_value = self.lower_expression_ast(ast.left.as_mut().unwrap(), fn_ctx)?;
+
+        // then-branch
+        let then_block = self.ir_builder.create_block("then");
+        // else-branch 
+        let else_block = self.ir_builder.create_block("else");
+        // join branch
+        let merge_block = self.ir_builder.create_block("merge");
+
+        self.ir_builder.set_terminator(
+            if_entry_block, 
+            Terminator::CondJump { 
+                cond: if_stmt_cond_value, 
+                then_block, 
+                else_block
+            }
+        );
+
+        {
+            // lower the if-block
+            self.ir_builder.switch_to_block(then_block);
+            let linearized_body = ast.mid.as_mut().unwrap().linearize_mut();
+            for body_ast  in linearized_body {
+                self.lower_ir_node(body_ast, fn_ctx)?;
+            }
+
+            // jump to merge block after
+            self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
+
+            // end `if` scope
+            self.ctx.borrow_mut().scope.exit_scope();
+        }
+        {
+            // lower the else-block
+        }
+
+        Ok(())
+    }
+
 
     fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {

@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn test_simple_liveness_analysis() {
         let mut builder = IRBuilder::default();
-        let (_, bid) = builder.function(
+        let (_, bid) = builder.create_function(
             vec![
                 FunctionParam {
                     id: IRValueId(0),

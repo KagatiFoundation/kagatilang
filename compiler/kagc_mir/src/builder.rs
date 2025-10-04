@@ -5,28 +5,30 @@ use crate::module::Module;
 use crate::types::*;
 use crate::block::*;
 use crate::instruction::IRInstruction;
+use crate::value::IRValue;
 use crate::value::IRValueId;
 
 #[derive(Debug, Default)]
 pub struct IRBuilder {
-    pub current_function: Option<FunctionId>,
-    pub current_block: Option<BlockId>,
+    current_function: Option<FunctionId>,
+    current_block: Option<BlockId>,
+
     pub function_signatures: HashMap<FunctionId, FunctionSignature>,
     pub function_blocks: HashMap<FunctionId, HashMap<BlockId, IRBasicBlock>>,
-    pub entry_blocks: HashMap<FunctionId, BlockId>,
-    pub block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
-    pub block_terminators: HashMap<BlockId, Terminator>,
+    entry_blocks: HashMap<FunctionId, BlockId>,
+
+    block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
+    block_terminators: HashMap<BlockId, Terminator>,
+
+    block_names: HashMap<BlockId, &'static str>,
 
     function_id: usize,
     block_id: usize,
+    value_id: usize,
 }
 
 impl IRBuilder {
-    pub fn function(
-        &mut self, 
-        params: Vec<FunctionParam>,
-        return_type: IRType
-    ) -> (FunctionId, BlockId) {
+    pub fn create_function(&mut self, params: Vec<FunctionParam>, return_type: IRType) -> (FunctionId, BlockId) {
         let id = self.next_function_id();
         let func_signature = FunctionSignature { 
             params, 
@@ -35,18 +37,23 @@ impl IRBuilder {
         self.function_signatures.insert(id, func_signature); 
         self.function_blocks.insert(id, HashMap::new()); 
         self.current_function = Some(id); 
-        let entry_block = self.block(); 
+        let entry_block = self.create_block("function"); 
         self.entry_blocks.insert(id, entry_block); 
         (id, entry_block)
     }
 
-    pub fn block(&mut self) -> BlockId {
+    pub fn create_block(&mut self, name: &'static str) -> BlockId {
         let bid = self.next_block_id();
         if self.current_function.is_some() {
             self.current_block = Some(bid);
             self.block_instructions.insert(bid, vec![]);
+            self.block_names.insert(bid, name);
         }
         bid
+    }
+
+    pub fn switch_to_block(&mut self, block_id: BlockId) {
+        self.current_block = Some(block_id);
     }
 
     pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
@@ -69,6 +76,30 @@ impl IRBuilder {
         value_id
     }
 
+    pub fn create_add(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::Add { result, lhs, rhs })
+            .expect("create_add: no value ID created")
+    }
+
+    pub fn create_subtract(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::Subtract { result, lhs, rhs })
+            .expect("create_subtract: no value ID created")
+    }
+
+    pub fn create_multiply(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::Multiply { result, lhs, rhs })
+            .expect("create_multiply: no value ID created")
+    }
+    
+    pub fn create_divide(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::Divide { result, lhs, rhs })
+            .expect("create_divide: no value ID created")
+    }
+
     pub fn build(&mut self) -> Module {
         let mut module = Module::new();
 
@@ -83,7 +114,8 @@ impl IRBuilder {
                             instructions: block_instrs.clone(), 
                             successors: vec![], 
                             predecessors: vec![],
-                            terminator: block_terminator.clone()
+                            terminator: block_terminator.clone(),
+                            name: self.block_names.get(block_id).unwrap().to_string()
                         }
                     );
                 }
@@ -105,6 +137,51 @@ impl IRBuilder {
         module
     }
 
+    pub fn get_block(&self, block_id: BlockId) -> Option<&IRBasicBlock> {
+        let curr_func_id = self.current_function.expect("Not active function! Aborting...");
+        let func_blocks = self.function_blocks.get(&curr_func_id).unwrap();
+        func_blocks.get(&block_id)
+    }
+
+    pub fn get_block_unchecked(&self, block_id: BlockId) -> &IRBasicBlock {
+        self.get_block(block_id).unwrap_or_else(|| panic!("No block found in current function with the ID {block_id:?}"))
+    }
+
+    pub fn get_block_mut(&mut self, block_id: BlockId) -> Option<&mut IRBasicBlock> {
+        let curr_func_id = self.current_function.expect("Not active function! Aborting...");
+        let func_blocks = self.function_blocks.get_mut(&curr_func_id).unwrap();
+        func_blocks.get_mut(&block_id)
+    }
+
+    pub fn get_block_mut_unchecked(&mut self, block_id: BlockId) -> &mut IRBasicBlock {
+        self.get_block_mut(block_id).unwrap_or_else(|| panic!("No block found in current function with the ID {block_id:?}"))
+    }
+
+    pub fn current_block(&self) -> Option<BlockId> {
+        let curr_block = self.current_block.expect("No active block! Aborting...");
+        if self.block_instructions.contains_key(&curr_block) {
+            Some(curr_block)
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn current_block_unchecked(&self) -> BlockId {
+        self.current_block().expect("No current block set")
+    }
+
+    pub fn current_block_mut(&mut self) -> Option<&mut IRBasicBlock> {
+        let curr_func_id = self.current_function.expect("Not active function! Aborting...");
+        let func_blocks = self.function_blocks.get_mut(&curr_func_id).unwrap();
+        let curr_block = self.current_block.expect("No active block! Aborting...");
+        func_blocks.get_mut(&curr_block)
+    }
+
+    pub fn current_block_mut_unchecked(&mut self) -> &mut IRBasicBlock {
+        self.current_block_mut().expect("No current block set")
+    }
+
     fn next_function_id(&mut self) -> FunctionId {
         let fid = self.function_id;
         self.function_id += 1;
@@ -115,6 +192,12 @@ impl IRBuilder {
         let bid = self.block_id;
         self.block_id += 1;
         BlockId(bid)
+    }
+
+    fn next_value_id(&mut self) -> IRValueId {
+        let vid = self.value_id;
+        self.value_id += 1;
+        IRValueId(vid)
     }
 }
 
@@ -129,7 +212,7 @@ mod tests {
     #[test]
     fn test_builder() {
         let mut b = IRBuilder::default();
-        let (fid, entry_bid) = b.function(vec![], IRType::I64);
+        let (fid, entry_bid) = b.create_function(vec![], IRType::I64);
         b.inst(
             IRInstruction::Add {
                 result: IRValueId(0),
