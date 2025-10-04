@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::function::*;
+use crate::instruction::IRCondition;
 use crate::module::Module;
 use crate::types::*;
 use crate::block::*;
@@ -19,6 +21,9 @@ pub struct IRBuilder {
 
     block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
     block_terminators: HashMap<BlockId, Terminator>,
+
+    block_successors: HashMap<BlockId, HashSet<BlockId>>,
+    block_predecessors: HashMap<BlockId, HashSet<BlockId>>,
 
     block_names: HashMap<BlockId, &'static str>,
 
@@ -43,34 +48,59 @@ impl IRBuilder {
     }
 
     pub fn create_block(&mut self, name: &'static str) -> BlockId {
-        let bid = self.next_block_id();
         if self.current_function.is_some() {
+            let bid = self.next_block_id();
             self.current_block = Some(bid);
             self.block_instructions.insert(bid, vec![]);
+            self.block_successors.insert(bid, HashSet::new());
+            self.block_predecessors.insert(bid, HashSet::new());
             self.block_names.insert(bid, name);
+            bid
         }
-        bid
+        else {
+            panic!("create_block: Cannot create a block outside function")
+        }
     }
 
     pub fn switch_to_block(&mut self, block_id: BlockId) {
+        if !self.block_instructions.contains_key(&block_id) {
+            panic!("switch_to_block: Cannot switch to a non-existing block");
+        }
         self.current_block = Some(block_id);
     }
 
     pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
+        if !self.block_instructions.contains_key(&bid) {
+            panic!("set_terminator: Cannot set a terminator for a non-existing block");
+        }
         self.block_terminators.insert(bid, term);
     }
 
+    pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
+        if !self.block_instructions.contains_key(&from) || !self.block_instructions.contains_key(&to) {
+            panic!("link_blocks: Cannot link non-existing blocks");
+        }
+        self.block_successors.get_mut(&from).unwrap().insert(to);
+        self.block_predecessors.get_mut(&to).unwrap().insert(from);
+    }
+
+    pub fn link_blocks_multiple(&mut self, from: BlockId, tos: Vec<BlockId>) {
+        for to in tos {
+            self.link_blocks(from, to);
+        }
+    }
+
     pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
-        let block_id = self.current_block.expect("No active block to insert into");
+        let block_id = self.current_block.expect("inst: No active block to insert into");
 
         if self.block_terminators.contains_key(&block_id) {
-            panic!("Cannot add instruction after a terminator in block {:?}", block_id);
+            panic!("inst: Cannot add instructions after a terminator is set in the block({})", block_id.0);
         }
 
         let value_id = instruction.get_value_id();
         self.block_instructions
             .get_mut(&block_id)
-            .expect("Block not found")
+            .expect("inst: Block not found")
             .push(instruction);
 
         value_id
@@ -100,6 +130,18 @@ impl IRBuilder {
             .expect("create_divide: no value ID created")
     }
 
+    pub fn create_conditional_jump(&mut self, cond: IRCondition, lhs: IRValue, rhs: IRValue) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::CondJump { result, cond, lhs, rhs })
+            .expect("create_conditional_jump: no value ID created")
+    }
+
+    pub fn create_move(&mut self, value: IRValue) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::Mov { result, src: value })
+            .expect("create_move: no value ID created")
+    }
+
     pub fn build(&mut self) -> Module {
         let mut module = Module::new();
 
@@ -112,8 +154,8 @@ impl IRBuilder {
                         IRBasicBlock { 
                             id: *block_id, 
                             instructions: block_instrs.clone(), 
-                            successors: vec![], 
-                            predecessors: vec![],
+                            successors: self.block_successors.get(block_id).unwrap().clone(), 
+                            predecessors: self.block_predecessors.get(block_id).unwrap().clone(),
                             terminator: block_terminator.clone(),
                             name: self.block_names.get(block_id).unwrap().to_string()
                         }
@@ -203,6 +245,8 @@ impl IRBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::block::{BlockId, Terminator};
     use crate::builder::IRBuilder;
     use crate::instruction::IRInstruction;
@@ -244,5 +288,31 @@ mod tests {
         assert_eq!(e_block.terminator, Terminator::Return(Some(IRValueId(3))));
 
         assert_eq!(e_block.instructions.len(), 2);
+    }
+
+    #[test]
+    fn test_blocks_linking() {
+        let mut builder = IRBuilder::default();
+        let (_, f_bid) = builder.create_function(vec![], IRType::Void);
+        let _ = builder.create_move(IRValue::Constant(12345)); // variable, maybe?
+
+        let loop_id = builder.create_block("loop-test-block");
+        builder.link_blocks(f_bid, loop_id);
+
+        assert!(builder.block_successors.contains_key(&f_bid));
+        assert!(builder.block_predecessors.contains_key(&loop_id));
+
+        // function's entry block has no predecessors
+        assert_eq!(builder.block_predecessors.get(&f_bid).unwrap(), &HashSet::new());
+        assert_eq!(builder.block_successors.get(&f_bid).unwrap().len(), 1);
+
+        assert_eq!(
+            vec![&f_bid],
+            builder.block_predecessors
+                .get(&loop_id)
+                .unwrap()
+                .iter()
+                .collect::<Vec<&BlockId>>()
+        );
     }
 }

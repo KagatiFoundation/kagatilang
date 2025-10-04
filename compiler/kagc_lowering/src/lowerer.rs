@@ -11,6 +11,7 @@ use kagc_mir::block::Terminator;
 use kagc_mir::builder::IRBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::instruction::IRAddress;
+use kagc_mir::instruction::IRCondition;
 use kagc_mir::instruction::IRInstruction;
 use kagc_mir::ir_instr::*;
 use kagc_mir::ir_operands::*;
@@ -902,36 +903,16 @@ impl IRLowerer {
         Ok(call_result_value)
     }
 
-    fn lower_literal_value_expr(
-        &mut self,
-        lit_expr: &LitValExpr,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
+    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
         if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
             return self.lower_load_string(*pool_idx, fn_ctx);
         }
 
         match lit_expr.result_type {
-            LitTypeVariant::I64 => {
-                let value_id = fn_ctx.next_value_id();
-                self.ir_builder.inst(
-                    IRInstruction::Mov { 
-                        result: value_id, 
-                        src: IRValue::Constant(*lit_expr.value.unwrap_i64().expect("No i32 value!"))
-                    }
-                );
-                Ok(value_id)
-            },
-
+            LitTypeVariant::I64 |
             LitTypeVariant::U8 => {
-                let value_id = fn_ctx.next_value_id();
-                self.ir_builder.inst(
-                    IRInstruction::Mov { 
-                        result: value_id, 
-                        src: IRValue::Constant(*lit_expr.value.unwrap_u8().expect("No u8 value!") as i64)
-                    }
-                );
-                Ok(value_id)
+                let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
+                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
 
             _ => unimplemented!("{lit_expr:#?}")
@@ -971,104 +952,13 @@ impl IRLowerer {
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         
         match bin_expr.operation {
-            ASTOperation::AST_ADD => {
-                self.lower_addition(
-                    IRValue::Var(lhs_value_id), 
-                    IRValue::Var(rhs_value_id), 
-                    fn_ctx
-                )
-            },
-            ASTOperation::AST_SUBTRACT => {
-                self.lower_subtraction(
-                    IRValue::Var(lhs_value_id),
-                    IRValue::Var(rhs_value_id), 
-                    fn_ctx
-                )
-            }
-            ASTOperation::AST_MULTIPLY => {
-                self.lower_multiply(
-                    IRValue::Var(lhs_value_id),
-                    IRValue::Var(rhs_value_id), 
-                    fn_ctx
-                )
-            },
-            ASTOperation::AST_DIVIDE => {
-                self.lower_divide(
-                    IRValue::Var(lhs_value_id),
-                    IRValue::Var(rhs_value_id), 
-                    fn_ctx
-                )
-            }
+            ASTOperation::AST_ADD       => Ok(self.ir_builder.create_add(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            ASTOperation::AST_SUBTRACT  => Ok(self.ir_builder.create_subtract(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            ASTOperation::AST_MULTIPLY  => Ok(self.ir_builder.create_divide(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            ASTOperation::AST_DIVIDE    => Ok(self.ir_builder.create_multiply(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            ASTOperation::AST_EQEQ      => Ok(self.ir_builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             _ => unimplemented!()
         }
-    }
-
-    fn lower_addition(
-        &mut self,
-        lhs: IRValue,
-        rhs: IRValue,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
-        let add_value_id = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Add { 
-                result: add_value_id, 
-                lhs, 
-                rhs
-            }
-        );
-        Ok(add_value_id)
-    }
-
-    fn lower_subtraction(
-        &mut self,
-        lhs: IRValue,
-        rhs: IRValue,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
-        let add_value_id = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Subtract { 
-                result: add_value_id, 
-                lhs, 
-                rhs
-            }
-        );
-        Ok(add_value_id)
-    }
-
-    fn lower_divide(
-        &mut self,
-        lhs: IRValue,
-        rhs: IRValue,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
-        let add_value_id = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Divide { 
-                result: add_value_id, 
-                lhs, 
-                rhs
-            }
-        );
-        Ok(add_value_id)
-    }
-
-    fn lower_multiply(
-        &mut self,
-        lhs: IRValue,
-        rhs: IRValue,
-        fn_ctx: &mut FnCtx
-    ) -> ExprLoweringResult {
-        let add_value_id = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Multiply { 
-                result: add_value_id, 
-                lhs, 
-                rhs
-            }
-        );
-        Ok(add_value_id)
     }
 
     fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
@@ -1160,10 +1050,13 @@ impl IRLowerer {
     fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_unchecked();
         let loop_header_id = self.ir_builder.create_block("loop-header");
+
         self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_header_id));
+        self.ir_builder.link_blocks(prev_block_id, loop_header_id);
 
         let loop_body_id = self.ir_builder.create_block("loop_body");
         self.ir_builder.set_terminator(loop_header_id, Terminator::Jump(loop_body_id));
+        self.ir_builder.link_blocks(loop_header_id, loop_body_id);
 
         let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
         for body_ast in linearized_body {
@@ -1178,10 +1071,12 @@ impl IRLowerer {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
             self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
         }
+        let prev_block_id = self.ir_builder.current_block_unchecked();
 
         // Evaluate the condition and store the resilt in a register.
         // Every if-else must have the `left` branch set in the main if-else AST tree.
         let if_entry_block = self.ir_builder.create_block("if-header");
+        self.ir_builder.link_blocks(prev_block_id, if_entry_block);
         
         // lower the condition expression in the entry block
         let if_stmt_cond_value = self.lower_expression_ast(ast.left.as_mut().unwrap(), fn_ctx)?;
@@ -1190,8 +1085,12 @@ impl IRLowerer {
         let then_block = self.ir_builder.create_block("then");
         // else-branch 
         let else_block = self.ir_builder.create_block("else");
+        self.ir_builder.link_blocks_multiple(if_entry_block, vec![then_block, else_block]);
+
         // join branch
         let merge_block = self.ir_builder.create_block("merge");
+        self.ir_builder.link_blocks(then_block, merge_block);
+        self.ir_builder.link_blocks(else_block, merge_block);
 
         self.ir_builder.set_terminator(
             if_entry_block, 
@@ -1212,17 +1111,14 @@ impl IRLowerer {
 
             // jump to merge block after
             self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
+            // switch to the merge block afte emitting if-branch's code
+            self.ir_builder.switch_to_block(merge_block);
 
-            // end `if` scope
+            // end `if`'s scope
             self.ctx.borrow_mut().scope.exit_scope();
         }
-        {
-            // lower the else-block
-        }
-
         Ok(())
     }
-
 
     fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
@@ -1562,5 +1458,12 @@ impl IRLowerer {
     fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Symbol> {
         let ctx_borrow = self.ctx.borrow();
         ctx_borrow.scope.deep_lookup(sym_name).cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_loop_stmt_cfg_construction() {
     }
 }

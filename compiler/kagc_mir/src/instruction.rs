@@ -9,6 +9,11 @@ use crate::value::*;
 #[derive(Debug, Clone, Copy)]
 pub struct IRInstructionId(pub usize);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IRCondition {
+    EqEq
+}
+
 #[derive(Debug, Clone)]
 pub enum IRInstruction {
     Mov {
@@ -66,6 +71,13 @@ pub enum IRInstruction {
     LoadGlobal {
         pool_idx: PoolIdx,
         result: IRValueId
+    },
+
+    CondJump {
+        lhs: IRValue,
+        rhs: IRValue,
+        cond: IRCondition,
+        result: IRValueId
     }
 }
 
@@ -84,6 +96,7 @@ impl IRInstruction {
             IRInstruction::Divide     { result, .. } |
             IRInstruction::Multiply     { result, .. } |
             IRInstruction::LoadGlobal   { result, .. } => Some(*result),
+            IRInstruction::CondJump   { result, .. } => Some(*result),
             IRInstruction::Call     { result, .. } => *result,
             _ => None
         }
@@ -99,6 +112,7 @@ impl IRInstruction {
             IRInstruction::Divide     { result, .. } |
             IRInstruction::Multiply     { result, .. } |
             IRInstruction::LoadGlobal   { result, .. } => vec![*result],
+            IRInstruction::CondJump   { result, .. } => vec![*result],
             IRInstruction::Call { result, .. } => vec![result.unwrap()],
             _ => vec![]
         }
@@ -111,6 +125,7 @@ impl IRInstruction {
             IRInstruction::Add    { lhs, rhs, .. } |
             IRInstruction::Subtract    { lhs, rhs, .. } |
             IRInstruction::Divide    { lhs, rhs, .. } |
+            IRInstruction::CondJump    { lhs, rhs, .. } |
             IRInstruction::Multiply    { lhs, rhs, .. } => {
                 lhs
                     .as_value_id()

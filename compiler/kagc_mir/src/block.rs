@@ -14,8 +14,8 @@ pub struct BlockId(pub usize);
 pub struct IRBasicBlock {
     pub id: BlockId,
     pub instructions: Vec<IRInstruction>,
-    pub successors: Vec<BlockId>,
-    pub predecessors: Vec<BlockId>,
+    pub successors: HashSet<BlockId>,
+    pub predecessors: HashSet<BlockId>,
     pub terminator: Terminator,
     pub name: String
 }
@@ -35,6 +35,14 @@ impl IRBasicBlock {
             }
         }
         use_defs
+    }
+
+    pub fn add_successor(&mut self, block_id: BlockId) {
+        self.successors.insert(block_id);
+    }
+
+    pub fn add_predecessor(&mut self, block_id: BlockId) {
+        self.predecessors.insert(block_id);
     }
 }
 
