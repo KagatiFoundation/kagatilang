@@ -3,3 +3,5 @@
 
 pub mod mir_lowerer;
 pub mod operand;
+pub mod vreg;
+pub mod instruction;
