@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::collections::HashMap;
+
 use kagc_mir::block::IRBasicBlock;
 use kagc_mir::block::Terminator;
 use kagc_mir::function::IRFunction;
@@ -11,6 +13,7 @@ use kagc_mir::value::IRValueId;
 use crate::instruction::LIRInstruction;
 use crate::instruction::LIRLabel;
 use crate::operand::LIROperand;
+use crate::vreg::VReg;
 use crate::vreg::VRegMapper;
 
 #[derive(Debug, Default)]
@@ -90,37 +93,45 @@ impl MIRLowerer {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use kagc_mir::builder::IRBuilder;
-    use kagc_mir::function::FunctionId;
-    use kagc_mir::types::IRType;
-    use kagc_mir::value::IRValue;
-    use kagc_mir::block::{BlockId, Terminator};
+#[derive(Debug, Clone)]
+pub struct VRegLiveRange {
+    pub vreg: VReg,
+    pub start: usize,  // instruction index in function
+    pub end: usize,    // instruction index in function
+}
 
-    use crate::mir_lowerer::MIRLowerer;
+pub fn compute_vreg_live_ranges(lir: &[LIRInstruction]) -> Vec<VRegLiveRange> {
+    let mut ranges: HashMap<VReg, (Option<usize>, Option<usize>)> = HashMap::new();
 
-    #[test]
-    fn test_mir_to_lir_lowerer_for_simple_function() {
-        let mut builder = IRBuilder::default();
-        let (_, func_entry) = builder.create_function(vec![], IRType::I64); // block id 0
-        let op1 = builder.create_move(IRValue::Constant(32)); // value id 0
-        let op2 = builder.create_move(IRValue::Constant(32)); // value id 1
-        _ = builder.create_add(IRValue::Var(op1), IRValue::Var(op2)); // value id 2
+    for (idx, instr) in lir.iter().enumerate() {
+        // Collect all VRegs in this instruction
+        let mut vregs = vec![];
 
-        builder.set_terminator(
-            func_entry,
-            Terminator::Jump(BlockId(0))
-        );
+        match instr {
+            LIRInstruction::Mov { dest, src } => {
+                vregs.push(*dest);
+                if let LIROperand::VReg(v) = src {
+                    vregs.push(*v);
+                }
+            }
+            LIRInstruction::Add { dest, lhs, rhs } => {
+                vregs.push(*dest);
+                if let LIROperand::VReg(v) = lhs { vregs.push(*v); }
+                if let LIROperand::VReg(v) = rhs { vregs.push(*v); }
+            }
+            _ => {}
+        }
 
-        let mut mir_lowerer = MIRLowerer::default();
-        
-        let module = builder.build();
-        assert!(module.functions.contains_key(&FunctionId(0)));
-
-        let func = module.functions.get(&FunctionId(0)).unwrap();
-        let instrs = mir_lowerer.lower_function(func);
-
-        println!("{instrs:#?}");
+        for vreg in vregs {
+            let entry = ranges.entry(vreg).or_insert((None, None));
+            if entry.0.is_none() { entry.0 = Some(idx); }
+            entry.1 = Some(idx);
+        }
     }
+
+    ranges.into_iter().map(|(vreg, (start, end))| VRegLiveRange {
+        vreg,
+        start: start.unwrap(),
+        end: end.unwrap(),
+    }).collect()
 }

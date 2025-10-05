@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use kagc_mir::value::IRValueId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VReg(usize);
+pub struct VReg(pub usize);
 
 #[derive(Debug, Default)]
 pub struct VRegMapper {
