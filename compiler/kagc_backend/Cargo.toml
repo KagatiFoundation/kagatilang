@@ -9,3 +9,4 @@ kagc_mir = { path = "../kagc_mir" }
 kagc_const = { path = "../kagc_const" }
 kagc_ctx = { path = "../kagc_ctx" }
 kagc_symbol = { path = "../kagc_symbol" }
+kagc_lir = { path = "../kagc_lir" }
