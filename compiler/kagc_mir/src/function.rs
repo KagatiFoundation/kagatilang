@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use crate::block::IRBasicBlock;
 use crate::block::BlockId;
@@ -28,6 +28,6 @@ pub struct FunctionSignature {
 pub struct IRFunction {
     pub id: FunctionId,
     pub signature: FunctionSignature,
-    pub blocks: HashMap<BlockId, IRBasicBlock>,
+    pub blocks: IndexMap<BlockId, IRBasicBlock>,
     pub entry_block: BlockId,
 }

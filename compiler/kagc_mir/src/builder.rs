@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use indexmap::IndexMap;
+
 use crate::function::*;
 use crate::instruction::IRAddress;
 use crate::instruction::IRCondition;
@@ -17,7 +19,7 @@ pub struct IRBuilder {
     current_block: Option<BlockId>,
 
     pub function_signatures: HashMap<FunctionId, FunctionSignature>,
-    pub function_blocks: HashMap<FunctionId, HashMap<BlockId, IRBasicBlock>>,
+    pub function_blocks: IndexMap<FunctionId, IndexMap<BlockId, IRBasicBlock>>,
     entry_blocks: HashMap<FunctionId, BlockId>,
 
     block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
@@ -41,7 +43,7 @@ impl IRBuilder {
             return_type 
         }; 
         self.function_signatures.insert(id, func_signature); 
-        self.function_blocks.insert(id, HashMap::new()); 
+        self.function_blocks.insert(id, IndexMap::new()); 
         self.current_function = Some(id); 
         let entry_block = self.create_block("function"); 
         self.entry_blocks.insert(id, entry_block); 
