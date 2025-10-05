@@ -1,3 +1,5 @@
+# NOTE: Following Example is Deprecated
+
 # How to use
 
 ## Latest achivement

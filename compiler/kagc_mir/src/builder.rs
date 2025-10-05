@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 
