@@ -22,10 +22,12 @@ pub struct Register {
 
 #[derive(Debug, Clone, Default)]
 pub struct RegisterFile {
-    pub registers: Vec<Register>,            // all physical registers
-    pub reserved: Vec<Register>,             // registers reserved (SP, FP, etc.)
-    pub caller_saved: Vec<Register>,
-    pub callee_saved: Vec<Register>,
+    pub registers:      Vec<Register>,
+    pub reserved:       Vec<Register>,
+    pub caller_saved:   Vec<Register>,
+    pub callee_saved:   Vec<Register>,
+    pub allocatable:    Vec<Register>,
+    pub scratch:        Option<Register>
 }
 
 impl RegisterFile {
@@ -49,24 +51,48 @@ pub mod aarch64 {
     use crate::regalloc::register::RegClass;
 
     pub fn standard_aarch64_register_file() -> RegisterFile {
-        let mut id = 0;
+        // Helper closure to make register construction cleaner
+        let make_reg = |id: u8, name: &str| Register {
+            id,
+            name: name.to_string(),
+            class: RegClass::GPR,
+        };
 
-        let gprs = vec![
-            Register { id: { id += 1; id - 1 }, name: "x9".to_string(),  class: RegClass::GPR },
-            Register { id: { id += 1; id - 1 }, name: "x10".to_string(), class: RegClass::GPR },
-            Register { id: { id += 1; id - 1 }, name: "x11".to_string(), class: RegClass::GPR },
-            Register { id: { id += 1; id - 1 }, name: "x12".to_string(), class: RegClass::GPR },
-            Register { id: { id += 1; id - 1 }, name: "x13".to_string(), class: RegClass::GPR },
+        // All GPRs (x0 - x30)
+        let all_gprs: Vec<Register> = (0..=30)
+            .map(|id| make_reg(id, &format!("x{}", id)))
+            .collect();
+
+        // Reserved registers
+        let reserved = vec![
+            make_reg(16, "x16"), // IP0 - intra-procedure scratch (reserved for linker)
+            make_reg(17, "x17"), // IP1 - scratch
+            make_reg(18, "x18"), // platform register (TLS pointer)
+            make_reg(29, "fp"),  // frame pointer
+            make_reg(30, "lr"),  // link register
         ];
 
+        // Caller-saved (volatile)
+        // Typically x0–x15
+        let caller_saved: Vec<Register> = (0..=15).map(|id| make_reg(id, &format!("x{}", id))).collect();
+
+        // Callee-saved (non-volatile)
+        // Typically x19–x28
+        let callee_saved: Vec<Register> = (19..=28).map(|id| make_reg(id, &format!("x{}", id))).collect();
+
+        // Registers that are actually allocatable
+        let allocatable: Vec<Register> = (9..=15).map(|id| make_reg(id, &format!("x{}", id))).collect();
+
+        // === Scratch register for codegen ===
+        let scratch = Some(make_reg(9, "x9"));
+
         RegisterFile {
-            registers: gprs.clone(),
-            reserved: vec![
-                Register { id: 200, name: "sp".to_string(), class: RegClass::GPR },
-                Register { id: 201, name: "fp".to_string(), class: RegClass::GPR },
-            ],
-            caller_saved: gprs,
-            callee_saved: vec![],
+            registers: all_gprs,
+            reserved,
+            caller_saved,
+            callee_saved,
+            scratch,
+            allocatable,
         }
     }
 }

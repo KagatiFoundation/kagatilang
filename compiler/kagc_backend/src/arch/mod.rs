@@ -51,7 +51,12 @@ pub mod cg {
                         )
                     }
                     
-                    Aarch64Instr::Store { .. } => println!("STR some value"),
+                    Aarch64Instr::Store { reg, .. } => {
+                        println!(
+                            "STR {s}, [SP, #0]",
+                            s = reg.name,
+                        )
+                    }
 
                     _ => unimplemented!()
                 }
