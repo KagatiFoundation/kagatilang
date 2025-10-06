@@ -11,7 +11,7 @@ use crate::regalloc::register::RegClass;
 #[derive(Debug, Clone)]
 pub enum Location {
     Reg(Register),
-    StackSlot(u32),
+    StackSlot(usize),
 }
 
 #[derive(Debug)]
@@ -71,7 +71,7 @@ impl LinearScanAllocator {
                 // spill
                 allocations.push(Allocation {
                     vreg: lr.vreg,
-                    location: Location::StackSlot(lr.vreg.0 as u32), // stack slot id
+                    location: Location::StackSlot(lr.vreg.0), // stack slot id
                 });
             }
         }

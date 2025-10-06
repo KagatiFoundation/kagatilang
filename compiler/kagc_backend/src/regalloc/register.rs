@@ -32,9 +32,15 @@ pub struct RegisterFile {
 
 impl RegisterFile {
     pub fn available_registers(&self, class: RegClass) -> Vec<Register> {
-        self.registers
+        self.allocatable
             .iter()
-            .filter(|r| r.class == class && !self.reserved.contains(r))
+            .filter(|r| {
+                let mut yes = r.class == class && !self.reserved.contains(r);
+                if let Some(s) = &self.scratch {
+                    yes = yes && r.id != s.id;
+                }
+                yes
+            })
             .cloned()
             .collect()
     }

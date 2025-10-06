@@ -5,9 +5,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use kagc_backend::arch::aarch64::LirToAarch64ArchTransformer;
-use kagc_backend::arch::cg::Aarch64Codegen;
-use kagc_backend::arch::LirToMachineTransformer;
 use kagc_backend::regalloc::LinearScanAllocator;
 use kagc_backend::regalloc::register::aarch64::standard_aarch64_register_file;
 use kagc_comp_unit::file_pool::FileMeta;
@@ -152,33 +149,13 @@ impl Compiler {
                 let mir_module = lowerer.ir_builder.build();
                 let mut mir_lowerer = MirToLirTransformer::default();
                 let mut lsra = LinearScanAllocator::new(standard_aarch64_register_file());
-                let cg = Aarch64Codegen;
 
                 for func in mir_module.functions.values() {
                     let func_lowered = mir_lowerer.transform_function(func);
                     let allocations = lsra.allocate(&mut func_lowered.compute_vreg_live_ranges());
-                    let machine = LirToAarch64ArchTransformer::new(allocations);
-                    let m_codes = machine.transform_function(&func_lowered);
-                    cg.generate_code(&m_codes);
                 }
-
-                // {
-                //     let ctx = self.ctx.borrow();
-                //     if ctx.diagnostics.has_errors() {
-                //         ctx.diagnostics.report_all(&ctx.files, self.units.get(entry_file).unwrap());
-                //         std::process::exit(1);
-                //     }
-                // }
-
-                // final_irs.extend(irs);
             }
         }
-
-        // IR to Aarch64 ASM generator
-        // let mut cg = Aarch64Codegen::new(self.ctx.clone(), rm);
-        // // let mut cg = X86Codegen::new();
-        // let code = cg.gen_asm(&mut final_irs);
-        // println!("{code}");
         Ok(())
     }
 
