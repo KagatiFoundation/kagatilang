@@ -51,7 +51,7 @@ pub enum IRInstruction {
     },
     
     Store {
-        src: IRValue,
+        src: IRValueId,
         address: IRAddress
     },
 
@@ -125,8 +125,7 @@ impl IRInstruction {
 
     pub fn uses(&self) -> Vec<IRValueId> {
         match self {
-            IRInstruction::Mov         { src, .. } |
-            IRInstruction::Store       { src, .. } => src.as_value_id().into_iter().collect(),
+            IRInstruction::Mov         { src, .. } => src.as_value_id().into_iter().collect(),
             IRInstruction::Add         { lhs, rhs, .. } |
             IRInstruction::Subtract    { lhs, rhs, .. } |
             IRInstruction::Divide      { lhs, rhs, .. } |
@@ -138,7 +137,8 @@ impl IRInstruction {
                     .chain(rhs.as_value_id())
                     .collect()
             },
-            IRInstruction::Call { args, .. } => args.clone(),
+            IRInstruction::Call        { args, .. } => args.clone(),
+            IRInstruction::Store       { src, .. } => vec![*src],
             _ => vec![]
         }
     }

@@ -3,8 +3,8 @@
 
 use crate::vreg::VReg;
 
-#[derive(Debug)]
-pub enum LIROperand {
+#[derive(Debug, Clone)]
+pub enum LirOperand {
     VReg(VReg),
     Constant(i64)
 }

@@ -18,7 +18,8 @@ impl VRegMapper {
     pub fn get_or_create(&mut self, value: IRValueId) -> VReg {
         if let Some(&vreg) = self.mapping.get(&value) {
             vreg
-        } else {
+        } 
+        else {
             let vreg = VReg(self.vreg_id);
             self.mapping.insert(value, vreg);
             self.vreg_id += 1;

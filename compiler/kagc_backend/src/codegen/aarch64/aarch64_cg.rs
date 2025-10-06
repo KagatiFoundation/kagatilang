@@ -78,7 +78,7 @@ impl Aarch64Codegen {
     }
 
     pub fn gen_asm(&mut self, irs: &mut [IR]) -> String {
-        println!("{:#?}", irs);
+        // println!("{:#?}", irs);
         // return String::new();
 
         let mut output: Vec<String> = vec![];
@@ -140,7 +140,7 @@ impl Aarch64Codegen {
 
     fn try_dropping_temp(&mut self, temp: usize) -> bool {
         if let Some(compt_fn_info) = &self.compt_fn_props {
-            if let Some((start, end)) = compt_fn_info.liveness_info.get(&temp) {
+            if let Some((start, end)) = compt_fn_info.liveness_info.get(temp) {
                 // temporary's life is over
                 if (*start + *end) <= self.func_ip {
                     self.drop_temp(temp);
@@ -228,7 +228,7 @@ impl Aarch64Codegen {
         else {
             "[SP]".to_string()
         };
-        format!("\tEE STR {}, {dest_addr}\n", reg.name_aarch64())
+        format!("\tSTR {}, {dest_addr}\n", reg.name_aarch64())
     }
 
     /// Load register from stack pointer (SP)
@@ -252,7 +252,7 @@ impl Aarch64Codegen {
         else {
             "[x29]".to_string()
         };
-        format!("\t22 STR {}, {dest_addr}\n", reg.name_aarch64())
+        format!("\tSTR {}, {dest_addr}\n", reg.name_aarch64())
     }
 
     /// Load register from frame pointer (x29)
@@ -491,7 +491,7 @@ impl Codegen for Aarch64Codegen {
                 output.push_str(&self.maybe_spill_register(temp, &dest_reg).unwrap_or_default());
                 output.push_str(
                     &format!(
-                        "\tRR STR {}, [{}, {}]", 
+                        "\tSTR {}, [{}, {}]", 
                         src_reg.name_aarch64(), 
                         dest_reg.name_aarch64(), 
                         format_args!("#{}", off * 8)
@@ -514,7 +514,6 @@ impl Codegen for Aarch64Codegen {
         let mut regs_to_spill: Vec<AllocedRegister> = Vec::new();
         for (reg_idx, reg) in Aarch64RegMgr::caller_saved_regs(REG_SIZE_8).iter().enumerate() {
             if reg_idx < _args.len() {
-                out.push_str(&format!("SKIP: {reg_idx}\n"));
                 continue;
             }
             if let Some(temp) = self.temp_reg_map.reverse_get(reg.clone()) {
@@ -549,10 +548,9 @@ impl Codegen for Aarch64Codegen {
         }
 
         let mut stack_offset = 0usize;
-        println!("Spills: {regs_to_spill:#?}");
         for tr in &regs_to_spill {
             out.push_str(&format!(
-                "\tYY STR {}, [SP, #{}]\n",
+                "\tSTR {}, [SP, #{}]\n",
                 tr.name_aarch64(),
                 stack_offset
             ));

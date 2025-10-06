@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_mir::ir_instr::*;
-use kagc_mir::ir_liveness::LiveRange;
+use kagc_mir::ir_liveness::LivenessInfo;
 use kagc_mir::ir_operands::IROperand;
 use kagc_mir::ir_operands::IRAddr;
 use kagc_mir::ir_instr::IRCondOp;
@@ -32,7 +32,7 @@ pub(crate) enum IRToASMState {
 pub(crate) struct ComptFnProps {
     pub stack_size:         usize,
     pub next_stack_slot:    usize,
-    pub liveness_info:      Rc<HashMap<usize, LiveRange>>,
+    pub liveness_info:      Rc<LivenessInfo>,
     pub is_leaf:            bool,
 }
 

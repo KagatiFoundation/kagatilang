@@ -7,7 +7,6 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
-use kagc_mir::value::ParamPosition;
 use kagc_symbol::*;
 use kagc_backend::reg::*;
 use kagc_types::*;
@@ -642,36 +641,6 @@ impl IRLowerer {
         Ok(output)
     }
 
-    fn lower_function_parameter(&mut self, sym: &Symbol, arg_pos: usize, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
-        let param_stack_off = fn_ctx.next_stack_off();
-        self.ir_builder.inst(
-            IRInstruction::Store { 
-                src: IRValue::Param(ParamPosition(arg_pos)), 
-                address: IRAddress::StackOffset(param_stack_off) 
-            }
-        );
-        
-        if sym.lit_type.is_gc_alloced() {
-            let gc_base_value = self.ir_builder.create_load(
-                IRAddress::StackOffset(param_stack_off)
-            );
-            let gc_data_value = self.ir_builder.create_load(
-                IRAddress::BaseOffset(
-                    gc_base_value, 
-                    GCOBJECT_BUFFER_IDX
-                )
-            );
-            self.ir_builder.inst(
-                IRInstruction::Store { 
-                    src: IRValue::Var(gc_data_value), 
-                    address: IRAddress::StackOffset(fn_ctx.next_stack_off()) 
-                }
-            );
-        }
-        fn_ctx.var_offsets.insert(sym.name.clone(), param_stack_off);
-        Ok(())
-    }
-
     fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
         let var_decl = ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
@@ -754,7 +723,7 @@ impl IRLowerer {
             let var_stack_off = fn_ctx.next_stack_off();
             self.ir_builder.inst(
                 IRInstruction::Store { 
-                    src: IRValue::Var(var_decl_value), 
+                    src: var_decl_value, 
                     address: IRAddress::StackOffset(var_stack_off) 
                 }
             );
@@ -769,7 +738,7 @@ impl IRLowerer {
                 );
                 self.ir_builder.inst(
                     IRInstruction::Store { 
-                        src: IRValue::Var(data_ptr_value_id), 
+                        src: data_ptr_value_id, 
                         address: IRAddress::StackOffset(fn_ctx.next_stack_off())
                     }
                 );

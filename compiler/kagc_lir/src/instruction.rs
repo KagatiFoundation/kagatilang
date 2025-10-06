@@ -1,26 +1,34 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::operand::LIROperand;
+use crate::operand::LirOperand;
 use crate::vreg::VReg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LIRLabel(pub usize);
+pub struct LirLabel(pub usize);
 
-#[derive(Debug)]
-pub enum LIRInstruction {
+#[derive(Debug, Clone)]
+pub enum LirInstruction {
     Mov {
         dest: VReg,
-        src: LIROperand
+        src: LirOperand
     },
 
     Add {
         dest: VReg,
-        lhs: LIROperand,
-        rhs: LIROperand
+        lhs: LirOperand,
+        rhs: LirOperand
+    },
+
+    Store {
+        src: VReg,
+        dest: LirAddress
     },
 
     Jump {
-        label: LIRLabel
+        label: LirLabel
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct LirAddress(pub usize);

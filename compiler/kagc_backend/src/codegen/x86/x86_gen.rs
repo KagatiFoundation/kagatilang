@@ -100,7 +100,7 @@ impl X86Codegen {
 
     fn try_dropping_temp(&mut self, temp: usize) -> bool {
         if let Some(compt_fn_info) = &self.compt_fn_props {
-            if let Some((start, end)) = compt_fn_info.liveness_info.get(&temp) {
+            if let Some((start, end)) = compt_fn_info.liveness_info.get(temp) {
                 // temporary's life is over
                 if (*start + *end) <= self.func_ip {
                     self.drop_temp(temp);

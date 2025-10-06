@@ -5,63 +5,110 @@ use std::collections::HashMap;
 
 use kagc_mir::block::IRBasicBlock;
 use kagc_mir::block::Terminator;
+use kagc_mir::function::FunctionSignature;
 use kagc_mir::function::IRFunction;
+use kagc_mir::instruction::IRAddress;
 use kagc_mir::instruction::IRInstruction;
 use kagc_mir::value::IRValue;
 use kagc_mir::value::IRValueId;
 
-use crate::instruction::LIRInstruction;
-use crate::instruction::LIRLabel;
-use crate::operand::LIROperand;
+use crate::block::LirBasicBlock;
+use crate::block::LirTerminator;
+use crate::function::LirFunction;
+use crate::function::LirFunctionParam;
+use crate::function::LirFunctionSignature;
+use crate::function::LirFunctionStack;
+use crate::instruction::LirAddress;
+use crate::instruction::LirInstruction;
+use crate::operand::LirOperand;
 use crate::vreg::VReg;
 use crate::vreg::VRegMapper;
 
 #[derive(Debug, Default)]
-pub struct MIRLowerer {
+pub struct MirToLirTransformer {
     vreg_mapper: VRegMapper
 }
 
-impl MIRLowerer {
-    pub fn lower_function(&mut self, ir_func: &IRFunction) -> Vec<LIRInstruction> {
-        let mut lir_instrs = vec![];
-        for (_, block) in &ir_func.blocks {
-            lir_instrs.extend(self.lower_block(block));
+impl MirToLirTransformer {
+    pub fn transform_function(&mut self, ir_func: &IRFunction) -> LirFunction {
+        let mut lir_blocks = HashMap::new();
+        for (bid, block) in ir_func.blocks.iter() {
+            lir_blocks.insert(*bid, self.transform_block(block));
         }
-        lir_instrs
+        LirFunction { 
+            id: ir_func.id, 
+            signature: self.transform_function_signature(&ir_func.signature), 
+            stack: LirFunctionStack { size: 0 }, 
+            blocks: lir_blocks, 
+            entry_block: ir_func.entry_block 
+        }
     }
 
-    pub fn lower_block(&mut self, block: &IRBasicBlock) -> Vec<LIRInstruction> {
+    fn transform_function_signature(&mut self, sig: &FunctionSignature) -> LirFunctionSignature {
+        let mut params = vec![];
+        for p in sig.params.iter() {
+            let reg = self.vreg_mapper.get_or_create(p.id);
+            params.push(LirFunctionParam { reg, ty: p.ty });
+        }
+        LirFunctionSignature { 
+            params, 
+            return_type: sig.return_type
+        }
+    }
+
+    fn transform_block(&mut self, block: &IRBasicBlock) -> LirBasicBlock {
         let mut lir_instrs = vec![];
         for instr in &block.instructions {
             let instrs = match instr {
-                IRInstruction::Add { result, lhs, rhs } => self.lower_add(result, lhs, rhs),
-                IRInstruction::Mov { result, src } => self.lower_move(result, src),
+                IRInstruction::Add { result, lhs, rhs } => self.transform_add(result, lhs, rhs),
+                IRInstruction::Mov { result, src } => self.transform_move(result, src),
+                IRInstruction::Store { address, src } => self.transform_store(*address, src),
                 _ => unimplemented!()
             };
             lir_instrs.extend(instrs);
         }
 
-        match block.terminator {
-            Terminator::Jump(block_id) => {
-                lir_instrs.push(
-                    LIRInstruction::Jump { 
-                        label: LIRLabel(block_id.0)
-                    }
-                );
+        let terminator = match block.terminator {
+            Terminator::Jump(block_id) => LirTerminator::Jump(block_id),
+            Terminator::Return(ret) => {
+                if let Some(ret_value) = ret {
+                    let ret_reg = self.vreg_mapper.get_or_create(ret_value);
+                    LirTerminator::Return(Some(ret_reg))
+                }
+                else {
+                    LirTerminator::Return(None)
+                }
             },
             _ => unimplemented!()
-        }
+        };
 
-        lir_instrs
+        LirBasicBlock { 
+            id: block.id, 
+            instructions: lir_instrs, 
+            successors: block.successors.clone(), 
+            predecessors: block.predecessors.clone(), 
+            terminator, 
+            name: block.name.clone() 
+        }
     }
 
-    pub fn lower_add(&mut self, result: &IRValueId, lhs: &IRValue, rhs: &IRValue) -> Vec<LIRInstruction> {
+    fn transform_store(&mut self, dest: IRAddress, src: &IRValueId) -> Vec<LirInstruction> {
+        let src_vreg = self.vreg_mapper.get_or_create(*src);
+        vec![
+            LirInstruction::Store { 
+                src: src_vreg, 
+                dest: LirAddress(0) 
+            }
+        ]
+    }
+
+    fn transform_add(&mut self, result: &IRValueId, lhs: &IRValue, rhs: &IRValue) -> Vec<LirInstruction> {
         let lhs_operand = self.resolve_to_operand(*lhs);
         let rhs_operand = self.resolve_to_operand(*rhs);
         let dest_vreg = self.vreg_mapper.get_or_create(*result);
 
         vec![
-            LIRInstruction::Add {
+            LirInstruction::Add {
                 dest: dest_vreg,
                 lhs: lhs_operand,
                 rhs: rhs_operand,
@@ -69,24 +116,24 @@ impl MIRLowerer {
         ]
     }
 
-    pub fn lower_move(&mut self, result: &IRValueId, src: &IRValue) -> Vec<LIRInstruction> {
+    fn transform_move(&mut self, result: &IRValueId, src: &IRValue) -> Vec<LirInstruction> {
         let src_operand = self.resolve_to_operand(*src);
         let dest_vreg = self.vreg_mapper.get_or_create(*result);
 
         vec![
-            LIRInstruction::Mov { 
+            LirInstruction::Mov { 
                 dest: dest_vreg, 
                 src: src_operand 
             }
         ]
     }
 
-    pub fn resolve_to_operand(&mut self, value: IRValue) -> LIROperand {
+    fn resolve_to_operand(&mut self, value: IRValue) -> LirOperand {
         match value {
-            IRValue::Constant(value) => LIROperand::Constant(value),
+            IRValue::Constant(value) => LirOperand::Constant(value),
             IRValue::Var(irvalue_id) => {
                 let vreg = self.vreg_mapper.get_or_create(irvalue_id);
-                LIROperand::VReg(vreg)
+                LirOperand::VReg(vreg)
             },
             _ => unimplemented!()
         }
@@ -98,40 +145,4 @@ pub struct VRegLiveRange {
     pub vreg: VReg,
     pub start: usize,  // instruction index in function
     pub end: usize,    // instruction index in function
-}
-
-pub fn compute_vreg_live_ranges(lir: &[LIRInstruction]) -> Vec<VRegLiveRange> {
-    let mut ranges: HashMap<VReg, (Option<usize>, Option<usize>)> = HashMap::new();
-
-    for (idx, instr) in lir.iter().enumerate() {
-        // Collect all VRegs in this instruction
-        let mut vregs = vec![];
-
-        match instr {
-            LIRInstruction::Mov { dest, src } => {
-                vregs.push(*dest);
-                if let LIROperand::VReg(v) = src {
-                    vregs.push(*v);
-                }
-            }
-            LIRInstruction::Add { dest, lhs, rhs } => {
-                vregs.push(*dest);
-                if let LIROperand::VReg(v) = lhs { vregs.push(*v); }
-                if let LIROperand::VReg(v) = rhs { vregs.push(*v); }
-            }
-            _ => {}
-        }
-
-        for vreg in vregs {
-            let entry = ranges.entry(vreg).or_insert((None, None));
-            if entry.0.is_none() { entry.0 = Some(idx); }
-            entry.1 = Some(idx);
-        }
-    }
-
-    ranges.into_iter().map(|(vreg, (start, end))| VRegLiveRange {
-        vreg,
-        start: start.unwrap(),
-        end: end.unwrap(),
-    }).collect()
 }
