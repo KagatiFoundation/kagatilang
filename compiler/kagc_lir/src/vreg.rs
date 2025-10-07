@@ -27,3 +27,10 @@ impl VRegMapper {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct VRegLiveRange {
+    pub vreg: VReg,
+    pub start: usize,  // instruction index in function
+    pub end: usize,    // instruction index in function
+}

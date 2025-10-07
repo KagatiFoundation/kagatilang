@@ -25,6 +25,11 @@ pub enum LirInstruction {
         dest: LirAddress
     },
 
+    Load {
+        src: LirAddress,
+        dest: VReg
+    },
+
     Jump {
         label: LirLabel
     }

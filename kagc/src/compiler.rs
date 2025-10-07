@@ -5,6 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use kagc_backend::arch::cg::CodeGenerator;
 use kagc_backend::regalloc::LinearScanAllocator;
 use kagc_backend::regalloc::register::aarch64::standard_aarch64_register_file;
 use kagc_comp_unit::file_pool::FileMeta;
@@ -123,13 +124,8 @@ impl Compiler {
         // Symbol resolver
         let mut resolv = Resolver::new(self.ctx.clone());
 
-        // Register manager for Aarch64
-        // let rm = Aarch64RegMgr::new();
-
         // AST to IR generator
         let mut lowerer = IRLowerer::new(self.ctx.clone());
-
-        // let mut final_irs = vec![];
 
         for unit_file in &self.compiler_order {
             if let Some(unit) = self.units.get_mut(unit_file) {
@@ -144,7 +140,6 @@ impl Compiler {
                     std::process::exit(1)
                 }
 
-                // let irs = lowerer.gen_ir(&mut unit.asts);
                 lowerer.lower_irs(&mut unit.asts);
                 let mir_module = lowerer.ir_builder.build();
                 let mut mir_lowerer = MirToLirTransformer::default();
@@ -153,6 +148,8 @@ impl Compiler {
                 for func in mir_module.functions.values() {
                     let func_lowered = mir_lowerer.transform_function(func);
                     let allocations = lsra.allocate(&mut func_lowered.compute_vreg_live_ranges());
+                    let cg = CodeGenerator::new(allocations);
+                    cg.gen_function(&func_lowered);
                 }
             }
         }

@@ -27,7 +27,7 @@ pub struct RegisterFile {
     pub caller_saved:   Vec<Register>,
     pub callee_saved:   Vec<Register>,
     pub allocatable:    Vec<Register>,
-    pub scratch:        Option<Register>
+    pub scratch:        Vec<Register>
 }
 
 impl RegisterFile {
@@ -36,9 +36,7 @@ impl RegisterFile {
             .iter()
             .filter(|r| {
                 let mut yes = r.class == class && !self.reserved.contains(r);
-                if let Some(s) = &self.scratch {
-                    yes = yes && r.id != s.id;
-                }
+                yes = yes && !self.scratch.iter().any(|scratch| scratch.id == r.id);
                 yes
             })
             .cloned()
@@ -90,7 +88,10 @@ pub mod aarch64 {
         let allocatable: Vec<Register> = (9..=15).map(|id| make_reg(id, &format!("x{}", id))).collect();
 
         // === Scratch register for codegen ===
-        let scratch = Some(make_reg(9, "x9"));
+        let scratch = vec![
+            make_reg(9, "x9"),
+            make_reg(10, "x10")
+        ];
 
         RegisterFile {
             registers: all_gprs,

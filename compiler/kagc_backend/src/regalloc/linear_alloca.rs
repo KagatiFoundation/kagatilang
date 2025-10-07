@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_lir::mir_lowerer::VRegLiveRange;
+use kagc_lir::vreg::VRegLiveRange;
 use kagc_lir::vreg::VReg;
 
 use crate::regalloc::register::Register;
@@ -22,12 +22,14 @@ pub struct Allocation {
 
 pub struct LinearScanAllocator {
     pub register_file: RegisterFile,
+    stack_slot: usize
 }
 
 impl LinearScanAllocator {
     pub fn new(reg_file: RegisterFile) -> Self {
         Self {
             register_file: reg_file,
+            stack_slot: 0
         }
     }
 
@@ -44,7 +46,7 @@ impl LinearScanAllocator {
         for lr in live_ranges.iter() {
             // Expire old intervals
             active.retain(|active_lr| {
-                if active_lr.end < lr.start {
+                if active_lr.end <= lr.start {
                     // Free register
                     if let Some(allocation) = allocations.iter().find(|a| a.vreg == active_lr.vreg) {
                         if let Location::Reg(reg) = &allocation.location {
@@ -71,11 +73,17 @@ impl LinearScanAllocator {
                 // spill
                 allocations.push(Allocation {
                     vreg: lr.vreg,
-                    location: Location::StackSlot(lr.vreg.0), // stack slot id
+                    location: self.next_stack_slot(), // stack slot id
                 });
             }
         }
         allocations
+    }
+
+    fn next_stack_slot(&mut self) -> Location {
+        let nss = self.stack_slot;
+        self.stack_slot += 1;
+        Location::StackSlot(nss)
     }
 }
 

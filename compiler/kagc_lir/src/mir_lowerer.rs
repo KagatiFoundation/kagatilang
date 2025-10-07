@@ -21,7 +21,6 @@ use crate::function::LirFunctionStack;
 use crate::instruction::LirAddress;
 use crate::instruction::LirInstruction;
 use crate::operand::LirOperand;
-use crate::vreg::VReg;
 use crate::vreg::VRegMapper;
 
 #[derive(Debug, Default)]
@@ -63,6 +62,7 @@ impl MirToLirTransformer {
                 IRInstruction::Add { result, lhs, rhs } => self.transform_add(result, lhs, rhs),
                 IRInstruction::Mov { result, src } => self.transform_move(result, src),
                 IRInstruction::Store { address, src } => self.transform_store(*address, src),
+                IRInstruction::Load { src, result } => self.transform_load(result, *src),
                 _ => unimplemented!()
             };
             lir_instrs.extend(instrs);
@@ -98,6 +98,16 @@ impl MirToLirTransformer {
             LirInstruction::Store { 
                 src: src_vreg, 
                 dest: LirAddress(0) 
+            }
+        ]
+    }
+
+    fn transform_load(&mut self, result: &IRValueId, address: IRAddress) -> Vec<LirInstruction> {
+        let dest_vreg = self.vreg_mapper.get_or_create(*result);
+        vec![
+            LirInstruction::Load { 
+                dest: dest_vreg,
+                src: LirAddress(0)
             }
         ]
     }
@@ -138,11 +148,4 @@ impl MirToLirTransformer {
             _ => unimplemented!()
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct VRegLiveRange {
-    pub vreg: VReg,
-    pub start: usize,  // instruction index in function
-    pub end: usize,    // instruction index in function
 }
