@@ -92,12 +92,12 @@ impl MirToLirTransformer {
         }
     }
 
-    fn transform_store(&mut self, dest: IRAddress, src: &IRValueId) -> Vec<LirInstruction> {
+    fn transform_store(&mut self, address: IRAddress, src: &IRValueId) -> Vec<LirInstruction> {
         let src_vreg = self.vreg_mapper.get_or_create(*src);
         vec![
             LirInstruction::Store { 
                 src: src_vreg, 
-                dest: LirAddress(0) 
+                dest: self.transform_mir_addr_to_lir_addr(address)
             }
         ]
     }
@@ -107,9 +107,19 @@ impl MirToLirTransformer {
         vec![
             LirInstruction::Load { 
                 dest: dest_vreg,
-                src: LirAddress(0)
+                src: self.transform_mir_addr_to_lir_addr(address)
             }
         ]
+    }
+
+    fn transform_mir_addr_to_lir_addr(&mut self, address: IRAddress) -> LirAddress {
+        match address {
+            IRAddress::StackOffset(off) => LirAddress::Offset(off),
+            IRAddress::BaseOffset(base, off) => {
+                let base_reg = self.vreg_mapper.get_or_create(base);
+                LirAddress::BaseOffset(base_reg, off)
+            }
+        }
     }
 
     fn transform_add(&mut self, result: &IRValueId, lhs: &IRValue, rhs: &IRValue) -> Vec<LirInstruction> {

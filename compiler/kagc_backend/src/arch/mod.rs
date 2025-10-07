@@ -31,6 +31,7 @@ pub trait LirToMachineTransformer {
 pub mod cg {
     use std::collections::HashMap;
 
+    use kagc_lir::instruction::LirAddress;
     use kagc_lir::instruction::LirInstruction;
     use kagc_lir::operand::LirOperand;
     use kagc_lir::function::LirFunction;
@@ -77,32 +78,32 @@ pub mod cg {
                 match instr {
                     LirInstruction::Mov { dest, src } => self.emit_mov_inst(dest, src),
                     LirInstruction::Add { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
-                    LirInstruction::Store { src, dest } => self.emit_str_inst(src, dest.0),
-                    LirInstruction::Load { src, dest } => self.emit_ldr_inst(src.0, dest),
+                    LirInstruction::Store { src, dest } => self.emit_str_inst(src, *dest),
+                    LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
 
                     LirInstruction::Jump { label } => println!("jump"),
                 }
             }
         }
 
-        fn emit_str_inst(&self, src: &VReg, dest_slot: usize) {
+        fn emit_str_inst(&self, src: &VReg, addr: LirAddress) {
             let src_loc = self.allocations.get(src).unwrap();
             match src_loc {
-                Location::Reg(register) => self.emit_str(register, dest_slot),
+                Location::Reg(register) => self.emit_str(register, addr),
                 Location::StackSlot(ss) => {
-                    self.emit_ldr(&self.scratch_register0, *ss);
-                    self.emit_str(&self.scratch_register0, dest_slot);
+                    self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*ss));
+                    self.emit_str(&self.scratch_register0, addr);
                 }
             }
         }
 
-       fn emit_ldr_inst(&self, src_slot: usize, dest: &VReg) {
+       fn emit_ldr_inst(&self, addr: LirAddress, dest: &VReg) {
             let dest_loc = self.allocations.get(dest).unwrap();
             match dest_loc {
-                Location::Reg(register) => self.emit_ldr(register, src_slot),
+                Location::Reg(register) => self.emit_ldr(register, addr),
                 Location::StackSlot(ss) => {
-                    self.emit_ldr(&self.scratch_register0, src_slot);
-                    self.emit_str(&self.scratch_register0, *ss);
+                    self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*ss));
+                    self.emit_str(&self.scratch_register0, addr);
                 }
             }
         } 
@@ -128,12 +129,12 @@ pub mod cg {
                         let src_loc = self.allocations.get(vreg).unwrap();
                         if let Location::Reg(src_reg) = src_loc {
                             self.emit_move_reg_to_reg(&self.scratch_register0, src_reg);
-                            self.emit_str(&self.scratch_register0, *dest_slot);
+                            self.emit_str(&self.scratch_register0, LirAddress::Offset(*dest_slot));
                         }
                     },
                     LirOperand::Constant(value) => {
                         self.emit_move_const_to_reg(&self.scratch_register0, *value);
-                        self.emit_str(&self.scratch_register0, *dest_slot);
+                        self.emit_str(&self.scratch_register0, LirAddress::Offset(*dest_slot));
                     },
                 }
             }
@@ -157,13 +158,13 @@ pub mod cg {
 
                         (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
                         (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
-                            self.emit_ldr(&self.scratch_register0, *op_slot);
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*op_slot));
                             self.emit_add_reg_reg_reg(dest_reg, reg_op, &self.scratch_register0);
                         },
 
                         (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
-                            self.emit_ldr(&self.scratch_register0, *op1_slot);
-                            self.emit_ldr(&self.scratch_register1, *op2_slot);
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*op1_slot));
+                            self.emit_ldr(&self.scratch_register1, LirAddress::Offset(*op2_slot));
                             self.emit_add_reg_reg_reg(dest_reg, &self.scratch_register0, &self.scratch_register1);
                         },
                     }
@@ -175,7 +176,7 @@ pub mod cg {
                     match src1 {
                         Location::Reg(r1) => self.emit_add_reg_reg_imm(dest_reg, r1, *imm),
                         Location::StackSlot(src_slot) => {
-                            self.emit_ldr(&self.scratch_register0, *src_slot);
+                            self.emit_ldr(&self.scratch_register0,LirAddress::Offset(*src_slot));
                             self.emit_add_reg_reg_imm(dest_reg, &self.scratch_register0, *imm);
                         },
                     }
@@ -195,21 +196,21 @@ pub mod cg {
                     match (src1, src2) {
                         (Location::Reg(r1), Location::Reg(r2)) => {
                             self.emit_add_reg_reg_reg(&self.scratch_register0, r1, r2);
-                            self.emit_str(&self.scratch_register0, dest_slot);
+                            self.emit_str(&self.scratch_register0, LirAddress::Offset(dest_slot));
                         }
 
                         (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
                         (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
-                            self.emit_ldr(&self.scratch_register0, *op_slot);
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*op_slot));
                             self.emit_add_reg_reg_reg(&self.scratch_register1, reg_op, &self.scratch_register0);
-                            self.emit_str(&self.scratch_register1, dest_slot);
+                            self.emit_str(&self.scratch_register1, LirAddress::Offset(dest_slot));
                         },
 
                         (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
-                            self.emit_ldr(&self.scratch_register0, *op1_slot);
-                            self.emit_ldr(&self.scratch_register1, *op2_slot);
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*op1_slot));
+                            self.emit_ldr(&self.scratch_register1, LirAddress::Offset(*op2_slot));
                             self.emit_add_reg_reg_reg(&self.scratch_register0, &self.scratch_register0, &self.scratch_register1);
-                            self.emit_str(&self.scratch_register0, dest_slot);
+                            self.emit_str(&self.scratch_register0, LirAddress::Offset(dest_slot));
                         },
                     }
                 },
@@ -220,28 +221,54 @@ pub mod cg {
                     match src1 {
                         Location::Reg(r1) => {
                             self.emit_add_reg_reg_imm(&self.scratch_register0, r1, *imm);
-                            self.emit_str(&self.scratch_register0, dest_slot);
+                            self.emit_str(&self.scratch_register0, LirAddress::Offset(dest_slot));
                         }
                         Location::StackSlot(src_slot) => {
-                            self.emit_ldr(&self.scratch_register0, *src_slot);
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*src_slot));
                             self.emit_add_reg_reg_imm(&self.scratch_register0, &self.scratch_register0, *imm);
-                            self.emit_str(&self.scratch_register0, dest_slot);
+                            self.emit_str(&self.scratch_register0, LirAddress::Offset(dest_slot));
                         },
                     }
                 },
                 (LirOperand::Constant(imm1), LirOperand::Constant(imm2)) => {
                     self.emit_move_const_to_reg(&self.scratch_register0, *imm1 + *imm2);
-                    self.emit_str(&self.scratch_register0, dest_slot);
+                    self.emit_str(&self.scratch_register0, LirAddress::Offset(dest_slot));
                 },
             }
         }
 
-        fn emit_ldr(&self, r1: &Register, ss: usize) {
-            println!("LDR {d}, [SP, #{s}]", d = r1.name, s = ss * 8);
+        fn emit_ldr(&self, r1: &Register, addr: LirAddress) {
+            match addr {
+                LirAddress::Offset(off) => {
+                    println!("LDR {d}, [SP, #{s}]", d = r1.name, s = off * 8);
+                },
+                LirAddress::BaseOffset(vreg, off) => {
+                    let loc = self.allocations.get(&vreg).unwrap();
+                    match loc {
+                        Location::Reg(register) => {
+                            println!("LDR {d}, [{b}, #{o}]", d = r1.name, b = register.name, o = off * 8);
+                        },
+                        Location::StackSlot(_) => todo!(),
+                    }
+                },
+            }
         }
 
-        fn emit_str(&self, r1: &Register, ss: usize) {
-            println!("STR {d}, [SP, #{s}]", d = r1.name, s = ss * 8);
+        fn emit_str(&self, r1: &Register, addr: LirAddress) {
+            match addr {
+                LirAddress::Offset(off) => {
+                    println!("STR {d}, [SP, #{s}]", d = r1.name, s = off * 8);
+                },
+                LirAddress::BaseOffset(vreg, off) => {
+                    let loc = self.allocations.get(&vreg).unwrap();
+                    match loc {
+                        Location::Reg(register) => {
+                            println!("STR {d}, [{b}, #{o}]", d = r1.name, b = register.name, o = off * 8);
+                        },
+                        Location::StackSlot(_) => todo!(),
+                    }
+                },
+            }
         }
 
         fn emit_add_reg_reg_reg(&self, r1: &Register, r2: &Register, r3: &Register) {

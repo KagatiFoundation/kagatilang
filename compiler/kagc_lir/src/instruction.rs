@@ -35,5 +35,8 @@ pub enum LirInstruction {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LirAddress(pub usize);
+#[derive(Debug, Clone, Copy)]
+pub enum LirAddress {
+    Offset(usize),
+    BaseOffset(VReg, usize)
+}
