@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use kagc_mir::block::BlockId;
+use kagc_mir::function::FunctionFrame;
 use kagc_mir::function::FunctionId;
 use kagc_mir::types::IRType;
 
@@ -26,17 +27,12 @@ pub struct LirFunctionSignature {
     pub return_type: IRType,
 }
 
-/// Stack information for a LirFunction.
-#[derive(Debug)]
-pub struct LirFunctionStack {
-    pub size: usize
-}
-
 #[derive(Debug)]
 pub struct LirFunction {
     pub id: FunctionId,
+    pub name: String,
     pub signature: LirFunctionSignature,
-    pub stack: LirFunctionStack,
+    pub frame_info: FunctionFrame,
     pub blocks: HashMap<BlockId, LirBasicBlock>,
     pub entry_block: BlockId
 }

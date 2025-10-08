@@ -17,7 +17,6 @@ use crate::block::LirTerminator;
 use crate::function::LirFunction;
 use crate::function::LirFunctionParam;
 use crate::function::LirFunctionSignature;
-use crate::function::LirFunctionStack;
 use crate::instruction::LirAddress;
 use crate::instruction::LirInstruction;
 use crate::operand::LirOperand;
@@ -36,8 +35,9 @@ impl MirToLirTransformer {
         }
         LirFunction { 
             id: ir_func.id, 
+            name: ir_func.name.clone(),
             signature: self.transform_function_signature(&ir_func.signature), 
-            stack: LirFunctionStack { size: 0 }, 
+            frame_info: ir_func.frame_info,
             blocks: lir_blocks, 
             entry_block: ir_func.entry_block 
         }

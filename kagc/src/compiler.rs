@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_backend::arch::cg::CodeGenerator;
-use kagc_backend::regalloc::LinearScanAllocator;
-use kagc_backend::regalloc::register::aarch64::standard_aarch64_register_file;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
@@ -143,12 +141,10 @@ impl Compiler {
                 lowerer.lower_irs(&mut unit.asts);
                 let mir_module = lowerer.ir_builder.build();
                 let mut mir_lowerer = MirToLirTransformer::default();
-                let mut lsra = LinearScanAllocator::new(standard_aarch64_register_file());
 
                 for func in mir_module.functions.values() {
                     let func_lowered = mir_lowerer.transform_function(func);
-                    let allocations = lsra.allocate(&mut func_lowered.compute_vreg_live_ranges());
-                    let cg = CodeGenerator::new(allocations);
+                    let mut cg = CodeGenerator::default();
                     cg.gen_function(&func_lowered);
                 }
             }

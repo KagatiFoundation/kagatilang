@@ -32,6 +32,7 @@ pub struct IRBuilder {
     block_predecessors: HashMap<BlockId, HashSet<BlockId>>,
 
     block_names: HashMap<BlockId, &'static str>,
+    function_names: HashMap<FunctionId, String>,
 
     function_id: usize,
     block_id: usize,
@@ -39,12 +40,13 @@ pub struct IRBuilder {
 }
 
 impl IRBuilder {
-    pub fn create_function(&mut self, params: Vec<FunctionParam>, return_type: IRType) -> (FunctionId, BlockId) {
+    pub fn create_function(&mut self, name: String, params: Vec<FunctionParam>, return_type: IRType) -> (FunctionId, BlockId) {
         let id = self.next_function_id();
         let func_signature = FunctionSignature { 
             params, 
             return_type 
         }; 
+        self.function_names.insert(id, name);
         self.function_signatures.insert(id, func_signature); 
         self.function_blocks.insert(id, IndexMap::new()); 
         self.current_function = Some(id); 
@@ -156,21 +158,24 @@ impl IRBuilder {
 
     pub fn build(&mut self) -> Module {
         let mut module = Module::new();
+        let mut func_stack_size = 0;
 
         for (func_id, func_blocks) in &mut self.function_blocks {
             for (block_id, block_instrs) in self.block_instructions.iter() {
                 let block_terminator = self.block_terminators.get(block_id).unwrap_or(&Terminator::Return(None));
                 if self.block_instructions.contains_key(block_id) {
+                    let ir_block = IRBasicBlock { 
+                        id: *block_id, 
+                        instructions: block_instrs.clone(), 
+                        successors: self.block_successors.get(block_id).unwrap().clone(), 
+                        predecessors: self.block_predecessors.get(block_id).unwrap().clone(),
+                        terminator: block_terminator.clone(),
+                        name: self.block_names.get(block_id).unwrap().to_string()
+                    };
+                    func_stack_size += IRBuilder::calculate_block_stack_usage(&ir_block.instructions);
                     func_blocks.insert(
-                        *block_id, 
-                        IRBasicBlock { 
-                            id: *block_id, 
-                            instructions: block_instrs.clone(), 
-                            successors: self.block_successors.get(block_id).unwrap().clone(), 
-                            predecessors: self.block_predecessors.get(block_id).unwrap().clone(),
-                            terminator: block_terminator.clone(),
-                            name: self.block_names.get(block_id).unwrap().to_string()
-                        }
+                        *block_id,
+                        ir_block
                     );
                 }
             }
@@ -179,16 +184,30 @@ impl IRBuilder {
                 self.function_signatures.get(func_id),
                 self.entry_blocks.get(func_id)
             ) {
+                func_stack_size += signature.params.len() * 8; // each param accounts for 8 bytes of space
                 let function = IRFunction {
                     signature: signature.clone(),
                     id: *func_id,
+                    name: self.function_names.get(func_id).unwrap().clone(),
                     blocks: func_blocks.clone(),
-                    entry_block: *entry_block
+                    entry_block: *entry_block,
+                    frame_info: FunctionFrame { size: func_stack_size }
                 };
                 module.add_function(function);
             }
         }
         module
+    }
+
+    // Calculate the amount of space a function's block takes.
+    fn calculate_block_stack_usage(instrs: &[IRInstruction]) -> usize {
+        let mut size = 0;
+        for inst in instrs.iter() {
+            if let IRInstruction::Store { .. } = inst {
+                size += 8;
+            }
+        }
+        size
     }
 
     pub fn get_block(&self, block_id: BlockId) -> Option<&IRBasicBlock> {
@@ -268,7 +287,7 @@ mod tests {
     #[test]
     fn test_builder() {
         let mut b = IRBuilder::default();
-        let (fid, entry_bid) = b.create_function(vec![], IRType::I64);
+        let (fid, entry_bid) = b.create_function("add".to_owned(), vec![], IRType::I64);
         b.inst(
             IRInstruction::Add {
                 result: IRValueId(0),
@@ -305,7 +324,7 @@ mod tests {
     #[test]
     fn test_blocks_linking() {
         let mut builder = IRBuilder::default();
-        let (_, f_bid) = builder.create_function(vec![], IRType::Void);
+        let (_, f_bid) = builder.create_function("test_fn".to_owned(), vec![], IRType::Void);
         let _ = builder.create_move(IRValue::Constant(12345)); // variable, maybe?
 
         let loop_id = builder.create_block("loop-test-block");

@@ -560,7 +560,7 @@ impl IRLowerer {
             panic!("Expected FuncStmt but found {:?}", ast);
         };
 
-        let func_name: String = self.get_func_name(func_id).expect("Function name error!");
+        let func_name = self.get_func_name(func_id).expect("Function name error!");
         if let Some(finfo) = self.ctx.borrow().scope.lookup_fn_by_name(func_name.as_str()) {
             self.current_function = Some(finfo.clone());
         }
@@ -580,6 +580,7 @@ impl IRLowerer {
             }).collect::<Vec<FunctionParam>>();
 
         let (_, _) = self.ir_builder.create_function(
+            func_name.clone(),
             func_ir_params,
             IRType::from(ast.result_type.clone())
         );

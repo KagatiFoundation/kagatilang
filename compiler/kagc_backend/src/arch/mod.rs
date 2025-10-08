@@ -38,22 +38,22 @@ pub mod cg {
     use kagc_lir::block::LirBasicBlock;
     use kagc_lir::vreg::VReg;
 
-    use crate::regalloc::linear_alloca::Allocation;
-    use crate::regalloc::linear_alloca::Location;
+    use crate::regalloc::register::aarch64::standard_aarch64_register_file;
+    use crate::regalloc::LinearScanAllocator;
+    use crate::regalloc::Location;
     use crate::regalloc::register::RegClass;
     use crate::regalloc::register::Register;
 
     pub struct CodeGenerator {
-        pub allocations: HashMap<VReg, Location>,
+        allocations: Option<HashMap<VReg, Location>>,
         scratch_register0: Register,
         scratch_register1: Register
     }
 
-    impl CodeGenerator {
-        pub fn new(allocations: Vec<Allocation>) -> Self {
-            let map = allocations.into_iter().map(|a| (a.vreg, a.location)).collect();
+    impl Default for CodeGenerator {
+        fn default() -> Self {
             Self { 
-                allocations: map,
+                allocations: None,
                 scratch_register0: Register {
                     id: 0x9,
                     name: "x9".to_string(),
@@ -66,11 +66,47 @@ pub mod cg {
                 }
             }
         }
+    }
 
-        pub fn gen_function(&self, lir_func: &LirFunction) {
+    impl CodeGenerator {
+        pub fn gen_function(&mut self, lir_func: &LirFunction) {
+            let mut allocator = LinearScanAllocator::new(standard_aarch64_register_file());
+            let allocs = allocator.allocate(&mut lir_func.compute_vreg_live_ranges()[..]);
+            let spill_stack_size = allocs.stack_usage();
+
+            let vreg_mappings: HashMap<VReg, Location> = allocs.allocations.into_iter().map(|a| (a.vreg, a.location)).collect();
+            self.allocations = Some(vreg_mappings);
+
+            // manage function's stack
+            self.emit_function_preamble(lir_func, spill_stack_size);
+
+            // function's body
             for block in lir_func.blocks.values() {
                 self.gen_block(block);
             }
+            // return from the function
+            self.emit_function_postamble(lir_func, spill_stack_size);
+        }
+
+        fn emit_function_preamble(&self, lir_func: &LirFunction, spill_ss: usize) {
+            let mut output = format!(".global _{name}\n_{name}:", name = lir_func.name);
+            let stack_size = lir_func.frame_info.size + spill_ss;
+            if stack_size > 0 {
+                output.push_str(&format!("\nsub sp, sp, #{off}\n", off = stack_size));
+                output.push_str(&format!("stp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
+                output.push_str(&format!("add x29, #{off}", off = stack_size - 16));
+            }
+            println!("{output}");
+        }
+
+        fn emit_function_postamble(&self, lir_func: &LirFunction, spill_ss: usize) {
+            let mut output = "".to_owned();
+            let stack_size = lir_func.frame_info.size + spill_ss;
+            if stack_size > 0 {
+                output.push_str(&format!("add sp, sp, #{off}\n", off = stack_size));
+            }
+            output.push_str("ret");
+            println!("{output}");
         }
 
         fn gen_block(&self, block: &LirBasicBlock) {
@@ -81,13 +117,13 @@ pub mod cg {
                     LirInstruction::Store { src, dest } => self.emit_str_inst(src, *dest),
                     LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
 
-                    LirInstruction::Jump { label } => println!("jump"),
+                    _ => panic!()
                 }
             }
         }
 
         fn emit_str_inst(&self, src: &VReg, addr: LirAddress) {
-            let src_loc = self.allocations.get(src).unwrap();
+            let src_loc = self.current_allocations().get(src).unwrap();
             match src_loc {
                 Location::Reg(register) => self.emit_str(register, addr),
                 Location::StackSlot(ss) => {
@@ -98,7 +134,7 @@ pub mod cg {
         }
 
        fn emit_ldr_inst(&self, addr: LirAddress, dest: &VReg) {
-            let dest_loc = self.allocations.get(dest).unwrap();
+            let dest_loc = self.current_allocations().get(dest).unwrap();
             match dest_loc {
                 Location::Reg(register) => self.emit_ldr(register, addr),
                 Location::StackSlot(ss) => {
@@ -109,11 +145,11 @@ pub mod cg {
         } 
 
         fn emit_mov_inst(&self, dest: &VReg, src: &LirOperand) {
-            let loc = self.allocations.get(dest).unwrap();
+            let loc = self.current_allocations().get(dest).unwrap();
             if let Location::Reg(dest_reg) = loc {
                 match src {
                     LirOperand::VReg(vreg) => {
-                        let src_loc = self.allocations.get(vreg).unwrap();
+                        let src_loc = self.current_allocations().get(vreg).unwrap();
                         if let Location::Reg(src_reg) = src_loc {
                             self.emit_move_reg_to_reg(dest_reg, src_reg);
                         }
@@ -126,7 +162,7 @@ pub mod cg {
             else if let Location::StackSlot(dest_slot) = loc {
                 match src {
                     LirOperand::VReg(vreg) => {
-                        let src_loc = self.allocations.get(vreg).unwrap();
+                        let src_loc = self.current_allocations().get(vreg).unwrap();
                         if let Location::Reg(src_reg) = src_loc {
                             self.emit_move_reg_to_reg(&self.scratch_register0, src_reg);
                             self.emit_str(&self.scratch_register0, LirAddress::Offset(*dest_slot));
@@ -141,7 +177,7 @@ pub mod cg {
         }
 
         fn emit_add_inst(&self, dest: &VReg, lhs: &LirOperand, rhs: &LirOperand) {
-            let dest_loc = self.allocations.get(dest).unwrap();
+            let dest_loc = self.current_allocations().get(dest).unwrap();
             match dest_loc {
                 Location::Reg(register) => self.emit_add_dest_reg(register, lhs, rhs),
                 Location::StackSlot(slot) => self.emit_add_dest_stack(*slot, lhs, rhs),
@@ -151,8 +187,8 @@ pub mod cg {
         fn emit_add_dest_reg(&self, dest_reg: &Register, lhs: &LirOperand, rhs: &LirOperand) {
             match (lhs, rhs) {
                 (LirOperand::VReg(vreg1), LirOperand::VReg(vreg2)) => {
-                    let src1 = self.allocations.get(vreg1).unwrap();
-                    let src2 = self.allocations.get(vreg2).unwrap();
+                    let src1 = self.current_allocations().get(vreg1).unwrap();
+                    let src2 = self.current_allocations().get(vreg2).unwrap();
                     match (src1, src2) {
                         (Location::Reg(r1), Location::Reg(r2)) => self.emit_add_reg_reg_reg(dest_reg, r1, r2),
 
@@ -172,7 +208,7 @@ pub mod cg {
 
                 (LirOperand::Constant(imm), LirOperand::VReg(vreg)) |
                 (LirOperand::VReg(vreg), LirOperand::Constant(imm)) => {
-                    let src1 = self.allocations.get(vreg).unwrap();
+                    let src1 = self.current_allocations().get(vreg).unwrap();
                     match src1 {
                         Location::Reg(r1) => self.emit_add_reg_reg_imm(dest_reg, r1, *imm),
                         Location::StackSlot(src_slot) => {
@@ -191,8 +227,8 @@ pub mod cg {
         fn emit_add_dest_stack(&self, dest_slot: usize, lhs: &LirOperand, rhs: &LirOperand) {
             match (lhs, rhs) {
                 (LirOperand::VReg(vreg1), LirOperand::VReg(vreg2)) => {
-                    let src1 = self.allocations.get(vreg1).unwrap();
-                    let src2 = self.allocations.get(vreg2).unwrap();
+                    let src1 = self.current_allocations().get(vreg1).unwrap();
+                    let src2 = self.current_allocations().get(vreg2).unwrap();
                     match (src1, src2) {
                         (Location::Reg(r1), Location::Reg(r2)) => {
                             self.emit_add_reg_reg_reg(&self.scratch_register0, r1, r2);
@@ -217,7 +253,7 @@ pub mod cg {
 
                 (LirOperand::Constant(imm), LirOperand::VReg(vreg)) |
                 (LirOperand::VReg(vreg), LirOperand::Constant(imm)) => {
-                    let src1 = self.allocations.get(vreg).unwrap();
+                    let src1 = self.current_allocations().get(vreg).unwrap();
                     match src1 {
                         Location::Reg(r1) => {
                             self.emit_add_reg_reg_imm(&self.scratch_register0, r1, *imm);
@@ -240,13 +276,13 @@ pub mod cg {
         fn emit_ldr(&self, r1: &Register, addr: LirAddress) {
             match addr {
                 LirAddress::Offset(off) => {
-                    println!("LDR {d}, [SP, #{s}]", d = r1.name, s = off * 8);
+                    println!("ldr {d}, [sp, #{s}]", d = r1.name, s = off * 8);
                 },
                 LirAddress::BaseOffset(vreg, off) => {
-                    let loc = self.allocations.get(&vreg).unwrap();
+                    let loc = self.current_allocations().get(&vreg).unwrap();
                     match loc {
                         Location::Reg(register) => {
-                            println!("LDR {d}, [{b}, #{o}]", d = r1.name, b = register.name, o = off * 8);
+                            println!("ldr {d}, [{b}, #{o}]", d = r1.name, b = register.name, o = off * 8);
                         },
                         Location::StackSlot(_) => todo!(),
                     }
@@ -257,13 +293,13 @@ pub mod cg {
         fn emit_str(&self, r1: &Register, addr: LirAddress) {
             match addr {
                 LirAddress::Offset(off) => {
-                    println!("STR {d}, [SP, #{s}]", d = r1.name, s = off * 8);
+                    println!("str {d}, [sp, #{s}]", d = r1.name, s = off * 8);
                 },
                 LirAddress::BaseOffset(vreg, off) => {
-                    let loc = self.allocations.get(&vreg).unwrap();
+                    let loc = self.current_allocations().get(&vreg).unwrap();
                     match loc {
                         Location::Reg(register) => {
-                            println!("STR {d}, [{b}, #{o}]", d = r1.name, b = register.name, o = off * 8);
+                            println!("str {d}, [{b}, #{o}]", d = r1.name, b = register.name, o = off * 8);
                         },
                         Location::StackSlot(_) => todo!(),
                     }
@@ -272,19 +308,28 @@ pub mod cg {
         }
 
         fn emit_add_reg_reg_reg(&self, r1: &Register, r2: &Register, r3: &Register) {
-            println!("ADD {d}, {a}, {b}", d = r1.name, a = r2.name, b = r3.name);
+            println!("add {d}, {a}, {b}", d = r1.name, a = r2.name, b = r3.name);
         }
 
         fn emit_add_reg_reg_imm(&self, r1: &Register, r2: &Register, imm: i64) {
-            println!("ADD {d}, {a}, #{b}", d = r1.name, a = r2.name, b = imm);
+            println!("add {d}, {a}, #{b}", d = r1.name, a = r2.name, b = imm);
         }
 
         fn emit_move_reg_to_reg(&self, r1: &Register, r2: &Register) {
-            println!("MOV {d}, {s}", d = r1.name, s = r2.name);
+            println!("mov {d}, {s}", d = r1.name, s = r2.name);
         }
 
         fn emit_move_const_to_reg(&self, r1: &Register, s: i64) {
-            println!("MOV {d}, #{s}", d = r1.name);
+            println!("mov {d}, #{s}", d = r1.name);
+        }
+
+        fn current_allocations(&self) -> &HashMap<VReg, Location> {
+            if let Some(allocs) = &self.allocations {
+                allocs
+            }
+            else {
+                panic!("No allocations found! Aborting...");
+            }
         }
     }
 }

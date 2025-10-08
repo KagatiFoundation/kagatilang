@@ -2,23 +2,12 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_lir::vreg::VRegLiveRange;
-use kagc_lir::vreg::VReg;
 
-use crate::regalloc::register::Register;
+use crate::regalloc::allocation::Allocation;
+use crate::regalloc::allocation::Location;
 use crate::regalloc::register::RegisterFile;
 use crate::regalloc::register::RegClass;
-
-#[derive(Debug, Clone)]
-pub enum Location {
-    Reg(Register),
-    StackSlot(usize),
-}
-
-#[derive(Debug)]
-pub struct Allocation {
-    pub vreg: VReg,
-    pub location: Location,
-}
+use crate::regalloc::VRegAllocations;
 
 pub struct LinearScanAllocator {
     pub register_file: RegisterFile,
@@ -33,7 +22,7 @@ impl LinearScanAllocator {
         }
     }
 
-    pub fn allocate(&mut self, live_ranges: &mut [VRegLiveRange]) -> Vec<Allocation> {
+    pub fn allocate(&mut self, live_ranges: &mut [VRegLiveRange]) -> VRegAllocations {
         let mut allocations: Vec<Allocation> = vec![];
         let mut active: Vec<VRegLiveRange> = vec![]; // currently in registers
 
@@ -77,7 +66,7 @@ impl LinearScanAllocator {
                 });
             }
         }
-        allocations
+        VRegAllocations { allocations }
     }
 
     fn next_stack_slot(&mut self) -> Location {
@@ -100,7 +89,7 @@ mod tests {
     #[test]
     fn test_mir_to_lir_lowerer_for_simple_function() {
         let mut builder = IRBuilder::default();
-        let (_, func_entry) = builder.create_function(vec![], IRType::I64); // block id 0
+        let (_, func_entry) = builder.create_function("test_fn".to_owned(), vec![], IRType::I64); // block id 0
         let op1 = builder.create_move(IRValue::Constant(2)); // value id 0
         let op2 = builder.create_move(IRValue::Constant(2)); // value id 1
         _ = builder.create_add(IRValue::Var(op1), IRValue::Var(op2)); // value id 2

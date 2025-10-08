@@ -24,10 +24,18 @@ pub struct FunctionSignature {
     pub return_type: IRType,
 }
 
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct FunctionFrame {
+    pub size: usize
+}
+
 #[derive(Default, Debug)]
 pub struct IRFunction {
     pub id: FunctionId,
+    pub name: String,
     pub signature: FunctionSignature,
     pub blocks: IndexMap<BlockId, IRBasicBlock>,
     pub entry_block: BlockId,
+    pub frame_info: FunctionFrame
 }
