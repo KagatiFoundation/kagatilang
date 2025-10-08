@@ -87,7 +87,7 @@ pub mod cg {
             // function's body
             for bid in block_ids {
                 let block = &lir_func.blocks[&bid];
-                self.gen_block(block);
+                self.emit_block(block);
             }
             // return from the function
             self.emit_function_postamble(lir_func, spill_stack_size);
@@ -114,7 +114,7 @@ pub mod cg {
             println!("{output}");
         }
 
-        fn gen_block(&self, block: &LirBasicBlock) {
+        fn emit_block(&self, block: &LirBasicBlock) {
             self.emit_label(block.id.0);
 
             for instr in block.instructions.iter() {

@@ -172,7 +172,7 @@ impl IRBuilder {
                         terminator: block_terminator.clone(),
                         name: self.block_names.get(block_id).unwrap().to_string()
                     };
-                    func_stack_size += IRBuilder::calculate_block_stack_usage(&ir_block.instructions);
+                    func_stack_size += IRBuilder::calculate_block_stack_usage(&ir_block);
                     func_blocks.insert(
                         *block_id,
                         ir_block
@@ -200,9 +200,9 @@ impl IRBuilder {
     }
 
     // Calculate the amount of space a function's block takes.
-    fn calculate_block_stack_usage(instrs: &[IRInstruction]) -> usize {
+    fn calculate_block_stack_usage(block: &IRBasicBlock) -> usize {
         let mut size = 0;
-        for inst in instrs.iter() {
+        for inst in block.instructions.iter() {
             if let IRInstruction::Store { .. } = inst {
                 size += 8;
             }
@@ -230,7 +230,7 @@ impl IRBuilder {
         self.get_block_mut(block_id).unwrap_or_else(|| panic!("No block found in current function with the ID {block_id:?}"))
     }
 
-    pub fn current_block(&self) -> Option<BlockId> {
+    pub fn current_block_id(&self) -> Option<BlockId> {
         let curr_block = self.current_block.expect("No active block! Aborting...");
         if self.block_instructions.contains_key(&curr_block) {
             Some(curr_block)
@@ -240,8 +240,8 @@ impl IRBuilder {
         }
     }
 
-    pub fn current_block_unchecked(&self) -> BlockId {
-        self.current_block().expect("No current block set")
+    pub fn current_block_id_unchecked(&self) -> BlockId {
+        self.current_block_id().expect("No current block set")
     }
 
     pub fn current_block_mut(&mut self) -> Option<&mut IRBasicBlock> {

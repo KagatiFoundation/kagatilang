@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
+use kagc_mir::block::BlockId;
 use kagc_symbol::*;
 use kagc_backend::reg::*;
 use kagc_types::*;
@@ -40,7 +41,7 @@ use kagc_mir::GCOBJECT_BUFFER_IDX;
 
 type ExprLoweringResult = Result<IRValueId, Diagnostic>;
 
-type StmtLoweringResult = Result<(), Diagnostic>;
+type StmtLoweringResult = Result<BlockId, Diagnostic>;
 
 pub struct IRLowerer {
     ctx: Rc<RefCell<CompilerCtx>>,
@@ -85,10 +86,11 @@ impl IRLowerer {
         output
     }
 
-    pub fn lower_irs(&mut self, nodes: &mut [AST]) {
+    pub fn lower_irs(&mut self, nodes: &mut [AST]) -> StmtLoweringResult {
         for node in nodes {
-            self.lower_ir_node(node, &mut FnCtx::new(0));
+            self.lower_ir_node(node, &mut FnCtx::new(0))?;
         }
+        Ok(self.ir_builder.current_block_id_unchecked())
     }
 
     pub fn lower_ir_node(&mut self, node: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
@@ -579,22 +581,30 @@ impl IRLowerer {
                 }
             }).collect::<Vec<FunctionParam>>();
 
-        let (_, _) = self.ir_builder.create_function(
+        let (_, fn_entry_block_id) = self.ir_builder.create_function(
             func_name.clone(),
             func_ir_params,
             IRType::from(ast.result_type.clone())
         );
 
         let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        let mut last_block_id = fn_entry_block_id;
+
         for body_ast in linearized_body {
-            self.lower_ir_node(body_ast, &mut fn_ctx)?;
+            let body_block_id = self.lower_ir_node(body_ast, &mut fn_ctx)?;
+
+            if body_block_id != last_block_id {
+                let new_loop_body_block = self.ir_builder.create_block("function-body-block");
+                last_block_id = new_loop_body_block;
+                self.ir_builder.link_blocks(body_block_id, new_loop_body_block);
+            }
         }
 
         self.current_function = None;
         // exit function's scope
         self.ctx.borrow_mut().scope.exit_scope();
         self.label_id = fn_ctx.next_label;
-        Ok(())
+        Ok(last_block_id)
     }
 
     fn gen_store_param_ir(
@@ -746,7 +756,7 @@ impl IRLowerer {
             }
 
             fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
-            return Ok(());
+            return Ok(self.ir_builder.current_block_id_unchecked());
         }
         panic!("Required VarDeclStmt--but found {var_ast:#?}! Aborting...");
     }
@@ -783,11 +793,11 @@ impl IRLowerer {
         let mut func_call_instrs = vec![];
         let mut actual_params = vec![];
 
-        let num_args = func_call_expr.args.len();
+        // let num_args = func_call_expr.args.len();
         let mut last_instrs = vec![];
 
-        for (rev_idx, (_, param_expr)) in func_call_expr.args.iter_mut().rev().enumerate() {
-            let rev_param_position = num_args - 1 - rev_idx;
+        for (_, param_expr) in func_call_expr.args.iter_mut().rev() {
+            // let rev_param_position = num_args - 1 - rev_idx;
             // let current_tmp = fn_ctx.temp_counter;
             // let param_temp = fn_ctx.next_temp();
             let param_eval_instrs = self.__gen_expr(
@@ -994,7 +1004,7 @@ impl IRLowerer {
     fn lower_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
-                let curr_block = self.ir_builder.current_block_unchecked();
+                let curr_block = self.ir_builder.current_block_id_unchecked();
                 if !curr_fn.return_type.is_void() {
                     let return_value_id = self.lower_expression_ast(
                         ret_stmt.left.as_mut().unwrap(), 
@@ -1005,7 +1015,7 @@ impl IRLowerer {
                 else {
                     self.ir_builder.set_terminator(curr_block, Terminator::Return(None));
                 }
-                return Ok(());
+                return Ok(curr_block);
             }
             else {
                 panic!("Detected ReturnStmt outside a function! Aborting...");
@@ -1033,30 +1043,39 @@ impl IRLowerer {
     }
 
     fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
-        let prev_block_id = self.ir_builder.current_block_unchecked();
+        let prev_block_id = self.ir_builder.current_block_id_unchecked();
         let loop_body_id = self.ir_builder.create_block("loop_body");
 
         self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_body_id));
         self.ir_builder.link_blocks(prev_block_id, loop_body_id);
 
         let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        let mut last_block_id = loop_body_id;
+
         for body_ast in linearized_body {
-            self.lower_ir_node(body_ast, fn_ctx)?;
+            let body_block_id = self.lower_ir_node(body_ast, fn_ctx)?;
+
+            if body_block_id != last_block_id {
+                let new_loop_body_block = self.ir_builder.create_block("loop-body-block");
+                last_block_id = new_loop_body_block;
+                self.ir_builder.link_blocks(body_block_id, new_loop_body_block);
+            }
         }
 
-        self.ir_builder.set_terminator(loop_body_id, Terminator::Jump(loop_body_id));
-        Ok(())
+        self.ir_builder.set_terminator(last_block_id, Terminator::Jump(loop_body_id));
+        Ok(last_block_id)
     }
 
     fn lower_if_else(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
             self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
         }
-        let prev_block_id = self.ir_builder.current_block_unchecked();
+        let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
         // Evaluate the condition and store the resilt in a register.
         // Every if-else must have the `left` branch set in the main if-else AST tree.
         let if_entry_block = self.ir_builder.create_block("if-header");
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(if_entry_block));
         self.ir_builder.link_blocks(prev_block_id, if_entry_block);
         
         // lower the condition expression in the entry block
@@ -1082,23 +1101,28 @@ impl IRLowerer {
             }
         );
 
-        {
-            // lower the if-block
-            self.ir_builder.switch_to_block(then_block);
-            let linearized_body = ast.mid.as_mut().unwrap().linearize_mut();
-            for body_ast  in linearized_body {
-                self.lower_ir_node(body_ast, fn_ctx)?;
+        // lower the if-block
+        self.ir_builder.switch_to_block(then_block);
+        let mut last_block_id = then_block;
+
+        let linearized_body = ast.mid.as_mut().unwrap().linearize_mut();
+        for body_ast  in linearized_body {
+            let body_block_id = self.lower_ir_node(body_ast, fn_ctx)?;
+            if body_block_id != last_block_id {
+                let new_loop_body_block = self.ir_builder.create_block("loop-body-block");
+                last_block_id = new_loop_body_block;
+                self.ir_builder.link_blocks(body_block_id, new_loop_body_block);
             }
-
-            // jump to merge block after
-            self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
-            // switch to the merge block afte emitting if-branch's code
-            self.ir_builder.switch_to_block(merge_block);
-
-            // end `if`'s scope
-            self.ctx.borrow_mut().scope.exit_scope();
         }
-        Ok(())
+
+        // jump to merge block after
+        self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
+        // switch to the merge block afte emitting if-branch's code
+        self.ir_builder.switch_to_block(merge_block);
+
+        // end `if`'s scope
+        self.ctx.borrow_mut().scope.exit_scope();
+        Ok(merge_block)
     }
 
     fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
@@ -1390,7 +1414,7 @@ impl IRLowerer {
     }
 
     fn lower_import(&mut self) -> StmtLoweringResult {
-        Ok(())
+        Ok(BlockId(0xFFFFFFFF)) // import statements aren't supported inside functions
     }
 
     fn lower_rec_decl_to_ir(&mut self, _node: &mut AST) -> CGRes {
@@ -1398,7 +1422,7 @@ impl IRLowerer {
     }
 
     fn lower_record_declaration(&mut self, _node: &mut AST) -> StmtLoweringResult {
-        Ok(())
+        Ok(BlockId(0xFFFFFFFF)) // record declaration statements aren't supported inside functions
     }
 
     fn gen_ir_jump(&self, label_id: LabelId) -> CGRes {
