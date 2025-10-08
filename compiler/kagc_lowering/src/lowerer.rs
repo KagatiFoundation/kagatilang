@@ -1034,21 +1034,17 @@ impl IRLowerer {
 
     fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_unchecked();
-        let loop_header_id = self.ir_builder.create_block("loop-header");
-
-        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_header_id));
-        self.ir_builder.link_blocks(prev_block_id, loop_header_id);
-
         let loop_body_id = self.ir_builder.create_block("loop_body");
-        self.ir_builder.set_terminator(loop_header_id, Terminator::Jump(loop_body_id));
-        self.ir_builder.link_blocks(loop_header_id, loop_body_id);
+
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_body_id));
+        self.ir_builder.link_blocks(prev_block_id, loop_body_id);
 
         let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
         for body_ast in linearized_body {
             self.lower_ir_node(body_ast, fn_ctx)?;
         }
 
-        self.ir_builder.set_terminator(loop_body_id, Terminator::Jump(loop_header_id));
+        self.ir_builder.set_terminator(loop_body_id, Terminator::Jump(loop_body_id));
         Ok(())
     }
 

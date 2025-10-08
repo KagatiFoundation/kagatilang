@@ -31,6 +31,7 @@ pub trait LirToMachineTransformer {
 pub mod cg {
     use std::collections::HashMap;
 
+    use kagc_lir::block::LirTerminator;
     use kagc_lir::instruction::LirAddress;
     use kagc_lir::instruction::LirInstruction;
     use kagc_lir::operand::LirOperand;
@@ -80,8 +81,12 @@ pub mod cg {
             // manage function's stack
             self.emit_function_preamble(lir_func, spill_stack_size);
 
+            let mut block_ids: Vec<_> = lir_func.blocks.keys().cloned().collect();
+            block_ids.sort_by_key(|b| b.0);
+
             // function's body
-            for block in lir_func.blocks.values() {
+            for bid in block_ids {
+                let block = &lir_func.blocks[&bid];
                 self.gen_block(block);
             }
             // return from the function
@@ -110,6 +115,8 @@ pub mod cg {
         }
 
         fn gen_block(&self, block: &LirBasicBlock) {
+            self.emit_label(block.id.0);
+
             for instr in block.instructions.iter() {
                 match instr {
                     LirInstruction::Mov { dest, src } => self.emit_mov_inst(dest, src),
@@ -120,6 +127,26 @@ pub mod cg {
                     _ => panic!()
                 }
             }
+
+            match block.terminator {
+                LirTerminator::Jump(block_id) => println!("b _L{}", block_id.0),
+                LirTerminator::Return(vreg) => {
+                    if let Some(ret_val_vreg) = &vreg {
+                        let src_loc = self.current_allocations().get(ret_val_vreg).unwrap();
+                        match src_loc {
+                            Location::Reg(r1) => println!("mov x0, {s}", s = r1.name),
+                            Location::StackSlot(ss) => {
+                                self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*ss));
+                                println!("mov x0, {s}", s = self.scratch_register0.name);
+                            }
+                        }
+                    }
+                },
+            }
+        }
+
+        fn emit_label(&self, id: usize) {
+            println!("_L{id}:");
         }
 
         fn emit_str_inst(&self, src: &VReg, addr: LirAddress) {
