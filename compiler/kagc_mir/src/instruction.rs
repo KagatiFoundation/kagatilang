@@ -9,7 +9,7 @@ use crate::value::*;
 #[derive(Debug, Clone, Copy)]
 pub struct IRInstructionId(pub usize);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IRCondition {
     EqEq,
     NEq,

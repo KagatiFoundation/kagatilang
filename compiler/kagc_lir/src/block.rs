@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 
 use kagc_mir::block::BlockId;
+use kagc_mir::instruction::IRCondition;
 
 use crate::instruction::LirInstruction;
 use crate::vreg::VReg;
@@ -22,5 +23,11 @@ pub struct LirBasicBlock {
 pub enum LirTerminator {
     Jump(BlockId),
 
-    Return(Option<VReg>)
+    Return(Option<VReg>),
+
+    CJump {
+        cond: IRCondition,
+        then_block: BlockId,
+        else_block: BlockId
+    }
 }

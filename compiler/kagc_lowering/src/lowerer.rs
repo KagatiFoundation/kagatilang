@@ -7,12 +7,12 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
-use kagc_mir::block::BlockId;
 use kagc_symbol::*;
 use kagc_backend::reg::*;
 use kagc_types::*;
 
 use kagc_mir::block::Terminator;
+use kagc_mir::block::BlockId;
 use kagc_mir::builder::IRBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::instruction::IRAddress;
@@ -23,12 +23,12 @@ use kagc_mir::ir_operands::*;
 use kagc_mir::types::IRType;
 use kagc_mir::value::IRValue;
 use kagc_mir::value::IRValueId;
+use kagc_mir::LabelId;
 use kagc_const::pool::KagcConst;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::Severity;
-use kagc_mir::LabelId;
 use kagc_symbol::function::FunctionInfo;
 use kagc_types::builtins::obj::KObjType;
 
@@ -740,13 +740,7 @@ impl IRLowerer {
             );
 
             if var_ast.result_type.is_gc_alloced() {
-                let data_ptr_value_id = fn_ctx.next_value_id();
-                self.ir_builder.inst(
-                    IRInstruction::Load { 
-                        src: IRAddress::BaseOffset(var_decl_value, GCOBJECT_BUFFER_IDX), 
-                        result: data_ptr_value_id
-                    }
-                );
+                let data_ptr_value_id = self.ir_builder.create_load(IRAddress::BaseOffset(var_decl_value, GCOBJECT_BUFFER_IDX));
                 self.ir_builder.inst(
                     IRInstruction::Store { 
                         src: data_ptr_value_id, 
@@ -788,7 +782,7 @@ impl IRLowerer {
         &mut self, 
         func_call_expr: &mut FuncCallExpr, 
         fn_ctx: &mut FnCtx, 
-        dest: Option<IROperand>
+        _dest: Option<IROperand>
     ) -> CGExprEvalRes {
         let mut func_call_instrs = vec![];
         let mut actual_params = vec![];
@@ -931,15 +925,8 @@ impl IRLowerer {
 
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
-
-        let value_id = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Load { 
-                src: IRAddress::StackOffset(sym_off), 
-                result: value_id 
-            }
-        );
-        Ok(value_id)
+        let load_value_id = self.ir_builder.create_load(IRAddress::StackOffset(sym_off));
+        Ok(load_value_id)
     }
 
     fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
@@ -1234,25 +1221,8 @@ impl IRLowerer {
             .get(&access.rec_alias)
             .unwrap_or_else(|| panic!("what the fck bro"));
 
-        let base_pointer_value = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Load { 
-                src: IRAddress::StackOffset(rec_stack_off + 1), 
-                result: base_pointer_value 
-            }
-        );
-
-        let field_value = fn_ctx.next_value_id();
-        self.ir_builder.inst(
-            IRInstruction::Load { 
-                src: IRAddress::BaseOffset(
-                    base_pointer_value, 
-                    access.rel_stack_off
-                ), 
-                result: field_value
-            }
-        );
-        Ok(field_value)
+        let base_pointer_value = self.ir_builder.create_load(IRAddress::StackOffset(rec_stack_off + 1));
+        Ok(self.ir_builder.create_load(IRAddress::BaseOffset(base_pointer_value, access.rel_stack_off)))
     }
 
     fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
@@ -1463,12 +1433,5 @@ impl IRLowerer {
     fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Symbol> {
         let ctx_borrow = self.ctx.borrow();
         ctx_borrow.scope.deep_lookup(sym_name).cloned()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_loop_stmt_cfg_construction() {
     }
 }

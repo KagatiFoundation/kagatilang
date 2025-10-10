@@ -8,6 +8,7 @@ use kagc_mir::block::Terminator;
 use kagc_mir::function::FunctionSignature;
 use kagc_mir::function::IRFunction;
 use kagc_mir::instruction::IRAddress;
+use kagc_mir::instruction::IRCondition;
 use kagc_mir::instruction::IRInstruction;
 use kagc_mir::value::IRValue;
 use kagc_mir::value::IRValueId;
@@ -30,9 +31,15 @@ pub struct MirToLirTransformer {
 impl MirToLirTransformer {
     pub fn transform_function(&mut self, ir_func: &IRFunction) -> LirFunction {
         let mut lir_blocks = HashMap::new();
-        for (bid, block) in ir_func.blocks.iter() {
-            lir_blocks.insert(*bid, self.transform_block(block));
+        
+        let mut block_ids: Vec<_> = ir_func.blocks.keys().cloned().collect();
+        block_ids.sort_by_key(|b| b.0);
+
+        for bid in block_ids {
+            let block = &ir_func.blocks[&bid];
+            lir_blocks.insert(bid, self.transform_block(block));
         }
+
         LirFunction { 
             id: ir_func.id, 
             name: ir_func.name.clone(),
@@ -63,7 +70,8 @@ impl MirToLirTransformer {
                 IRInstruction::Mov { result, src } => self.transform_move(result, src),
                 IRInstruction::Store { address, src } => self.transform_store(*address, src),
                 IRInstruction::Load { src, result } => self.transform_load(result, *src),
-                _ => unimplemented!()
+                IRInstruction::CondJump { lhs, rhs, cond, result } => self.transform_conditional(lhs, rhs, cond, result),
+                _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
         }
@@ -79,7 +87,14 @@ impl MirToLirTransformer {
                     LirTerminator::Return(None)
                 }
             },
-            _ => unimplemented!()
+            Terminator::CondJump { cond, then_block, else_block } => {
+                self.vreg_mapper.get_or_create(cond);
+                LirTerminator::CJump { 
+                    cond: IRCondition::EqEq, 
+                    then_block, 
+                    else_block
+                }
+            }
         };
 
         LirBasicBlock { 
@@ -89,6 +104,35 @@ impl MirToLirTransformer {
             predecessors: block.predecessors.clone(), 
             terminator, 
             name: block.name.clone() 
+        }
+    }
+
+    fn transform_conditional(
+        &mut self, 
+        lhs: &IRValue, 
+        rhs: &IRValue, 
+        cond: &IRCondition,
+        result: &IRValueId
+    ) -> Vec<LirInstruction> {
+        match cond {
+            IRCondition::EqEq => {
+                let lhs_op = self.resolve_to_operand(*lhs);
+                let rhs_op = self.resolve_to_operand(*rhs);
+                let dest_reg = self.vreg_mapper.get_or_create(*result);
+                vec![
+                    LirInstruction::CJump {
+                        lhs: lhs_op,
+                        rhs: rhs_op,
+                        op: *cond,
+                        dest: dest_reg
+                    }
+                ]
+            },
+            IRCondition::NEq => todo!(),
+            IRCondition::GTEq => todo!(),
+            IRCondition::LTEq => todo!(),
+            IRCondition::GThan => todo!(),
+            IRCondition::LThan => todo!(),
         }
     }
 

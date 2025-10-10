@@ -149,10 +149,10 @@ impl Parser {
             } 
             else if let Err(parse_error) = stmt_parse_result {
                 self
-                .ctx
-                .borrow_mut()
-                .diagnostics
-                .push(*parse_error);
+                    .ctx
+                    .borrow_mut()
+                    .diagnostics
+                    .push(*parse_error);
                 break;
             }
         }
@@ -1481,10 +1481,4 @@ impl Parser {
         }
         self.current_token = self.tokens[self.current].clone();
     }
-}
-
-// REWRITE ALL THE TEST CASES
-#[cfg(test)]
-mod tests {
-
 }

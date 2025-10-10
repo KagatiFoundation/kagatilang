@@ -103,7 +103,6 @@ mod tests {
         let add_value = builder.create_add(IRValue::Constant(32), IRValue::Constant(32)); // value id 0 created in block id 1
         let if_else_block = builder.create_block("if-else-block"); // block id 2
         builder.link_blocks(loop_entry, if_else_block);
-
         let cond_jump = builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(add_value), IRValue::Constant(64)); // value id 1 created in block id 2
         let if_block = builder.create_block("if-block"); // block id 3
         let else_block = builder.create_block("else-block"); // block id 4

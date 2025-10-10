@@ -9,6 +9,7 @@ use kagc_symbol::StorageClass;
 use kagc_symbol::Symbol;
 use kagc_types::record::RecordType;
 
+use crate::ctx::builder::ScopeCtxBuilder;
 use crate::scope::*;
 use crate::manager::*;
 
@@ -28,6 +29,19 @@ pub struct ScopeCtx {
     pub(crate) prev_scope: usize,
     pub(crate) records: RecordRegistery,
     pub(crate) user_types: HashSet<String>,
+}
+
+impl Default for ScopeCtx {
+    fn default() -> Self {
+        ScopeCtxBuilder::new()
+            .scope_manager({
+                let mut scope_mgr: ScopeManager = ScopeManager::default();
+                scope_mgr.push((0, Scope::default())); // root scope
+                scope_mgr
+            })
+            .scope_id_counter(1) // since zero(0) is for the root scope
+            .build()
+    }
 }
 
 impl ScopeCtx {

@@ -5,7 +5,7 @@ use kagc_lir::vreg::VReg;
 
 use crate::regalloc::register::Register;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub enum Location {
     Reg(Register),
     StackSlot(usize),

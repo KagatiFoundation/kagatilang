@@ -63,9 +63,17 @@ impl LirFunction {
                         vregs_defined.push(*dest);
                         if let LirOperand::VReg(v) = lhs { vregs_used.push(*v); }
                         if let LirOperand::VReg(v) = rhs { vregs_used.push(*v); }
-                    }
+                    },
+                    LirInstruction::Load { dest, .. } => {
+                        vregs_defined.push(*dest);
+                    },
                     LirInstruction::Store { src, .. } => {
                         vregs_used.push(*src);
+                    },
+                    LirInstruction::CJump { dest, lhs, rhs, ..} => {
+                        vregs_defined.push(*dest);
+                        if let LirOperand::VReg(v) = lhs { vregs_used.push(*v); }
+                        if let LirOperand::VReg(v) = rhs { vregs_used.push(*v); }
                     }
                     _ => {}
                 }
@@ -95,5 +103,58 @@ impl LirFunction {
                 end: end.unwrap(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kagc_mir::block::Terminator;
+    use kagc_mir::builder::IRBuilder;
+    use kagc_mir::function::FunctionId;
+    use kagc_mir::instruction::IRCondition;
+    use kagc_mir::types::IRType;
+    use kagc_mir::value::IRValue;
+
+    use crate::mir_lowerer::MirToLirTransformer;
+    use crate::vreg::VReg;
+
+    #[test]
+    fn test_vreg_generation() {
+        let mut builder = IRBuilder::default();
+        let (_, func_entry) = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let loop_entry = builder.create_block("loop-entry"); // block id 1
+        builder.link_blocks(func_entry, loop_entry);
+
+        let add_value = builder.create_add(IRValue::Constant(32), IRValue::Constant(32)); // value id 0 created in block id 1
+        let if_else_block = builder.create_block("if-else-block"); // block id 2
+        builder.link_blocks(loop_entry, if_else_block);
+
+        let cond_jump = builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(add_value), IRValue::Constant(64)); // value id 1 created in block id 2
+        let if_block = builder.create_block("if-block"); // block id 3
+        let else_block = builder.create_block("else-block"); // block id 4
+        builder.link_blocks_multiple(if_else_block, vec![if_block, else_block]);
+
+        let merge_block = builder.create_block("merge"); // block id 5
+        builder.link_blocks(if_block, merge_block);
+        builder.link_blocks(else_block, merge_block);
+
+        builder.set_terminator(
+            if_else_block,
+            Terminator::CondJump { 
+                cond: cond_jump, 
+                then_block: if_block, 
+                else_block 
+            }
+        );
+
+        builder.set_terminator(if_block, Terminator::Jump(merge_block));
+        builder.set_terminator(else_block, Terminator::Jump(merge_block));
+
+        let module = builder.build();
+        let mut mir_lowerer = MirToLirTransformer::default();
+
+        let func = mir_lowerer.transform_function(&module.functions[&FunctionId(0)]);
+        let vranges = func.compute_vreg_live_ranges();  
+        assert!(vranges[0].vreg == VReg(0));
     }
 }

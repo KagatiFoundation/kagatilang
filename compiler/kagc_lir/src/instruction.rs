@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use kagc_mir::instruction::IRCondition;
+
 use crate::operand::LirOperand;
 use crate::vreg::VReg;
 
@@ -32,6 +34,13 @@ pub enum LirInstruction {
 
     Jump {
         label: LirLabel
+    },
+
+    CJump {
+        dest: VReg,
+        lhs: LirOperand,
+        rhs: LirOperand,
+        op: IRCondition
     }
 }
 

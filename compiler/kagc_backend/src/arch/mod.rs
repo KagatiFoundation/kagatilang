@@ -38,6 +38,7 @@ pub mod cg {
     use kagc_lir::function::LirFunction;
     use kagc_lir::block::LirBasicBlock;
     use kagc_lir::vreg::VReg;
+    use kagc_mir::instruction::IRCondition;
 
     use crate::regalloc::register::aarch64::standard_aarch64_register_file;
     use crate::regalloc::LinearScanAllocator;
@@ -99,7 +100,7 @@ pub mod cg {
             if stack_size > 0 {
                 output.push_str(&format!("\nsub sp, sp, #{off}\n", off = stack_size));
                 output.push_str(&format!("stp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
-                output.push_str(&format!("add x29, #{off}", off = stack_size - 16));
+                output.push_str(&format!("add x29, sp, #{off}", off = stack_size - 16));
             }
             println!("{output}");
         }
@@ -123,6 +124,7 @@ pub mod cg {
                     LirInstruction::Add { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
                     LirInstruction::Store { src, dest } => self.emit_str_inst(src, *dest),
                     LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
+                    LirInstruction::CJump { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
 
                     _ => panic!()
                 }
@@ -142,7 +144,69 @@ pub mod cg {
                         }
                     }
                 },
+                LirTerminator::CJump { cond, then_block, else_block } => {
+                    let cmp_code = match cond {
+                        IRCondition::EqEq   => "b.eq",
+                        IRCondition::NEq    => "b.ne",
+                        IRCondition::GTEq   => "b.ge",
+                        IRCondition::LTEq   => "b.le",
+                        IRCondition::GThan  => "b.gt",
+                        IRCondition::LThan  => "b.lt",
+                    };
+                    println!("{cmp_code} _L{bid}", bid = then_block.0);
+                    println!("b _L{bid}", bid = else_block.0);
+                },
             }
+        }
+
+        fn emit_cjump_inst(&self, lhs: &LirOperand, rhs: &LirOperand) {
+            match (lhs, rhs) {
+                (LirOperand::VReg(vreg1), LirOperand::VReg(vreg2)) => {
+                    let src1 = self.current_allocations().get(vreg1).unwrap();
+                    let src2 = self.current_allocations().get(vreg2).unwrap();
+                    match (src1, src2) {
+                        (Location::Reg(r1), Location::Reg(r2)) => self.emit_cmp_reg_reg(r1, r2),
+
+                        (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
+                        (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*op_slot));
+                            self.emit_cmp_reg_reg(reg_op, &self.scratch_register0);
+                        },
+
+                        (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*op1_slot));
+                            self.emit_ldr(&self.scratch_register1, LirAddress::Offset(*op2_slot));
+                            self.emit_cmp_reg_reg(&self.scratch_register0, &self.scratch_register1);
+                        },
+                    } 
+                },
+
+                (LirOperand::VReg(vreg), LirOperand::Constant(imm)) |
+                (LirOperand::Constant(imm), LirOperand::VReg(vreg)) => {
+                    let src1 = self.current_allocations().get(vreg).unwrap();
+                    match src1 {
+                        Location::Reg(register) => self.emit_cmp_reg_imm(register, *imm),
+                        Location::StackSlot(src_slot) => {
+                            self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*src_slot));
+                            self.emit_cmp_reg_imm(&self.scratch_register0, *imm);
+                        },
+                    }
+                },
+
+                (LirOperand::Constant(imm1), LirOperand::Constant(imm2)) => {
+                    self.emit_move_const_to_reg(&self.scratch_register0, *imm1);
+                    self.emit_move_const_to_reg(&self.scratch_register1, *imm2);
+                    self.emit_cmp_reg_reg(&self.scratch_register0, &self.scratch_register1);
+                },
+            }
+        }
+
+        fn emit_cmp_reg_reg(&self, r1: &Register, r2: &Register) {
+            println!("cmp {a}, {b}", a = r1.name, b = r2.name);
+        }
+
+        fn emit_cmp_reg_imm(&self, r1: &Register, imm: i64) {
+            println!("cmp {a}, #{imm}", a = r1.name);
         }
 
         fn emit_label(&self, id: usize) {
@@ -160,7 +224,7 @@ pub mod cg {
             }
         }
 
-       fn emit_ldr_inst(&self, addr: LirAddress, dest: &VReg) {
+        fn emit_ldr_inst(&self, addr: LirAddress, dest: &VReg) {
             let dest_loc = self.current_allocations().get(dest).unwrap();
             match dest_loc {
                 Location::Reg(register) => self.emit_ldr(register, addr),

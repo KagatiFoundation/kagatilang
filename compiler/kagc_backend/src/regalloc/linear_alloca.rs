@@ -86,14 +86,33 @@ mod tests {
     use kagc_mir::value::IRValue;
     use kagc_mir::block::{BlockId, Terminator};
 
+    use crate::regalloc::register::aarch64::standard_aarch64_register_file;
+    use crate::regalloc::register::{RegClass, Register};
+    use crate::regalloc::{Allocation, LinearScanAllocator, Location};
+
+    fn dummy_reg(id: u8) -> Register {
+        Register {
+            id,
+            name: format!("x{id}"),
+            class: RegClass::GPR
+        }
+    }
+
     #[test]
-    fn test_mir_to_lir_lowerer_for_simple_function() {
+    fn test_reg_allocation_for_simple_function() {
         let mut builder = IRBuilder::default();
         let (_, func_entry) = builder.create_function("test_fn".to_owned(), vec![], IRType::I64); // block id 0
         let op1 = builder.create_move(IRValue::Constant(2)); // value id 0
         let op2 = builder.create_move(IRValue::Constant(2)); // value id 1
         _ = builder.create_add(IRValue::Var(op1), IRValue::Var(op2)); // value id 2
         _ = builder.create_add(IRValue::Var(op1), IRValue::Constant(2)); // value id 3
+
+        _ = builder.create_move(IRValue::Constant(2));
+        _ = builder.create_move(IRValue::Constant(2));
+        _ = builder.create_move(IRValue::Constant(2));
+        _ = builder.create_move(IRValue::Constant(2));
+        _ = builder.create_move(IRValue::Constant(2));
+        _ = builder.create_move(IRValue::Constant(2));
 
         builder.set_terminator(
             func_entry,
@@ -106,8 +125,21 @@ mod tests {
         assert!(module.functions.contains_key(&FunctionId(0)));
 
         let func = module.functions.get(&FunctionId(0)).unwrap();
-        let instrs = mir_lowerer.transform_function(func);
+        let func = mir_lowerer.transform_function(func);
 
-        println!("{instrs:#?}");
+        let mut alloca = LinearScanAllocator::new(standard_aarch64_register_file());
+        let allocs = alloca.allocate(&mut func.compute_vreg_live_ranges()[..]);
+        let allocs: Vec<&Allocation> = allocs.allocations.iter().collect();
+
+        assert_eq!(allocs[0].location, Location::Reg(dummy_reg(15)));
+        assert_eq!(allocs[1].location, Location::Reg(dummy_reg(14)));
+        assert_eq!(allocs[2].location, Location::Reg(dummy_reg(14)));
+        assert_eq!(allocs[3].location, Location::Reg(dummy_reg(14)));
+
+        assert_eq!(allocs[4].location, Location::Reg(dummy_reg(15)));
+        assert_eq!(allocs[5].location, Location::Reg(dummy_reg(14)));
+        assert_eq!(allocs[6].location, Location::Reg(dummy_reg(13)));
+        assert_eq!(allocs[7].location, Location::Reg(dummy_reg(12)));
+        assert_eq!(allocs[8].location, Location::Reg(dummy_reg(11)));
     }
 }
