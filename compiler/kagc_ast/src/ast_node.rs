@@ -60,6 +60,7 @@ pub enum ASTOperation {
     AST_ASSIGN,
     AST_GLUE,
     AST_IF,
+    AST_ELSE,
 
     AST_IMPORT,
     

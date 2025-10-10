@@ -38,6 +38,7 @@ pub mod cg {
     use kagc_lir::function::LirFunction;
     use kagc_lir::block::LirBasicBlock;
     use kagc_lir::vreg::VReg;
+    use kagc_mir::block::BlockId;
     use kagc_mir::instruction::IRCondition;
 
     use crate::regalloc::register::aarch64::standard_aarch64_register_file;
@@ -49,7 +50,8 @@ pub mod cg {
     pub struct CodeGenerator {
         allocations: Option<HashMap<VReg, Location>>,
         scratch_register0: Register,
-        scratch_register1: Register
+        scratch_register1: Register,
+        function_entry_block: Option<BlockId>
     }
 
     impl Default for CodeGenerator {
@@ -65,7 +67,8 @@ pub mod cg {
                     id: 10,
                     name: "x10".to_string(),
                     class: RegClass::GPR
-                }
+                },
+                function_entry_block: None
             }
         }
     }
@@ -78,6 +81,7 @@ pub mod cg {
 
             let vreg_mappings: HashMap<VReg, Location> = allocs.allocations.into_iter().map(|a| (a.vreg, a.location)).collect();
             self.allocations = Some(vreg_mappings);
+            self.function_entry_block = Some(lir_func.entry_block);
 
             // manage function's stack
             self.emit_function_preamble(lir_func, spill_stack_size);
@@ -116,7 +120,17 @@ pub mod cg {
         }
 
         fn emit_block(&self, block: &LirBasicBlock) {
-            self.emit_label(block.id.0);
+            if block.instructions.is_empty() {
+                return;
+            }
+            if let Some(entry_block) = self.function_entry_block {
+                if entry_block != block.id {
+                    self.emit_label(block.id.0);
+                }
+            }
+            else {
+                panic!("No entry block set for function! Aborting...");
+            }
 
             for instr in block.instructions.iter() {
                 match instr {

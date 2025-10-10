@@ -527,13 +527,18 @@ impl SemanticAnalyzer {
             if let Some(if_body) = &mut node.mid {
                 self.analyze_node(if_body)?;
             }
-
-            if let Some(else_body) = &mut node.right {
-                self.analyze_node(else_body)?;
-            }
-
             self.ctx.borrow_mut().scope.exit_scope();
-            return Ok(cond_res);
+        }
+
+        // else-block
+        if let Some(right_tree) = &mut node.right {
+            if let Some(else_block_tree) = &mut right_tree.left {
+                if let ASTKind::StmtAST(Stmt::Scoping(scoping_stmt)) = &else_block_tree.kind {
+                    self.ctx.borrow_mut().scope.enter_scope(scoping_stmt.scope_id);
+                }
+                self.analyze_node(else_block_tree)?;
+                self.ctx.borrow_mut().scope.exit_scope();
+            }
         }
         Ok(LitTypeVariant::None)
     }

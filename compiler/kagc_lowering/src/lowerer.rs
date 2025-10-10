@@ -121,7 +121,10 @@ impl IRLowerer {
             return self.lower_infinite_loop(node, fn_ctx);
         }
         else if node.operation == ASTOperation::AST_IF {
-            return self.lower_if_else(node, fn_ctx);
+            return self.lower_if_else_tree(node, fn_ctx);
+        }
+        else if node.operation == ASTOperation::AST_ELSE {
+            return self.lower_else_block(node, fn_ctx);
         }
         todo!("{node:#?}");
     }
@@ -1053,7 +1056,7 @@ impl IRLowerer {
         Ok(last_block_id)
     }
 
-    fn lower_if_else(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
             self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
         }
@@ -1087,29 +1090,65 @@ impl IRLowerer {
                 else_block
             }
         );
+        {
+            // lower the if-block
+            self.ir_builder.switch_to_block(then_block);
+            let mut last_block_id = then_block;
 
-        // lower the if-block
-        self.ir_builder.switch_to_block(then_block);
-        let mut last_block_id = then_block;
+            let linearized_body = ast.mid.as_mut().unwrap().linearize_mut();
+            for body_ast  in linearized_body {
+                let body_block_id = self.lower_ir_node(body_ast, fn_ctx)?;
+                if body_block_id != last_block_id {
+                    let new_body_block = self.ir_builder.create_block("if-block");
+                    last_block_id = new_body_block;
+                    self.ir_builder.link_blocks(body_block_id, new_body_block);
+                }
+            }
+            // jump to merge block after
+            self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
+            self.ctx.borrow_mut().scope.exit_scope();
+        }
+        
+        if let Some(right_tree) = &mut ast.right {
+            // dump 'else' block's code
+            self.ir_builder.switch_to_block(else_block);
+            let _ = self.lower_ir_node(right_tree, fn_ctx);
+            // jump to merge block after
+            self.ir_builder.set_terminator(else_block, Terminator::Jump(merge_block));
+        }
 
-        let linearized_body = ast.mid.as_mut().unwrap().linearize_mut();
-        for body_ast  in linearized_body {
+        // switch to the merge block afte emitting if-branch's code
+        self.ir_builder.switch_to_block(merge_block);
+        Ok(merge_block)
+    }
+
+    fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+        if let ASTKind::StmtAST(Stmt::Scoping(scope_stmt)) = &ast.kind {
+            self.ctx.borrow_mut().scope.enter_scope(scope_stmt.scope_id);
+        }
+        else {
+            panic!("Provided AST tree is not of type 'AST_ELSE'! Aborting...");
+        }
+
+        // Current IRBasicBlock is for this 'else' block.
+        // `lower_if_else_tree` creates a new block for the 'else' block.
+        // We can freely utilize that created block to add new instructions.
+        let mut last_block_id = self.ir_builder.current_block_id_unchecked();
+        
+        // Reference to Parser's `parser_if_stmt` function to learn why the 'left' 
+        // branch is used for the 'else' block.
+        let else_ast_linearized = ast.left.as_mut().unwrap().linearize_mut();
+        for body_ast in else_ast_linearized {
             let body_block_id = self.lower_ir_node(body_ast, fn_ctx)?;
-            if body_block_id != last_block_id {
-                let new_loop_body_block = self.ir_builder.create_block("loop-body-block");
-                last_block_id = new_loop_body_block;
-                self.ir_builder.link_blocks(body_block_id, new_loop_body_block);
+            if last_block_id != body_block_id {
+                let new_body_block = self.ir_builder.create_block("else-body-block");
+                last_block_id = new_body_block;
+                self.ir_builder.link_blocks(body_block_id, new_body_block);
             }
         }
 
-        // jump to merge block after
-        self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
-        // switch to the merge block afte emitting if-branch's code
-        self.ir_builder.switch_to_block(merge_block);
-
-        // end `if`'s scope
         self.ctx.borrow_mut().scope.exit_scope();
-        Ok(merge_block)
+        Ok(last_block_id)
     }
 
     fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {

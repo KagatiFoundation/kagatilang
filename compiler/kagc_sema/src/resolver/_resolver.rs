@@ -73,10 +73,7 @@ impl Resolver {
                 if !node.kind.is_stmt() {
                     panic!("Needed a IfStmt--but found {:#?}", node);
                 }
-                if let Some(mid) = &mut node.mid {
-                    return self.declare_symbol(mid);
-                }
-                Ok(0xFFFFFFFF)
+                self.declare_if_else_tree(node)
             }
 
             ASTOperation::AST_FUNC_CALL => {
@@ -101,6 +98,36 @@ impl Resolver {
 
             _ => Ok(0)
         }
+    }
+
+    fn declare_if_else_tree(&mut self, node: &mut AST) -> ResolverResult {
+        if !node.kind.is_stmt() {
+            panic!("Needed a IfDecl--but found {:#?}", node);
+        }
+        if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &mut node.kind {
+            self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
+            self.ctx.borrow_mut().scope.exit_scope();
+        }
+        else {
+            panic!("Provided Stmt {node:#?} is not of type IfStmt! Aborting...");
+        }
+
+        if let Some(mid_tree) = &mut node.mid {
+            self.declare_symbol(mid_tree)?; // mid tree is the 'if' block
+            self.ctx.borrow_mut().scope.exit_scope(); // exit if-block's scope
+        }
+
+        if let Some(right_tree) = &mut node.right {
+            // right tree is the 'else' block
+            if let Some(else_block_tree) = &mut right_tree.left {
+                if let ASTKind::StmtAST(Stmt::Scoping(scoping_stmt)) = &else_block_tree.kind {
+                    self.ctx.borrow_mut().scope.enter_scope(scoping_stmt.scope_id);
+                }
+                self.declare_symbol(else_block_tree)?;
+                self.ctx.borrow_mut().scope.exit_scope();
+            }
+        }
+        Ok(0)
     }
 
     fn declare_func(&mut self, node: &mut AST) -> ResolverResult {

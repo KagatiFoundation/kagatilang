@@ -111,6 +111,12 @@ pub struct IfStmt {
     pub scope_id: usize,
 }
 
+/// A statement type which create its own scope.
+#[derive(Clone, Debug)]
+pub struct ScopingStmt {
+    pub scope_id: usize
+}
+
 /// Represents a top-level `import` statement in a source file.
 #[derive(Debug, Clone)]
 pub struct ImportStmt {
@@ -152,5 +158,6 @@ pub enum Stmt {
     FuncCall(FuncCallStmt),
     Import(ImportStmt),
     Record(RecordDeclStmt),
-    RecordField(RecordFieldStmt)
+    RecordField(RecordFieldStmt),
+    Scoping(ScopingStmt)
 }

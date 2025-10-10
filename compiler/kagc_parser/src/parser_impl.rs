@@ -728,8 +728,24 @@ impl Parser {
 
         let mut if_false_ast = None;
         if self.current_token.kind == TokenKind::KW_ELSE {
+            let else_scope = self.ctx
+                .borrow_mut()
+                .scope
+                .enter_new_scope(ScopeType::If);
+
             self.skip_to_next_token(); // skip 'else'
-            if_false_ast = Some(self.parse_single_stmt()?);
+
+            let else_block = self.parse_single_stmt()?;
+            if_false_ast = Some(
+                AST::new(
+                    ASTKind::StmtAST(Stmt::Scoping(ScopingStmt { scope_id: else_scope })),
+                    ASTOperation::AST_ELSE,
+                    Some(else_block),
+                    None,
+                    LitTypeVariant::None
+                )
+            );          
+            self.ctx.borrow_mut().scope.exit_scope();
         }
         Ok(AST::with_mid(
             ASTKind::StmtAST(Stmt::If(IfStmt { scope_id: if_scope })),
