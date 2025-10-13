@@ -34,7 +34,8 @@ pub struct LirFunction {
     pub signature: LirFunctionSignature,
     pub frame_info: FunctionFrame,
     pub blocks: HashMap<BlockId, LirBasicBlock>,
-    pub entry_block: BlockId
+    pub entry_block: BlockId,
+    pub exit_block: BlockId
 }
 
 impl LirFunction {
@@ -121,7 +122,8 @@ mod tests {
     #[test]
     fn test_vreg_generation() {
         let mut builder = IRBuilder::default();
-        let (_, func_entry) = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1
         builder.link_blocks(func_entry, loop_entry);
 

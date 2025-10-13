@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use kagc_ast::ASTOperation;
+use kagc_mir::block::BlockId;
 use kagc_mir::ir_operands::TempId;
 use kagc_mir::value::IRValueId;
 use kagc_mir::LabelId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
+use crate::loop_ctx::LoopContext;
 use crate::typedefs::*;
 
 /// Holds function-specific context during AST-to-IR conversion.
@@ -35,7 +37,11 @@ pub struct FnCtx {
     /// Maps variable names to their stack offsets.
     pub var_offsets: HashMap<String, StackOffset>,
 
-    value_id: usize
+    value_id: usize,
+
+    return_label: Option<BlockId>,
+
+    loop_stack: Vec<LoopContext>
 }
 
 impl FnCtx {
@@ -49,11 +55,37 @@ impl FnCtx {
             next_label,
             force_label_use: 0,
             var_offsets: HashMap::new(),
-            value_id: 0
+            value_id: 0,
+            return_label: None,
+            loop_stack: vec![]
         }
     }
 
-    pub fn next_value_id(&mut self) -> IRValueId {
+    pub fn set_return_label(&mut self, return_label: BlockId) {
+        self.return_label = Some(return_label);
+    }
+
+    pub fn get_return_label(&self) -> Option<BlockId> {
+        self.return_label
+    }
+
+    pub fn enter_loop(&mut self, loop_ctx: LoopContext) {
+        self.loop_stack.push(loop_ctx);
+    }
+
+    pub fn exit_loop(&mut self) -> Option<LoopContext> {
+        self.loop_stack.pop()
+    }
+
+    pub fn current_loop(&self) -> Option<&LoopContext> {
+        self.loop_stack.last()
+    }
+
+    pub fn current_loop_unchecked(&self) -> &LoopContext {
+        self.loop_stack.last().unwrap()
+    }
+
+    pub fn next_value_id2(&mut self) -> IRValueId {
         let id = IRValueId(self.value_id);
         self.value_id += 1;
         id

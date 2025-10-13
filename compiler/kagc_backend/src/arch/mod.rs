@@ -91,16 +91,25 @@ pub mod cg {
 
             // function's body
             for bid in block_ids {
+                if bid == lir_func.exit_block {
+                    continue;
+                }
                 let block = &lir_func.blocks[&bid];
                 self.emit_block(block);
             }
+            self.emit_label(lir_func.exit_block.0);
             // return from the function
             self.emit_function_postamble(lir_func, spill_stack_size);
         }
 
+        /// Align the given address into an address divisible by 16.
+        fn align_to_16(value: usize) -> usize {
+            (value + 16 - 1) & !15
+        }
+
         fn emit_function_preamble(&self, lir_func: &LirFunction, spill_ss: usize) {
             let mut output = format!(".global _{name}\n_{name}:", name = lir_func.name);
-            let stack_size = lir_func.frame_info.size + spill_ss;
+            let stack_size = Self::align_to_16(lir_func.frame_info.size + spill_ss);
             if stack_size > 0 {
                 output.push_str(&format!("\nsub sp, sp, #{off}\n", off = stack_size));
                 output.push_str(&format!("stp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
@@ -120,9 +129,6 @@ pub mod cg {
         }
 
         fn emit_block(&self, block: &LirBasicBlock) {
-            if block.instructions.is_empty() {
-                return;
-            }
             if let Some(entry_block) = self.function_entry_block {
                 if entry_block != block.id {
                     self.emit_label(block.id.0);
@@ -146,14 +152,14 @@ pub mod cg {
 
             match block.terminator {
                 LirTerminator::Jump(block_id) => println!("b _L{}", block_id.0),
-                LirTerminator::Return(vreg) => {
-                    if let Some(ret_val_vreg) = &vreg {
-                        let src_loc = self.current_allocations().get(ret_val_vreg).unwrap();
+                LirTerminator::Return { value, target } => {
+                    if let Some(ret_val_vreg) = value {
+                        let src_loc = self.current_allocations().get(&ret_val_vreg).unwrap();
                         match src_loc {
-                            Location::Reg(r1) => println!("mov x0, {s}", s = r1.name),
+                            Location::Reg(r1) => println!("mov x0, {s}\nb _L{d}", s = r1.name, d = target.0),
                             Location::StackSlot(ss) => {
                                 self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*ss));
-                                println!("mov x0, {s}", s = self.scratch_register0.name);
+                                println!("mov x0, {s}\nb _L{d}", s = self.scratch_register0.name, d = target.0);
                             }
                         }
                     }

@@ -46,7 +46,8 @@ impl MirToLirTransformer {
             signature: self.transform_function_signature(&ir_func.signature), 
             frame_info: ir_func.frame_info,
             blocks: lir_blocks, 
-            entry_block: ir_func.entry_block 
+            entry_block: ir_func.entry_block,
+            exit_block: ir_func.exit_block
         }
     }
 
@@ -78,13 +79,19 @@ impl MirToLirTransformer {
 
         let terminator = match block.terminator {
             Terminator::Jump(block_id) => LirTerminator::Jump(block_id),
-            Terminator::Return(ret) => {
-                if let Some(ret_value) = ret {
+            Terminator::Return { value, target } => {
+                if let Some(ret_value) = value {
                     let ret_reg = self.vreg_mapper.get_or_create(ret_value);
-                    LirTerminator::Return(Some(ret_reg))
+                    LirTerminator::Return {
+                        target,
+                        value: Some(ret_reg)
+                    }
                 }
                 else {
-                    LirTerminator::Return(None)
+                    LirTerminator::Return {
+                        target,
+                        value: None
+                    }
                 }
             },
             Terminator::CondJump { cond, then_block, else_block } => {

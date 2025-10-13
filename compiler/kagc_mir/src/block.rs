@@ -7,7 +7,7 @@ use crate::instruction::*;
 
 use crate::value::IRValueId;
 
-#[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct BlockId(pub usize);
 
 #[derive(Debug, Clone, Default)]
@@ -74,12 +74,15 @@ pub enum Terminator {
         else_block: BlockId
     },
 
-    Return(Option<IRValueId>)
+    Return {
+        value: Option<IRValueId>,
+        target: BlockId
+    }
 }
 
 impl Default for Terminator {
     fn default() -> Self {
-        Terminator::Return(None)
+        Terminator::Jump(BlockId(0))
     }
 }
 

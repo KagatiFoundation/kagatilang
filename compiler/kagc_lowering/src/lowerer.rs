@@ -33,6 +33,7 @@ use kagc_symbol::function::FunctionInfo;
 use kagc_types::builtins::obj::KObjType;
 
 use crate::fn_ctx::FnCtx;
+use crate::loop_ctx::LoopContext;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
 
@@ -578,36 +579,37 @@ impl IRLowerer {
             .collect_params(func_scope)
             .iter()
             .map(|&sym| {
-                FunctionParam {
-                    id: fn_ctx.next_value_id(),
-                    ty: IRType::from(sym.lit_type.clone())
-                }
+                self.ir_builder.create_function_parameter(IRType::from(sym.lit_type.clone()))
             }).collect::<Vec<FunctionParam>>();
 
-        let (_, fn_entry_block_id) = self.ir_builder.create_function(
+        let func_anchor = self.ir_builder.create_function(
             func_name.clone(),
             func_ir_params,
             IRType::from(ast.result_type.clone())
         );
 
-        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
-        let mut last_block_id = fn_entry_block_id;
+        let return_label = func_anchor.exit_block; // single point of return
+        fn_ctx.set_return_label(return_label);
 
-        for body_ast in linearized_body {
-            let body_block_id = self.lower_ir_node(body_ast, &mut fn_ctx)?;
+        let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        let current_block_id = self.lower_linear_sequence(&mut linearized_body, &mut fn_ctx)?;
 
-            if body_block_id != last_block_id {
-                let new_loop_body_block = self.ir_builder.create_block("function-body-block");
-                last_block_id = new_loop_body_block;
-                self.ir_builder.link_blocks(body_block_id, new_loop_body_block);
-            }
+        if !self.ir_builder.has_terminator(current_block_id) {
+            // return from the function
+            self.ir_builder.set_terminator(
+                current_block_id, 
+                Terminator::Return { 
+                    value: None, 
+                    target: fn_ctx.get_return_label().expect("No return label! Aborting...") 
+                }
+            );
         }
 
         self.current_function = None;
         // exit function's scope
         self.ctx.borrow_mut().scope.exit_scope();
         self.label_id = fn_ctx.next_label;
-        Ok(last_block_id)
+        Ok(current_block_id)
     }
 
     fn gen_store_param_ir(
@@ -885,7 +887,7 @@ impl IRLowerer {
             func_call_args.push(arg_value_id);
         }
 
-        let call_result_value = fn_ctx.next_value_id();
+        let call_result_value = self.ir_builder.occupy_value_id();
         self.ir_builder.inst(
             IRInstruction::Call { 
                 func: func_call_expr.symbol_name.clone(), 
@@ -995,15 +997,31 @@ impl IRLowerer {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_id_unchecked();
+                let func_exit_block = fn_ctx
+                    .get_return_label()
+                    .expect("Function's return block is not set! Aborting...");
+
                 if !curr_fn.return_type.is_void() {
                     let return_value_id = self.lower_expression_ast(
                         ret_stmt.left.as_mut().unwrap(), 
                         fn_ctx
                     )?;
-                    self.ir_builder.set_terminator(curr_block, Terminator::Return(Some(return_value_id)));
+                    self.ir_builder.set_terminator(
+                        curr_block, 
+                        Terminator::Return {
+                            target: func_exit_block,
+                            value: Some(return_value_id)
+                        }
+                    );
                 }
                 else {
-                    self.ir_builder.set_terminator(curr_block, Terminator::Return(None));
+                    self.ir_builder.set_terminator(
+                        curr_block, 
+                        Terminator::Return {
+                            target: func_exit_block,
+                            value: None
+                        }
+                    );
                 }
                 return Ok(curr_block);
             }
@@ -1035,25 +1053,23 @@ impl IRLowerer {
     fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
         let loop_body_id = self.ir_builder.create_block("loop_body");
+        let loop_tail_id = self.ir_builder.create_label();
+        fn_ctx.enter_loop(LoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
 
         self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_body_id));
         self.ir_builder.link_blocks(prev_block_id, loop_body_id);
 
-        let linearized_body = ast.left.as_mut().unwrap().linearize_mut();
-        let mut last_block_id = loop_body_id;
+        let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        let current_block_id = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
 
-        for body_ast in linearized_body {
-            let body_block_id = self.lower_ir_node(body_ast, fn_ctx)?;
-
-            if body_block_id != last_block_id {
-                let new_loop_body_block = self.ir_builder.create_block("loop-body-block");
-                last_block_id = new_loop_body_block;
-                self.ir_builder.link_blocks(body_block_id, new_loop_body_block);
-            }
+        if !self.ir_builder.has_terminator(current_block_id) {
+            // only if the current block is still "open"
+            self.ir_builder.set_terminator(current_block_id, Terminator::Jump(loop_body_id));
+            self.ir_builder.link_blocks(current_block_id, loop_body_id);
         }
 
-        self.ir_builder.set_terminator(last_block_id, Terminator::Jump(loop_body_id));
-        Ok(last_block_id)
+        fn_ctx.exit_loop();
+        Ok(current_block_id)
     }
 
     fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
@@ -1064,9 +1080,9 @@ impl IRLowerer {
 
         // Evaluate the condition and store the resilt in a register.
         // Every if-else must have the `left` branch set in the main if-else AST tree.
-        let if_entry_block = self.ir_builder.create_block("if-header");
-        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(if_entry_block));
-        self.ir_builder.link_blocks(prev_block_id, if_entry_block);
+        let conditional_block = self.ir_builder.create_block("if-header");
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(conditional_block));
+        self.ir_builder.link_blocks(prev_block_id, conditional_block);
         
         // lower the condition expression in the entry block
         let if_stmt_cond_value = self.lower_expression_ast(ast.left.as_mut().unwrap(), fn_ctx)?;
@@ -1075,7 +1091,7 @@ impl IRLowerer {
         let then_block = self.ir_builder.create_block("then");
         // else-branch 
         let else_block = self.ir_builder.create_block("else");
-        self.ir_builder.link_blocks_multiple(if_entry_block, vec![then_block, else_block]);
+        self.ir_builder.link_blocks_multiple(conditional_block, vec![then_block, else_block]);
 
         // join branch
         let merge_block = self.ir_builder.create_block("merge");
@@ -1083,43 +1099,52 @@ impl IRLowerer {
         self.ir_builder.link_blocks(else_block, merge_block);
 
         self.ir_builder.set_terminator(
-            if_entry_block, 
+            conditional_block, 
             Terminator::CondJump { 
                 cond: if_stmt_cond_value, 
                 then_block, 
                 else_block
             }
         );
-        {
-            // lower the if-block
-            self.ir_builder.switch_to_block(then_block);
-            let mut last_block_id = then_block;
 
-            let linearized_body = ast.mid.as_mut().unwrap().linearize_mut();
-            for body_ast  in linearized_body {
-                let body_block_id = self.lower_ir_node(body_ast, fn_ctx)?;
-                if body_block_id != last_block_id {
-                    let new_body_block = self.ir_builder.create_block("if-block");
-                    last_block_id = new_body_block;
-                    self.ir_builder.link_blocks(body_block_id, new_body_block);
-                }
+        // lower the if-block
+        self.ir_builder.switch_to_block(then_block);
+        if let Some(mid_tree) = &mut ast.mid {
+            let current_block_id = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
+            if !self.ir_builder.has_terminator(current_block_id) {
+                self.ir_builder.set_terminator(current_block_id, Terminator::Jump(merge_block));
+                self.ir_builder.link_blocks(current_block_id, merge_block);
             }
-            // jump to merge block after
-            self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
-            self.ctx.borrow_mut().scope.exit_scope();
         }
+        // exit if-scope
+        self.ctx.borrow_mut().scope.exit_scope();
         
         if let Some(right_tree) = &mut ast.right {
             // dump 'else' block's code
             self.ir_builder.switch_to_block(else_block);
-            let _ = self.lower_ir_node(right_tree, fn_ctx);
-            // jump to merge block after
-            self.ir_builder.set_terminator(else_block, Terminator::Jump(merge_block));
+            // else-block
+            let current_block_id = self.lower_linear_sequence(&mut right_tree.linearize_mut(), fn_ctx)?;
+            if !self.ir_builder.has_terminator(current_block_id) {
+                self.ir_builder.set_terminator(current_block_id, Terminator::Jump(merge_block));
+                self.ir_builder.link_blocks(current_block_id, merge_block);
+            }
         }
 
         // switch to the merge block afte emitting if-branch's code
         self.ir_builder.switch_to_block(merge_block);
         Ok(merge_block)
+    }
+
+    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AST], fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+        let mut current = self.ir_builder.current_block_id_unchecked();
+        let stmts_len = stmts.len();
+        for (idx, stmt) in stmts.iter_mut().enumerate() {
+            let lowered = self.lower_ir_node(stmt, fn_ctx)?;
+            if idx < stmts_len - 1 {
+                current = self.ir_builder.ensure_continuation_block(lowered);
+            }
+        }
+        Ok(current)
     }
 
     fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
@@ -1406,7 +1431,7 @@ impl IRLowerer {
         let obj = obj.unwrap();
         let ob_size = self.ctx.borrow().const_pool.size(idx).unwrap();
 
-        let mem_alloc_value_id = fn_ctx.next_value_id();
+        let mem_alloc_value_id = self.ir_builder.occupy_value_id();
         self.ir_builder.inst(
             IRInstruction::MemAlloc {
                 ob_ty: obj.ob_type.clone(),

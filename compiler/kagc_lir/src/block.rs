@@ -23,7 +23,10 @@ pub struct LirBasicBlock {
 pub enum LirTerminator {
     Jump(BlockId),
 
-    Return(Option<VReg>),
+    Return {
+        target: BlockId,
+        value: Option<VReg>
+    },
 
     CJump {
         cond: IRCondition,

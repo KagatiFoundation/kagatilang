@@ -37,5 +37,23 @@ pub struct IRFunction {
     pub signature: FunctionSignature,
     pub blocks: IndexMap<BlockId, IRBasicBlock>,
     pub entry_block: BlockId,
+    pub exit_block: BlockId,
     pub frame_info: FunctionFrame
+}
+
+#[derive(Debug)]
+pub struct FunctionAnchor {
+    pub id: FunctionId,
+    pub entry_block: BlockId,
+    pub exit_block: BlockId
+}
+
+impl FunctionAnchor {
+    pub fn new(id: FunctionId, entry: BlockId, exit: BlockId) -> Self {
+        Self {
+            id,
+            entry_block: entry,
+            exit_block: exit
+        }
+    }
 }

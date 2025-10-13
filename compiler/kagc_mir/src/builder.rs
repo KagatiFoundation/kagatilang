@@ -21,9 +21,9 @@ pub struct IRBuilder {
     current_function: Option<FunctionId>,
     current_block: Option<BlockId>,
 
-    pub function_signatures: HashMap<FunctionId, FunctionSignature>,
-    pub function_blocks: IndexMap<FunctionId, IndexMap<BlockId, IRBasicBlock>>,
-    entry_blocks: HashMap<FunctionId, BlockId>,
+    function_signatures: HashMap<FunctionId, FunctionSignature>,
+    function_blocks: IndexMap<FunctionId, IndexMap<BlockId, IRBasicBlock>>,
+    function_anchors: IndexMap<FunctionId, FunctionAnchor>,
 
     block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
     block_terminators: HashMap<BlockId, Terminator>,
@@ -40,7 +40,7 @@ pub struct IRBuilder {
 }
 
 impl IRBuilder {
-    pub fn create_function(&mut self, name: String, params: Vec<FunctionParam>, return_type: IRType) -> (FunctionId, BlockId) {
+    pub fn create_function(&mut self, name: String, params: Vec<FunctionParam>, return_type: IRType) -> FunctionAnchor {
         let id = self.next_function_id();
         let func_signature = FunctionSignature { 
             params, 
@@ -50,9 +50,15 @@ impl IRBuilder {
         self.function_signatures.insert(id, func_signature); 
         self.function_blocks.insert(id, IndexMap::new()); 
         self.current_function = Some(id); 
-        let entry_block = self.create_block("function"); 
-        self.entry_blocks.insert(id, entry_block); 
-        (id, entry_block)
+
+        // function's entry block
+        let entry_block = self.create_block("function-entry"); 
+        // function's exit block
+        let exit_block = self.create_block("function-exit");
+        self.function_anchors.insert(id, FunctionAnchor::new(id, entry_block, exit_block));
+        
+        self.switch_to_block(entry_block);
+        FunctionAnchor::new(id, entry_block, exit_block)
     }
 
     pub fn create_block(&mut self, name: &'static str) -> BlockId {
@@ -84,6 +90,41 @@ impl IRBuilder {
         self.block_terminators.insert(bid, term);
     }
 
+    pub fn has_terminator(&self, bid: BlockId) -> bool {
+        self.block_terminators.contains_key(&bid)
+    }
+
+    /// Ensures that control flow can continue from the given block.
+    ///
+    /// This function checks whether the provided `continuation` block
+    /// already has a terminator instruction (e.g., `Jump`, `Return`, etc.).
+    ///
+    /// - If the block **does not** have a terminator, it means control flow
+    ///   naturally continues from this block, so we can keep emitting
+    ///   instructions into it.
+    ///
+    /// - If the block **does** have a terminator, control flow for that block
+    ///   has already ended. In that case, a new block is created and linked
+    ///   from the terminated one to represent the next valid insertion point.
+    ///
+    /// This is useful in statement lowering (especially in loops or conditionals)
+    /// where some statements may end the current block (like `return` or `break`)
+    /// while others don't. It guarantees that lowering always has a valid,
+    /// “active” block to continue emitting into.
+    pub fn ensure_continuation_block(&mut self, continuation: BlockId) -> BlockId {
+        if !self.has_terminator(continuation) {
+            // The block is still open — safe to keep emitting instructions.
+            continuation
+        } 
+        else {
+            // The block is already terminated — create a new block so that
+            // subsequent lowering has a valid place to insert new instructions.
+            let new_block = self.create_block("continuation block");
+            self.link_blocks(continuation, new_block);
+            new_block
+        }
+    }
+
     pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
         if !self.block_instructions.contains_key(&from) || !self.block_instructions.contains_key(&to) {
             panic!("link_blocks: Cannot link non-existing blocks");
@@ -112,6 +153,21 @@ impl IRBuilder {
             .push(instruction);
 
         value_id
+    }
+
+    pub fn occupy_value_id(&mut self) -> IRValueId {
+        self.next_value_id()
+    }
+
+    pub fn create_label(&mut self) -> BlockId {
+        self.next_block_id()
+    }
+
+    pub fn create_function_parameter(&mut self, ty: IRType) -> FunctionParam {
+        FunctionParam { 
+            id: self.next_value_id(), 
+            ty
+        }
     }
 
     pub fn create_add(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
@@ -161,8 +217,24 @@ impl IRBuilder {
         let mut func_stack_size = 0;
 
         for (func_id, func_blocks) in &mut self.function_blocks {
+            let func_anchor = self
+                .function_anchors
+                .get(func_id)
+                .expect("Function is not anchored! Aborting...");
+
             for (block_id, block_instrs) in self.block_instructions.iter() {
-                let block_terminator = self.block_terminators.get(block_id).unwrap_or(&Terminator::Return(None));
+                let block_terminator = self
+                    .block_terminators
+                    .get(block_id)
+                    .cloned()
+                    .unwrap_or({ 
+                        Terminator::Return { 
+                                value: None, 
+                                target: func_anchor.exit_block
+                            }
+                        }
+                    );
+                    
                 if self.block_instructions.contains_key(block_id) {
                     let ir_block = IRBasicBlock { 
                         id: *block_id, 
@@ -180,9 +252,9 @@ impl IRBuilder {
                 }
             }
 
-            if let (Some(signature), Some(entry_block)) = (
+            if let (Some(signature), Some(anchor)) = (
                 self.function_signatures.get(func_id),
-                self.entry_blocks.get(func_id)
+                self.function_anchors.get(func_id)
             ) {
                 func_stack_size += signature.params.len() * 8; // each param accounts for 8 bytes of space
                 let function = IRFunction {
@@ -190,7 +262,8 @@ impl IRBuilder {
                     id: *func_id,
                     name: self.function_names.get(func_id).unwrap().clone(),
                     blocks: func_blocks.clone(),
-                    entry_block: *entry_block,
+                    entry_block: anchor.entry_block,
+                    exit_block: anchor.exit_block,
                     frame_info: FunctionFrame { size: func_stack_size }
                 };
                 module.add_function(function);
@@ -287,7 +360,7 @@ mod tests {
     #[test]
     fn test_builder() {
         let mut b = IRBuilder::default();
-        let (fid, entry_bid) = b.create_function("add".to_owned(), vec![], IRType::I64);
+        let fn_ctx = b.create_function("add".to_owned(), vec![], IRType::I64);
         b.inst(
             IRInstruction::Add {
                 result: IRValueId(0),
@@ -302,21 +375,33 @@ mod tests {
             }
         );
 
-        b.set_terminator(entry_bid, Terminator::Return(Some(IRValueId(3))));
+        b.set_terminator(
+            fn_ctx.entry_block, 
+            Terminator::Return {
+                value: Some(IRValueId(3)),
+                target: fn_ctx.exit_block
+            }
+        );
 
         assert_eq!(b.block_terminators.len(), 1);
 
         let module = b.build();
-        assert!(module.functions.contains_key(&fid));
+        assert!(module.functions.contains_key(&fn_ctx.id));
 
-        let func = module.functions.get(&fid).unwrap();
+        let func = module.functions.get(&fn_ctx.id).unwrap();
         assert_eq!(func.blocks.len(), 1);
         assert_eq!(func.entry_block, BlockId(0));
         
-        assert!(func.blocks.contains_key(&entry_bid));
+        assert!(func.blocks.contains_key(&fn_ctx.entry_block));
 
-        let e_block = func.blocks.get(&entry_bid).unwrap();
-        assert_eq!(e_block.terminator, Terminator::Return(Some(IRValueId(3))));
+        let e_block = func.blocks.get(&fn_ctx.entry_block).unwrap();
+        assert_eq!(
+            e_block.terminator, 
+            Terminator::Return {
+                value: Some(IRValueId(3)),
+                target: fn_ctx.exit_block
+            }
+        );
 
         assert_eq!(e_block.instructions.len(), 2);
     }
@@ -324,7 +409,8 @@ mod tests {
     #[test]
     fn test_blocks_linking() {
         let mut builder = IRBuilder::default();
-        let (_, f_bid) = builder.create_function("test_fn".to_owned(), vec![], IRType::Void);
+        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::Void);
+        let f_bid = fn_ctx.entry_block;
         let _ = builder.create_move(IRValue::Constant(12345)); // variable, maybe?
 
         let loop_id = builder.create_block("loop-test-block");

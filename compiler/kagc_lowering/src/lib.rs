@@ -25,5 +25,6 @@ SOFTWARE.
 mod lowerer;
 mod fn_ctx;
 mod typedefs;
+mod loop_ctx;
 
 pub use lowerer::IRLowerer;

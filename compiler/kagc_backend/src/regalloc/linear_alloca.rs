@@ -101,7 +101,8 @@ mod tests {
     #[test]
     fn test_reg_allocation_for_simple_function() {
         let mut builder = IRBuilder::default();
-        let (_, func_entry) = builder.create_function("test_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let func_entry = fn_ctx.entry_block;
         let op1 = builder.create_move(IRValue::Constant(2)); // value id 0
         let op2 = builder.create_move(IRValue::Constant(2)); // value id 1
         _ = builder.create_add(IRValue::Var(op1), IRValue::Var(op2)); // value id 2
