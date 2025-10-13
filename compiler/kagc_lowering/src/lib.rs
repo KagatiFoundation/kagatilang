@@ -22,9 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-mod lowerer;
+mod ast_to_mir;
 mod fn_ctx;
 mod typedefs;
 mod loop_ctx;
 
-pub use lowerer::IRLowerer;
+pub use ast_to_mir::AstToMirTransformer;
