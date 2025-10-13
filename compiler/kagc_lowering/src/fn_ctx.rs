@@ -12,7 +12,7 @@ use crate::typedefs::*;
 
 /// Holds function-specific context during AST-to-IR conversion.
 #[derive(Debug)]
-pub struct FnCtx {
+pub struct FunctionContext {
     /// Next available stack slot for local variables.
     pub stack_offset: StackOffset,
 
@@ -44,7 +44,7 @@ pub struct FnCtx {
     loop_stack: Vec<LoopContext>
 }
 
-impl FnCtx {
+impl FunctionContext {
     pub fn new(next_label: LabelId) -> Self {
         Self {
             stack_offset: Default::default(), 

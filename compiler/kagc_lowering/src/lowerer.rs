@@ -32,7 +32,7 @@ use kagc_errors::diagnostic::Severity;
 use kagc_symbol::function::FunctionInfo;
 use kagc_types::builtins::obj::KObjType;
 
-use crate::fn_ctx::FnCtx;
+use crate::fn_ctx::FunctionContext;
 use crate::loop_ctx::LoopContext;
 use crate::typedefs::CGExprEvalRes;
 use crate::typedefs::CGRes;
@@ -74,7 +74,7 @@ impl IRLowerer {
         for node in nodes {
             let node_ir = self.gen_ir_from_node(
                 node, 
-                &mut FnCtx::new(0), 
+                &mut FunctionContext::new(0), 
                 ASTOperation::AST_NONE
             );
             if let Ok(irs) = node_ir {
@@ -89,12 +89,12 @@ impl IRLowerer {
 
     pub fn lower_irs(&mut self, nodes: &mut [AST]) -> StmtLoweringResult {
         for node in nodes {
-            self.lower_ir_node(node, &mut FnCtx::new(0))?;
+            self.lower_ir_node(node, &mut FunctionContext::new(0))?;
         }
         Ok(self.ir_builder.current_block_id_unchecked())
     }
 
-    pub fn lower_ir_node(&mut self, node: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    pub fn lower_ir_node(&mut self, node: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if node.operation == ASTOperation::AST_GLUE {
             if let Some(left_tree) = node.left.as_mut() {
                 return self.lower_ir_node(left_tree, fn_ctx);
@@ -133,7 +133,7 @@ impl IRLowerer {
     fn gen_ir_from_node(
         &mut self, 
         node: &mut AST, 
-        fn_ctx: &mut FnCtx, 
+        fn_ctx: &mut FunctionContext, 
         parent_ast_kind: ASTOperation
     ) -> CGRes {
         if node.operation == ASTOperation::AST_GLUE {
@@ -183,7 +183,7 @@ impl IRLowerer {
         }
     }
 
-    fn gen_ir_fn_call(&mut self, node: &mut AST, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGRes {
+    fn gen_ir_fn_call(&mut self, node: &mut AST, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGRes {
         if let ASTKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
             let mut result: Vec<IR> = vec![];
             self.gen_ir_fn_call_expr(func_call, fn_ctx, dest).iter().for_each(|instrs| {
@@ -197,7 +197,7 @@ impl IRLowerer {
     }
 
     /// Generate IR nodes from an AST expression node.
-    fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn gen_ir_expr(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGExprEvalRes {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {ast:#?}");
         }
@@ -210,7 +210,7 @@ impl IRLowerer {
         self.__gen_expr(expr, fn_ctx, dest)
     }
 
-    fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn __gen_expr(&mut self, expr: &mut Expr, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGExprEvalRes {
         match expr {
             Expr::LitVal(litexpr) => self.gen_lit_ir_expr(litexpr, fn_ctx, dest),
             Expr::Binary(binexpr) => self.gen_bin_ir_expr(binexpr, fn_ctx, dest),
@@ -223,7 +223,7 @@ impl IRLowerer {
         }
     }
 
-    fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn lower_rec_creation_to_ir(&mut self, rec_creation: &mut RecordCreationExpr, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGExprEvalRes {
         let mut child_offsets = vec![];
         let mut output = vec![];
 
@@ -321,7 +321,7 @@ impl IRLowerer {
         Ok(output)
     }
 
-    fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn lower_null_const_to_ir(&mut self, fn_ctx: &mut FunctionContext) -> CGExprEvalRes {
         Ok(vec![
             IRInstr::mov_into_temp(
                 fn_ctx.next_temp(), 
@@ -331,7 +331,7 @@ impl IRLowerer {
         ])
     }
 
-    fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn gen_lit_ir_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGExprEvalRes {
         if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
             return self.gen_ir_load_str(*pool_idx, fn_ctx);
         }
@@ -355,15 +355,15 @@ impl IRLowerer {
         ])
     }
 
-    fn gen_ir_load_str(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_load_str(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> CGExprEvalRes {
         self.gen_ir_load_global_var(idx, fn_ctx)
     }
 
-    fn lower_load_string(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_load_string(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         self.lower_load_heap_allocated_value(idx, fn_ctx)
     }
 
-    fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn gen_bin_ir_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGExprEvalRes {
         let mut irs: Vec<IRInstr> = vec![];
 
         let eval_left_expr: Vec<IRInstr> = self.__gen_expr(&mut bin_expr.left, fn_ctx, None)?;
@@ -376,7 +376,7 @@ impl IRLowerer {
             .last()
             .unwrap_or_else(|| panic!("No left destination found! Abort!"));
 
-        fn dest_extd_temp(fn_ctx: &mut FnCtx, result_type: LitTypeVariant) -> IROperand {
+        fn dest_extd_temp(fn_ctx: &mut FunctionContext, result_type: LitTypeVariant) -> IROperand {
             let reg_sz = result_type.to_reg_size();
             IROperand::Temp { id: fn_ctx.next_temp(), size: reg_sz }
         }
@@ -494,7 +494,7 @@ impl IRLowerer {
         let mut fn_body: Vec<IR> = vec![];
 
         // Setting up function's context
-        let mut fn_ctx: FnCtx = FnCtx::new(self.label_id);
+        let mut fn_ctx: FunctionContext = FunctionContext::new(self.label_id);
 
         // Collect function parameters and map each of them to a 
         // parameter register based on the Aarch64 ABI
@@ -571,7 +571,7 @@ impl IRLowerer {
             self.current_function = Some(finfo.clone());
         }
 
-        let mut fn_ctx: FnCtx = FnCtx::new(self.label_id);
+        let mut fn_ctx: FunctionContext = FunctionContext::new(self.label_id);
 
         let func_ir_params = self.ctx
             .borrow()
@@ -616,7 +616,7 @@ impl IRLowerer {
         &self, 
         sym: &Symbol, 
         arg_pos: usize, 
-        fn_ctx: &mut FnCtx
+        fn_ctx: &mut FunctionContext
     ) -> CGRes {
         let mut output = vec![];
         let reg_sz = sym.lit_type.to_reg_size();
@@ -657,7 +657,7 @@ impl IRLowerer {
         Ok(output)
     }
 
-    fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_var_decl(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> CGRes {
         let var_decl = ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
             if ast.left.is_none() {
@@ -726,7 +726,7 @@ impl IRLowerer {
         panic!()
     }
 
-    fn lower_variable_declaration(&mut self, var_ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    fn lower_variable_declaration(&mut self, var_ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
             if var_ast.left.is_none() {
@@ -760,7 +760,7 @@ impl IRLowerer {
         panic!("Required VarDeclStmt--but found {var_ast:#?}! Aborting...");
     }
 
-    fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx, dest: Option<IROperand>) -> CGExprEvalRes {
+    fn gen_ident_ir_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FunctionContext, dest: Option<IROperand>) -> CGExprEvalRes {
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
         let sym_off = *fn_ctx
             .var_offsets
@@ -786,7 +786,7 @@ impl IRLowerer {
     fn gen_ir_fn_call_expr(
         &mut self, 
         func_call_expr: &mut FuncCallExpr, 
-        fn_ctx: &mut FnCtx, 
+        fn_ctx: &mut FunctionContext, 
         _dest: Option<IROperand>
     ) -> CGExprEvalRes {
         let mut func_call_instrs = vec![];
@@ -858,7 +858,7 @@ impl IRLowerer {
         Ok(func_call_instrs)
     }
 
-    fn lower_expression_ast(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_expression_ast(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {ast:#?}");
         }
@@ -869,7 +869,7 @@ impl IRLowerer {
         self.lower_expression(expr, fn_ctx)
     }
 
-    fn lower_expression(&mut self, expr: &mut Expr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_expression(&mut self, expr: &mut Expr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         match expr {
             Expr::LitVal(lit_expr) =>           self.lower_literal_value_expr(lit_expr, fn_ctx),
             Expr::Ident(ident_expr) =>           self.lower_identifier_expr(ident_expr, fn_ctx),
@@ -880,7 +880,7 @@ impl IRLowerer {
         }
     }
 
-    fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let mut func_call_args = vec![];
         for (_, arg_expr) in &mut func_call_expr.args {
             let arg_value_id = self.lower_expression(arg_expr, fn_ctx)?;
@@ -898,7 +898,7 @@ impl IRLowerer {
         Ok(call_result_value)
     }
 
-    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
             return self.lower_load_string(*pool_idx, fn_ctx);
         }
@@ -921,7 +921,7 @@ impl IRLowerer {
         }
     }
 
-    fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
         let sym_off = *fn_ctx
             .var_offsets
@@ -934,7 +934,7 @@ impl IRLowerer {
         Ok(load_value_id)
     }
 
-    fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         match bin_expr.operation {
@@ -952,7 +952,7 @@ impl IRLowerer {
         }
     }
 
-    fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FunctionContext) -> CGRes {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             let mut ret_instrs: Vec<IR> = vec![]; 
 
@@ -993,7 +993,7 @@ impl IRLowerer {
         panic!("Expected ReturnStmt but found {:?}", ret_stmt);
     }
 
-    fn lower_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    fn lower_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_id_unchecked();
@@ -1032,7 +1032,7 @@ impl IRLowerer {
         panic!("Expected ReturnStmt but found {ret_stmt:#?}");
     }
 
-    fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_loop(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> CGRes {
         let label_start: usize = fn_ctx.get_next_label();
         let label_end: usize = fn_ctx.get_next_label();
 
@@ -1050,7 +1050,7 @@ impl IRLowerer {
         Ok(loop_body)
     }
 
-    fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
         let loop_body_id = self.ir_builder.create_block("loop_body");
         let loop_tail_id = self.ir_builder.create_label();
@@ -1072,7 +1072,7 @@ impl IRLowerer {
         Ok(current_block_id)
     }
 
-    fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
             self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
         }
@@ -1135,7 +1135,7 @@ impl IRLowerer {
         Ok(merge_block)
     }
 
-    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AST], fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AST], fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let mut current = self.ir_builder.current_block_id_unchecked();
         let stmts_len = stmts.len();
         for (idx, stmt) in stmts.iter_mut().enumerate() {
@@ -1147,7 +1147,7 @@ impl IRLowerer {
         Ok(current)
     }
 
-    fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> StmtLoweringResult {
+    fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::Scoping(scope_stmt)) = &ast.kind {
             self.ctx.borrow_mut().scope.enter_scope(scope_stmt.scope_id);
         }
@@ -1176,7 +1176,7 @@ impl IRLowerer {
         Ok(last_block_id)
     }
 
-    fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FnCtx) -> CGRes {
+    fn gen_ir_if(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> CGRes {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
             self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
         }
@@ -1233,7 +1233,7 @@ impl IRLowerer {
     fn lower_rec_field_access_to_ir(
         &mut self, 
         access: &mut RecordFieldAccessExpr, 
-        fn_ctx: &mut FnCtx, 
+        fn_ctx: &mut FunctionContext, 
         dest: Option<IROperand>
     ) -> CGExprEvalRes {
         let reg_sz = access.result_type.to_reg_size();
@@ -1274,7 +1274,7 @@ impl IRLowerer {
     fn lower_record_field_access(
         &mut self,
         access: &mut RecordFieldAccessExpr,
-        fn_ctx: &mut FnCtx
+        fn_ctx: &mut FunctionContext
     ) -> ExprLoweringResult {
         let reg_sz = access.result_type.to_reg_size();
         assert_ne!(reg_sz, 0);
@@ -1289,7 +1289,7 @@ impl IRLowerer {
         Ok(self.ir_builder.create_load(IRAddress::BaseOffset(base_pointer_value, access.rel_stack_off)))
     }
 
-    fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> CGExprEvalRes {
+    fn gen_ir_load_global_var(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> CGExprEvalRes {
         let ctx_borrow = self.ctx.borrow();
         let obj = ctx_borrow.const_pool.get(idx);
         if obj.is_none() {
@@ -1421,7 +1421,7 @@ impl IRLowerer {
         Ok(output)
     }
 
-    fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FnCtx) -> ExprLoweringResult {
+    fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let ctx_borrow = self.ctx.borrow();
         let obj = ctx_borrow.const_pool.get(idx);
         if obj.is_none() {
