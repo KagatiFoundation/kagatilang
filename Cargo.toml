@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "compiler/kagc_lowering",
+    "compiler/kagc_ast_lowering",
     "compiler/kagc_backend",
     "compiler/kagc_ast",
     "compiler/kagc_symbol",

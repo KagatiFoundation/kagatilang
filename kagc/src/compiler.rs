@@ -13,9 +13,8 @@ use kagc_comp_unit::source::ParsingStage;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
 use kagc_lir::mir_lowerer::MirToLirTransformer;
-use kagc_mir::ir_instr::IR;
 use kagc_lexer::Tokenizer;
-use kagc_lowering::IRLowerer;
+use kagc_ast_lowering::AstToMirLowerer;
 use kagc_parser::builder::ParserBuilder;
 use kagc_parser::SharedParserCtx;
 use kagc_scope::ctx::builder::ScopeCtxBuilder;
@@ -67,50 +66,6 @@ impl Compiler {
         self.units.contains_key(path)
     }
 
-    pub fn compile_into_ir(&mut self, entry_file: &str) -> Result<Vec<IR>, std::io::Error> {
-        let unit = self.compile_unit_recursive(entry_file)?.unwrap();
-        self.units.insert(entry_file.to_string(), unit);
-        self.compiler_order.push(entry_file.to_string());
-
-        // Semantic analyzer
-        let mut analyzer = SemanticAnalyzer::new(self.ctx.clone());
-
-        // Symbol resolver
-        let mut resolv = Resolver::new(self.ctx.clone());
-
-        // AST to IR generator
-        let mut lowerer = IRLowerer::new(self.ctx.clone());
-
-        let mut final_irs = vec![];
-
-        for unit_file in &self.compiler_order {
-            if let Some(unit) = self.units.get_mut(unit_file) {
-                // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
-                // know which file is currently being processed
-                self.ctx.borrow_mut().files.current = unit.meta_id;
-                resolv.resolve(&mut unit.asts);
-                analyzer.start_analysis(&mut unit.asts);
-
-                if self.ctx.borrow().diagnostics.has_errors() {
-                    self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().files, unit);
-                    std::process::exit(1)
-                }
-
-                let irs = lowerer.gen_ir(&mut unit.asts);
-                {
-                    let ctx = self.ctx.borrow();
-                    if ctx.diagnostics.has_errors() {
-                        ctx.diagnostics.report_all(&ctx.files, self.units.get(entry_file).unwrap());
-                        std::process::exit(1);
-                    }
-                }
-
-                final_irs.extend(irs);
-            }
-        }
-        Ok(final_irs)
-    }
-
     pub fn compile(&mut self, entry_file: &str) -> Result<(), std::io::Error> {
         let unit = self.compile_unit_recursive(entry_file)?.unwrap();
         self.units.insert(entry_file.to_string(), unit);
@@ -123,7 +78,7 @@ impl Compiler {
         let mut resolv = Resolver::new(self.ctx.clone());
 
         // AST to IR generator
-        let mut lowerer = IRLowerer::new(self.ctx.clone());
+        let mut lowerer = AstToMirLowerer::new(self.ctx.clone());
 
         for unit_file in &self.compiler_order {
             if let Some(unit) = self.units.get_mut(unit_file) {
@@ -256,7 +211,7 @@ mod test_compiler {
 
     use kagc_ctx::builder::CompilerCtxBuilder;
     use kagc_lir::mir_lowerer::MirToLirTransformer;
-    use kagc_lowering::IRLowerer;
+    use kagc_ast_lowering::AstToMirLowerer;
     use kagc_mir::function::FunctionId;
     use kagc_scope::ctx::ScopeCtx;
     use kagc_sema::resolver::Resolver;
@@ -279,7 +234,7 @@ mod test_compiler {
             }"
         );
         let mut resolv = Resolver::new(ctx.clone());
-        let mut lowerer = IRLowerer::new(ctx.clone());
+        let mut lowerer = AstToMirLowerer::new(ctx.clone());
         let mut analyzer = SemanticAnalyzer::new(ctx.clone());
         let mut mir_to_lir = MirToLirTransformer::default();
         

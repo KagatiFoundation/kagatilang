@@ -1,5 +1,5 @@
 [package]
-name = "kagc_lowering"
+name = "kagc_ast_lowering"
 version = "0.1.0"
 edition = "2021"
 

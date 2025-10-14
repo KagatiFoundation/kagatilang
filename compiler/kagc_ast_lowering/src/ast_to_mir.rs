@@ -32,22 +32,19 @@ use crate::loop_ctx::LoopContext;
 // constants
 use kagc_mir::GCOBJECT_BUFFER_IDX;
 
+/// Expression lowering result
 type ExprLoweringResult = Result<IRValueId, Diagnostic>;
 
+/// Statement lowering result
 type StmtLoweringResult = Result<BlockId, Diagnostic>;
 
-/// `AstToMirTransformer` is responsible for transforming the Abstract 
+/// `AstToMirLowerer` is responsible for transforming the Abstract 
 /// Syntax Tree (AST) into the Mid-Level Intermediate Representation (MIR).
-pub struct AstToMirTransformer {
+pub struct AstToMirLowerer {
     /// A reference-counted, mutable reference to the global 
     /// compiler context. Holds shared state like symbol tables, 
     /// type info, and other data needed during IR lowering.
     ctx: Rc<RefCell<CompilerCtx>>,
-
-    /// Optional context of the function currently being lowered.
-    /// Contains function-specific state such as local variables,
-    /// basic blocks, and scope information.
-    current_function_ctx: Option<FunctionContext>,
 
     /// Public IR builder used to generate IR instructions, manage
     /// basic blocks, and keep track of the current insertion point.
@@ -60,13 +57,12 @@ pub struct AstToMirTransformer {
     current_function: Option<FunctionInfo>,
 }
 
-impl AstToMirTransformer {
+impl AstToMirLowerer {
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
             ctx,
             label_id: 0,
             current_function: None,
-            current_function_ctx: None,
             ir_builder: IRBuilder::default()
         }
     }
