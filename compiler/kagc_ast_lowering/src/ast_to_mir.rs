@@ -11,20 +11,17 @@ use kagc_symbol::*;
 use kagc_backend::reg::*;
 use kagc_types::*;
 
-use kagc_mir::block::Terminator;
-use kagc_mir::block::BlockId;
+use kagc_mir::value::{IRValue, IRValueId};
+use kagc_mir::block::{Terminator, BlockId};
+use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
 use kagc_mir::builder::IRBuilder;
 use kagc_mir::function::FunctionParam;
-use kagc_mir::instruction::IRAddress;
-use kagc_mir::instruction::IRCondition;
-use kagc_mir::instruction::IRInstruction;
 use kagc_mir::types::IRType;
-use kagc_mir::value::IRValue;
-use kagc_mir::value::IRValueId;
 use kagc_mir::LabelId;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_symbol::function::FunctionInfo;
+use kagc_utils::bug;
 
 use crate::fn_ctx::FunctionContext;
 use crate::loop_ctx::LoopContext;
@@ -119,7 +116,7 @@ impl AstToMirLowerer {
             self.ctx.borrow_mut().scope.enter_scope(func_decl.scope_id);
             (func_decl.func_id, func_decl.scope_id)
         } else {
-            panic!("Expected FuncStmt but found {:?}", ast);
+            bug!("expected FuncStmt but found {:?}", ast);
         };
 
         let func_name = self.get_func_name(func_id).expect("Function name error!");
@@ -172,7 +169,7 @@ impl AstToMirLowerer {
         let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
             if var_ast.left.is_none() {
-                panic!("Variable is not assigned a value!");
+                bug!("Variable is not assigned a value!");
             }
 
             fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
@@ -199,17 +196,17 @@ impl AstToMirLowerer {
             fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
-        panic!("Required VarDeclStmt--but found {var_ast:#?}! Aborting...");
+        bug!("Required VarDeclStmt--but found {var_ast:#?}! Aborting...");
     }
 
     fn lower_expression_ast(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if !ast.kind.is_expr() {
-            panic!("Needed an Expr--but found {ast:#?}");
+            bug!("Needed an Expr--but found {ast:#?}");
         }
         let expr = ast
             .kind
             .as_expr_mut()
-            .unwrap_or_else(|| panic!("Cannot unwrap an expression for some reason. Aborting..."));
+            .unwrap_or_else(|| bug!("cannot lower an expression"));
         self.lower_expression(expr, fn_ctx)
     }
 
@@ -270,7 +267,7 @@ impl AstToMirLowerer {
         let sym_off = *fn_ctx
             .var_offsets
             .get(&ident_expr.sym_name)
-            .unwrap_or_else(|| panic!("Undefined symbol bug. This mustn't be happening. Aborting..."));
+            .unwrap_or_else(|| bug!("undefined symbol"));
 
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
@@ -329,10 +326,10 @@ impl AstToMirLowerer {
                 return Ok(curr_block);
             }
             else {
-                panic!("Detected ReturnStmt outside a function! Aborting...");
+                bug!("'return' outside a function");
             }
         }
-        panic!("Expected ReturnStmt but found {ret_stmt:#?}");
+        bug!("expected ReturnStmt but found {ret_stmt:#?}");
     }
 
     fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
@@ -437,7 +434,7 @@ impl AstToMirLowerer {
             self.ctx.borrow_mut().scope.enter_scope(scope_stmt.scope_id);
         }
         else {
-            panic!("Provided AST tree is not of type 'AST_ELSE'! Aborting...");
+            bug!("provided AST tree is not of type 'AST_ELSE'");
         }
 
         // Current IRBasicBlock is for this 'else' block.
@@ -473,7 +470,7 @@ impl AstToMirLowerer {
         let rec_stack_off = *fn_ctx
             .var_offsets
             .get(&access.rec_alias)
-            .unwrap_or_else(|| panic!("what the fck bro"));
+            .unwrap_or_else(|| bug!("record's stack offset not found"));
 
         let base_pointer_value = self.ir_builder.create_load(IRAddress::StackOffset(rec_stack_off + 1));
         Ok(self.ir_builder.create_load(IRAddress::BaseOffset(base_pointer_value, access.rel_stack_off)))
@@ -483,7 +480,7 @@ impl AstToMirLowerer {
         let ctx_borrow = self.ctx.borrow();
         let obj = ctx_borrow.const_pool.get(idx);
         if obj.is_none() {
-            panic!("ConstEntry not found! Panic caused by the index: {idx}");
+            bug!("ConstEntry(index '{idx}') not found");
         }
 
         let obj = obj.unwrap();
