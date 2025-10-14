@@ -78,7 +78,7 @@ impl LinearScanAllocator {
 
 #[cfg(test)]
 mod tests {
-    use kagc_lir::mir_lowerer::MirToLirTransformer;
+    use kagc_mir_lowering::MirToLirLowerer;
 
     use kagc_mir::builder::IRBuilder;
     use kagc_mir::function::FunctionId;
@@ -120,13 +120,13 @@ mod tests {
             Terminator::Jump(BlockId(0))
         );
 
-        let mut mir_lowerer = MirToLirTransformer::default();
+        let mut mir_lowerer = MirToLirLowerer::default();
         
         let module = builder.build();
         assert!(module.functions.contains_key(&FunctionId(0)));
 
         let func = module.functions.get(&FunctionId(0)).unwrap();
-        let func = mir_lowerer.transform_function(func);
+        let func = mir_lowerer.lower_function(func);
 
         let mut alloca = LinearScanAllocator::new(standard_aarch64_register_file());
         let allocs = alloca.allocate(&mut func.compute_vreg_live_ranges()[..]);

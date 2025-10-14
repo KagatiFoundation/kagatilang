@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 kagc_types = { path = "../kagc_types" }
 kagc_mir = { path = "../kagc_mir" }
+kagc_mir_lowering = { path = "../kagc_mir_lowering" }
 kagc_const = { path = "../kagc_const" }
 kagc_ctx = { path = "../kagc_ctx" }
 kagc_symbol = { path = "../kagc_symbol" }

@@ -12,7 +12,7 @@ use kagc_comp_unit::ImportResolver;
 use kagc_comp_unit::source::ParsingStage;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
-use kagc_lir::mir_lowerer::MirToLirTransformer;
+use kagc_mir_lowering::MirToLirLowerer;
 use kagc_lexer::Tokenizer;
 use kagc_ast_lowering::AstToMirLowerer;
 use kagc_parser::builder::ParserBuilder;
@@ -95,10 +95,10 @@ impl Compiler {
 
                 lowerer.lower_irs(&mut unit.asts);
                 let mir_module = lowerer.ir_builder.build();
-                let mut mir_lowerer = MirToLirTransformer::default();
+                let mut mir_lowerer = MirToLirLowerer::default();
 
                 for func in mir_module.functions.values() {
-                    let func_lowered = mir_lowerer.transform_function(func);
+                    let func_lowered = mir_lowerer.lower_function(func);
                     let mut cg = CodeGenerator::default();
                     cg.gen_function(&func_lowered);
                 }
@@ -210,7 +210,7 @@ mod test_compiler {
     use std::{cell::RefCell, rc::Rc};
 
     use kagc_ctx::builder::CompilerCtxBuilder;
-    use kagc_lir::mir_lowerer::MirToLirTransformer;
+    use kagc_mir_lowering::MirToLirLowerer;
     use kagc_ast_lowering::AstToMirLowerer;
     use kagc_mir::function::FunctionId;
     use kagc_scope::ctx::ScopeCtx;
@@ -236,7 +236,7 @@ mod test_compiler {
         let mut resolv = Resolver::new(ctx.clone());
         let mut lowerer = AstToMirLowerer::new(ctx.clone());
         let mut analyzer = SemanticAnalyzer::new(ctx.clone());
-        let mut mir_to_lir = MirToLirTransformer::default();
+        let mut mir_to_lir = MirToLirLowerer::default();
         
         resolv.resolve(&mut asts);
         analyzer.start_analysis(&mut asts);
@@ -244,7 +244,7 @@ mod test_compiler {
         if lowerer.lower_irs(&mut asts).is_ok() {
             let irs = lowerer.ir_builder.build();
             let func1 = &irs.functions[&FunctionId(0)];
-            let func1 = mir_to_lir.transform_function(func1);
+            let func1 = mir_to_lir.lower_function(func1);
             println!("{func1:#?}");
         }
     }
