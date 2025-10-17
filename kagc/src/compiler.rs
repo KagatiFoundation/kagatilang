@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
+use kagc_backend::CodeGenerator;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
@@ -99,6 +100,9 @@ impl Compiler {
 
                 for func in mir_module.functions.values() {
                     let func_lowered = mir_lowerer.lower_function(func);
+                    // let mut cg = Aarch64CodeGenerator::default();
+                    // cg.gen_function(&func_lowered);
+
                     let mut cg = Aarch64CodeGenerator::default();
                     cg.gen_function(&func_lowered);
                 }

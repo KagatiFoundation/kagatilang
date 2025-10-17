@@ -12,12 +12,14 @@ use kagc_lir::block::LirBasicBlock;
 use kagc_lir::vreg::VReg;
 use kagc_mir::block::BlockId;
 use kagc_mir::instruction::IRCondition;
+use kagc_utils::bug;
 
 use crate::regalloc::register::aarch64::standard_aarch64_register_file;
 use crate::regalloc::LinearScanAllocator;
 use crate::regalloc::Location;
 use crate::regalloc::register::RegClass;
 use crate::regalloc::register::Register;
+use crate::CodeGenerator;
 
 pub struct Aarch64CodeGenerator {
     allocations: Option<HashMap<VReg, Location>>,
@@ -45,8 +47,8 @@ impl Default for Aarch64CodeGenerator {
     }
 }
 
-impl Aarch64CodeGenerator {
-    pub fn gen_function(&mut self, lir_func: &LirFunction) {
+impl CodeGenerator for Aarch64CodeGenerator {
+    fn gen_function(&mut self, lir_func: &LirFunction) {
         let mut allocator = LinearScanAllocator::new(standard_aarch64_register_file());
         let allocs = allocator.allocate(&mut lir_func.compute_vreg_live_ranges()[..]);
         let spill_stack_size = allocs.stack_usage();
@@ -67,40 +69,13 @@ impl Aarch64CodeGenerator {
                 continue;
             }
             let block = &lir_func.blocks[&bid];
-            self.emit_block(block);
+            self.gen_block(block);
         }
-        self.emit_label(lir_func.exit_block.0);
         // return from the function
         self.emit_function_postamble(lir_func, spill_stack_size);
     }
 
-    /// Align the given address into an address divisible by 16.
-    fn align_to_16(value: usize) -> usize {
-        (value + 16 - 1) & !15
-    }
-
-    fn emit_function_preamble(&self, lir_func: &LirFunction, spill_ss: usize) {
-        let mut output = format!(".global _{name}\n_{name}:", name = lir_func.name);
-        let stack_size = Self::align_to_16(lir_func.frame_info.size + spill_ss);
-        if stack_size > 0 {
-            output.push_str(&format!("\nsub sp, sp, #{off}\n", off = stack_size));
-            output.push_str(&format!("stp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
-            output.push_str(&format!("add x29, sp, #{off}", off = stack_size - 16));
-        }
-        println!("{output}");
-    }
-
-    fn emit_function_postamble(&self, lir_func: &LirFunction, spill_ss: usize) {
-        let mut output = "".to_owned();
-        let stack_size = lir_func.frame_info.size + spill_ss;
-        if stack_size > 0 {
-            output.push_str(&format!("add sp, sp, #{off}\n", off = stack_size));
-        }
-        output.push_str("ret");
-        println!("{output}");
-    }
-
-    fn emit_block(&self, block: &LirBasicBlock) {
+    fn gen_block(&mut self, block: &LirBasicBlock) {
         if let Some(entry_block) = self.function_entry_block {
             if entry_block != block.id {
                 self.emit_label(block.id.0);
@@ -149,6 +124,41 @@ impl Aarch64CodeGenerator {
                 println!("b _L{bid}", bid = else_block.0);
             },
         }
+
+    }
+
+    fn gen_instruction(&mut self, _: &LirInstruction) {
+        unimplemented!()
+    }
+}
+
+impl Aarch64CodeGenerator {
+    /// Align the given address into an address divisible by 16.
+    fn align_to_16(value: usize) -> usize {
+        (value + 16 - 1) & !15
+    }
+
+    fn emit_function_preamble(&self, lir_func: &LirFunction, spill_ss: usize) {
+        let mut output = format!(".global _{name}\n_{name}:", name = lir_func.name);
+        let stack_size = Self::align_to_16(lir_func.frame_info.size + spill_ss);
+        if stack_size > 0 {
+            output.push_str(&format!("\nsub sp, sp, #{off}\n", off = stack_size));
+            output.push_str(&format!("stp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
+            output.push_str(&format!("add x29, sp, #{off}", off = stack_size - 16));
+        }
+        println!("{output}");
+    }
+
+    fn emit_function_postamble(&self, lir_func: &LirFunction, spill_ss: usize) {
+        let mut output = "".to_owned();
+        output.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
+
+        let stack_size = Self::align_to_16(lir_func.frame_info.size + spill_ss);
+        if stack_size > 0 {
+            output.push_str(&format!("add sp, sp, #{off}\n", off = stack_size));
+        }
+        output.push_str("ret");
+        println!("{output}");
     }
 
     fn emit_cjump_inst(&self, lhs: &LirOperand, rhs: &LirOperand) {
@@ -411,7 +421,7 @@ impl Aarch64CodeGenerator {
             allocs
         }
         else {
-            panic!("No allocations found! Aborting...");
+            bug!("no allocations found");
         }
     }
 }

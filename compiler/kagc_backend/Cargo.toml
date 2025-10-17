@@ -9,5 +9,7 @@ kagc_mir = { path = "../kagc_mir" }
 kagc_mir_lowering = { path = "../kagc_mir_lowering" }
 kagc_const = { path = "../kagc_const" }
 kagc_ctx = { path = "../kagc_ctx" }
+kagc_scope = { path = "../kagc_scope" }
 kagc_symbol = { path = "../kagc_symbol" }
 kagc_lir = { path = "../kagc_lir" }
+kagc_utils = { path = "../kagc_utils" }
