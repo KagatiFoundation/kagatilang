@@ -11,7 +11,9 @@ use kagc_lir::function::LirFunction;
 use kagc_lir::block::LirBasicBlock;
 use kagc_lir::vreg::VReg;
 use kagc_mir::block::BlockId;
+use kagc_mir::block::INVALID_BLOCK_ID;
 use kagc_mir::instruction::IRCondition;
+use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
 use crate::regalloc::register::aarch64::standard_aarch64_register_file;
@@ -49,6 +51,11 @@ impl Default for Aarch64CodeGenerator {
 
 impl CodeGenerator for Aarch64CodeGenerator {
     fn gen_function(&mut self, lir_func: &LirFunction) {
+        if lir_func.signature.class == StorageClass::EXTERN {
+            self.emit_raw_code(&format!(".extern _{fn_name}", fn_name = lir_func.name));
+            return;
+        }
+
         let mut allocator = LinearScanAllocator::new(standard_aarch64_register_file());
         let allocs = allocator.allocate(&mut lir_func.compute_vreg_live_ranges()[..]);
         let spill_stack_size = allocs.stack_usage();
@@ -65,7 +72,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
 
         // function's body
         for bid in block_ids {
-            if bid == lir_func.exit_block {
+            if bid == lir_func.exit_block || bid == INVALID_BLOCK_ID {
                 continue;
             }
             let block = &lir_func.blocks[&bid];
@@ -92,7 +99,6 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 LirInstruction::Store { src, dest } => self.emit_str_inst(src, *dest),
                 LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
                 LirInstruction::CJump { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-
                 _ => panic!()
             }
         }
@@ -124,7 +130,6 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 println!("b _L{bid}", bid = else_block.0);
             },
         }
-
     }
 
     fn gen_instruction(&mut self, _: &LirInstruction) {
@@ -136,6 +141,10 @@ impl Aarch64CodeGenerator {
     /// Align the given address into an address divisible by 16.
     fn align_to_16(value: usize) -> usize {
         (value + 16 - 1) & !15
+    }
+
+    fn emit_raw_code(&self, code: &str) {
+        println!("{code}");
     }
 
     fn emit_function_preamble(&self, lir_func: &LirFunction, spill_ss: usize) {

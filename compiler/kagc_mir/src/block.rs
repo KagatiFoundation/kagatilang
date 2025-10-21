@@ -10,6 +10,14 @@ use crate::value::IRValueId;
 #[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct BlockId(pub usize);
 
+/// Sentinel `BlockId` used to indicate that a function has no
+/// associated entry or exit blocks, typically for `extern`
+/// (foreign) functions whose body is not defined in this module.
+/// 
+/// Codegen and IR passes can check against this value to skip
+/// block-level processing.
+pub const INVALID_BLOCK_ID: BlockId = BlockId(usize::MAX);
+
 #[derive(Debug, Clone, Default)]
 pub struct IRBasicBlock {
     pub id: BlockId,

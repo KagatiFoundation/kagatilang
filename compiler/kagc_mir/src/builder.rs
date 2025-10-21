@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use indexmap::IndexMap;
+use kagc_symbol::StorageClass;
+use kagc_utils::bug;
 
 use crate::function::*;
 use crate::instruction::IRAddress;
 use crate::instruction::IRCondition;
-use crate::module::Module;
+use crate::module::MirModule;
 use crate::types::*;
 use crate::block::*;
 use crate::instruction::IRInstruction;
@@ -40,11 +42,18 @@ pub struct IRBuilder {
 }
 
 impl IRBuilder {
-    pub fn create_function(&mut self, name: String, params: Vec<FunctionParam>, return_type: IRType) -> FunctionAnchor {
+    pub fn create_function(
+        &mut self, 
+        name: String, 
+        params: Vec<FunctionParam>, 
+        return_type: IRType,
+        class: StorageClass
+    ) -> FunctionAnchor {
         let id = self.next_function_id();
         let func_signature = FunctionSignature { 
             params, 
-            return_type 
+            return_type,
+            class
         }; 
         self.function_names.insert(id, name);
         self.function_signatures.insert(id, func_signature); 
@@ -72,20 +81,20 @@ impl IRBuilder {
             bid
         }
         else {
-            panic!("create_block: Cannot create a block outside function")
+            bug!("cannot create a block outside function")
         }
     }
 
     pub fn switch_to_block(&mut self, block_id: BlockId) {
         if !self.block_instructions.contains_key(&block_id) {
-            panic!("switch_to_block: Cannot switch to a non-existing block");
+            bug!("cannot switch to a non-existing block");
         }
         self.current_block = Some(block_id);
     }
 
     pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
         if !self.block_instructions.contains_key(&bid) {
-            panic!("set_terminator: Cannot set a terminator for a non-existing block");
+            bug!("cannot set a terminator for a non-existing block");
         }
         self.block_terminators.insert(bid, term);
     }
@@ -127,7 +136,7 @@ impl IRBuilder {
 
     pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
         if !self.block_instructions.contains_key(&from) || !self.block_instructions.contains_key(&to) {
-            panic!("link_blocks: Cannot link non-existing blocks");
+            bug!("cannot link non-existing blocks");
         }
         self.block_successors.get_mut(&from).unwrap().insert(to);
         self.block_predecessors.get_mut(&to).unwrap().insert(from);
@@ -140,16 +149,16 @@ impl IRBuilder {
     }
 
     pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
-        let block_id = self.current_block.expect("inst: No active block to insert into");
+        let block_id = self.current_block.unwrap_or_else(|| bug!("no active block to insert into"));
 
         if self.block_terminators.contains_key(&block_id) {
-            panic!("inst: Cannot add instructions after a terminator is set in the block({})", block_id.0);
+            bug!("cannot add instructions after a terminator is set in the block({})", block_id.0);
         }
 
         let value_id = instruction.get_value_id();
         self.block_instructions
             .get_mut(&block_id)
-            .expect("inst: Block not found")
+            .unwrap_or_else(|| bug!("block not found"))
             .push(instruction);
 
         value_id
@@ -212,15 +221,15 @@ impl IRBuilder {
             .expect("create_move: no value ID created")
     }
 
-    pub fn build(&mut self) -> Module {
-        let mut module = Module::new();
+    pub fn build(&mut self) -> MirModule {
+        let mut module = MirModule::new();
         let mut func_stack_size = 0;
 
         for (func_id, func_blocks) in &mut self.function_blocks {
             let func_anchor = self
                 .function_anchors
                 .get(func_id)
-                .expect("Function is not anchored! Aborting...");
+                .unwrap_or_else(|| bug!("function is not anchored"));
 
             for (block_id, block_instrs) in self.block_instructions.iter() {
                 let block_terminator = self
@@ -284,27 +293,27 @@ impl IRBuilder {
     }
 
     pub fn get_block(&self, block_id: BlockId) -> Option<&IRBasicBlock> {
-        let curr_func_id = self.current_function.expect("Not active function! Aborting...");
+        let curr_func_id = self.current_function.unwrap_or_else(|| bug!("not active function"));
         let func_blocks = self.function_blocks.get(&curr_func_id).unwrap();
         func_blocks.get(&block_id)
     }
 
     pub fn get_block_unchecked(&self, block_id: BlockId) -> &IRBasicBlock {
-        self.get_block(block_id).unwrap_or_else(|| panic!("No block found in current function with the ID {block_id:?}"))
+        self.get_block(block_id).unwrap_or_else(|| bug!("no block found in current function with the ID {block_id:?}"))
     }
 
     pub fn get_block_mut(&mut self, block_id: BlockId) -> Option<&mut IRBasicBlock> {
-        let curr_func_id = self.current_function.expect("Not active function! Aborting...");
+        let curr_func_id = self.current_function.unwrap_or_else(|| bug!("not active function"));
         let func_blocks = self.function_blocks.get_mut(&curr_func_id).unwrap();
         func_blocks.get_mut(&block_id)
     }
 
     pub fn get_block_mut_unchecked(&mut self, block_id: BlockId) -> &mut IRBasicBlock {
-        self.get_block_mut(block_id).unwrap_or_else(|| panic!("No block found in current function with the ID {block_id:?}"))
+        self.get_block_mut(block_id).unwrap_or_else(|| bug!("no block found in current function with the ID {block_id:?}"))
     }
 
     pub fn current_block_id(&self) -> Option<BlockId> {
-        let curr_block = self.current_block.expect("No active block! Aborting...");
+        let curr_block = self.current_block.unwrap_or_else(|| bug!("no active block"));
         if self.block_instructions.contains_key(&curr_block) {
             Some(curr_block)
         }
@@ -314,18 +323,18 @@ impl IRBuilder {
     }
 
     pub fn current_block_id_unchecked(&self) -> BlockId {
-        self.current_block_id().expect("No current block set")
+        self.current_block_id().unwrap_or_else(|| bug!("no current block set"))
     }
 
     pub fn current_block_mut(&mut self) -> Option<&mut IRBasicBlock> {
-        let curr_func_id = self.current_function.expect("Not active function! Aborting...");
+        let curr_func_id = self.current_function.unwrap_or_else(|| bug!("not active function"));
         let func_blocks = self.function_blocks.get_mut(&curr_func_id).unwrap();
-        let curr_block = self.current_block.expect("No active block! Aborting...");
+        let curr_block = self.current_block.unwrap_or_else(|| bug!("no active block"));
         func_blocks.get_mut(&curr_block)
     }
 
     pub fn current_block_mut_unchecked(&mut self) -> &mut IRBasicBlock {
-        self.current_block_mut().expect("No current block set")
+        self.current_block_mut().unwrap_or_else(|| bug!("no current block set"))
     }
 
     fn next_function_id(&mut self) -> FunctionId {
@@ -351,6 +360,8 @@ impl IRBuilder {
 mod tests {
     use std::collections::HashSet;
 
+    use kagc_symbol::StorageClass;
+
     use crate::block::{BlockId, Terminator};
     use crate::builder::IRBuilder;
     use crate::instruction::IRInstruction;
@@ -360,7 +371,7 @@ mod tests {
     #[test]
     fn test_builder() {
         let mut b = IRBuilder::default();
-        let fn_ctx = b.create_function("add".to_owned(), vec![], IRType::I64);
+        let fn_ctx = b.create_function("add".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL);
         b.inst(
             IRInstruction::Add {
                 result: IRValueId(0),
@@ -409,7 +420,7 @@ mod tests {
     #[test]
     fn test_blocks_linking() {
         let mut builder = IRBuilder::default();
-        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::Void);
+        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::Void, StorageClass::GLOBAL);
         let f_bid = fn_ctx.entry_block;
         let _ = builder.create_move(IRValue::Constant(12345)); // variable, maybe?
 

@@ -10,9 +10,10 @@ use kagc_backend::CodeGenerator;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
-use kagc_comp_unit::source::ParsingStage;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
+use kagc_mir::function::FunctionId;
+use kagc_mir::module::MirModule;
 use kagc_mir_lowering::MirToLirLowerer;
 use kagc_lexer::Tokenizer;
 use kagc_ast_lowering::AstToMirLowerer;
@@ -23,6 +24,7 @@ use kagc_scope::manager::ScopeManager;
 use kagc_scope::scope::Scope;
 use kagc_sema::resolver::Resolver;
 use kagc_sema::SemanticAnalyzer;
+use kagc_utils::bug;
 
 #[derive(Debug, Clone)]
 pub struct Compiler {
@@ -78,9 +80,8 @@ impl Compiler {
         // Symbol resolver
         let mut resolv = Resolver::new(self.ctx.clone());
 
-        // AST to IR generator
-        let mut lowerer = AstToMirLowerer::new(self.ctx.clone());
 
+        let mut modules: Vec<MirModule> = vec![];
         for unit_file in &self.compiler_order {
             if let Some(unit) = self.units.get_mut(unit_file) {
                 // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
@@ -94,24 +95,39 @@ impl Compiler {
                     std::process::exit(1)
                 }
 
-                lowerer.lower_irs(&mut unit.asts);
-                let mir_module = lowerer.ir_builder.build();
-                let mut mir_lowerer = MirToLirLowerer::default();
-
-                for func in mir_module.functions.values() {
-                    let func_lowered = mir_lowerer.lower_function(func);
-                    // let mut cg = Aarch64CodeGenerator::default();
-                    // cg.gen_function(&func_lowered);
-
-                    let mut cg = Aarch64CodeGenerator::default();
-                    cg.gen_function(&func_lowered);
+                // AST to IR generator
+                let mut lowerer = AstToMirLowerer::new(self.ctx.clone());
+                if lowerer.lower_irs(&mut unit.asts).is_ok() {
+                    let mir_module = lowerer.ir_builder.build();
+                    modules.push(mir_module);
+                }
+                else {
+                    bug!("cannot lower MIR into LIR");
                 }
             }
         }
+        self.compile_mir_modules_into_asm(&modules);
         Ok(())
     }
 
-    pub fn compile_unit_recursive(&mut self, file_path: &str) -> Result<Option<CompilationUnit>, std::io::Error> {
+    fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
+        let mut mir_lowerer = MirToLirLowerer::default();
+        let mut cg = Aarch64CodeGenerator::default();
+
+        for (mod_id, module) in modules.iter().enumerate() {
+            let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
+            module_funcs.sort_by_key(|fid| fid.0);
+
+            println!("// module {mod_id}");
+            for func_id in module_funcs {
+                let func = &module.functions[&func_id];
+                let func_lowered = mir_lowerer.lower_function(func);
+                cg.gen_function(&func_lowered); 
+            }
+        }
+    }
+
+    fn compile_unit_recursive(&mut self, file_path: &str) -> Result<Option<CompilationUnit>, std::io::Error> {
         if self.has_unit(file_path) {
             return Ok(None);
         }
@@ -129,7 +145,7 @@ impl Compiler {
         let tokens = lexer.tokenize(unit.source.content.clone());
     
         unit.tokens = Some(Rc::new(tokens));
-        unit.stage = ParsingStage::Tokenized;
+        unit.next_stage();
 
         let mut parser = ParserBuilder::new()
             .context(self.ctx.clone())
@@ -139,15 +155,15 @@ impl Compiler {
             .build();
 
         let asts = parser.parse();
-        {
-            let ctx = self.ctx.borrow();
-            if ctx.diagnostics.has_errors() {
-                ctx.diagnostics.report_all(&ctx.files, &unit);
-                std::process::exit(1);
-            }
+        let ctx = self.ctx.borrow();
+        if ctx.diagnostics.has_errors() {
+            ctx.diagnostics.report_all(&ctx.files, &unit);
+            std::process::exit(1);
         }
+        drop(ctx);
 
         unit.asts.extend(asts);
+        unit.next_stage();
         let imports = unit.extract_imports();
 
         for import in &imports {

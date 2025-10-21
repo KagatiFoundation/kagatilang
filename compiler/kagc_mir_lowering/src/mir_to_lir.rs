@@ -59,7 +59,8 @@ impl MirToLirLowerer {
         }
         LirFunctionSignature { 
             params, 
-            return_type: sig.return_type
+            return_type: sig.return_type,
+            class: sig.class
         }
     }
 
@@ -72,6 +73,7 @@ impl MirToLirLowerer {
                 IRInstruction::Store { address, src } => self.lower_store(*address, src),
                 IRInstruction::Load { src, result } => self.lower_load(result, *src),
                 IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
+                IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -112,6 +114,15 @@ impl MirToLirLowerer {
             terminator, 
             name: block.name.clone() 
         }
+    }
+
+    fn lower_function_call(
+        &mut self, 
+        func: &str, 
+        args: &[IRValueId], 
+        result: &Option<IRValueId>
+    ) -> Vec<LirInstruction> {
+        vec![]
     }
 
     fn lower_conditional(

@@ -76,7 +76,7 @@ impl CompilationUnit {
         Self {
             source,
             meta_id,
-            stage: ParsingStage::Loaded,
+            stage: ParsingStage::Unprocessed,
             tokens: None,
             imports: vec![],
             asts: vec![],
@@ -100,5 +100,18 @@ impl CompilationUnit {
             }
         }
         imports
+    }
+
+    pub fn next_stage(&mut self) -> ParsingStage {
+        if self.stage == ParsingStage::Loaded {
+            self.stage = ParsingStage::Unprocessed;
+        }
+        else if self.stage == ParsingStage::Unprocessed {
+            self.stage = ParsingStage::Tokenized;
+        }
+        else if self.stage == ParsingStage::Tokenized {
+            self.stage = ParsingStage::Parsed;
+        }
+        self.stage
     }
 }

@@ -55,9 +55,10 @@ pub enum SymbolType {
     Constant, // for now, this is used to represent only the string literals
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub enum StorageClass {
     /// Globally visible symbol.
+    #[default]
     GLOBAL, 
 
     /// Locally visible symbol.

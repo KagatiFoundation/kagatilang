@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use indexmap::IndexMap;
+use kagc_symbol::StorageClass;
 
 use crate::block::IRBasicBlock;
 use crate::block::BlockId;
@@ -22,8 +23,8 @@ pub struct FunctionParam {
 pub struct FunctionSignature {
     pub params: Vec<FunctionParam>,
     pub return_type: IRType,
+    pub class: StorageClass
 }
-
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct FunctionFrame {

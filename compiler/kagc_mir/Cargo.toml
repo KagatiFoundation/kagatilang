@@ -13,3 +13,4 @@ kagc_ctx = { path = "../kagc_ctx" }
 kagc_ast = { path = "../kagc_ast" }
 kagc_types = { path = "../kagc_types" }
 kagc_const = { path = "../kagc_const" }
+kagc_utils = { path = "../kagc_utils" }

@@ -12,7 +12,7 @@ use kagc_backend::reg::*;
 use kagc_types::*;
 
 use kagc_mir::value::{IRValue, IRValueId};
-use kagc_mir::block::{Terminator, BlockId};
+use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
 use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
 use kagc_mir::builder::IRBuilder;
 use kagc_mir::function::FunctionParam;
@@ -83,6 +83,9 @@ impl AstToMirLowerer {
         else if node.operation == ASTOperation::AST_FUNCTION {
             return self.lower_function(node);
         }
+        else if node.operation == ASTOperation::AST_FUNC_CALL {
+            return self.lower_function_call(node, fn_ctx);
+        }
         else if node.operation == ASTOperation::AST_VAR_DECL {
             return self.lower_variable_declaration(node, fn_ctx);
         }
@@ -104,7 +107,7 @@ impl AstToMirLowerer {
         else if node.operation == ASTOperation::AST_ELSE {
             return self.lower_else_block(node, fn_ctx);
         }
-        todo!("{node:#?}");
+        todo!("{node_type:#?}", node_type = node.operation);
     }
 
     fn lower_load_string(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -120,8 +123,10 @@ impl AstToMirLowerer {
         };
 
         let func_name = self.get_func_name(func_id).expect("Function name error!");
+        let mut store_class = StorageClass::GLOBAL;
         if let Some(finfo) = self.ctx.borrow().scope.lookup_fn_by_name(func_name.as_str()) {
             self.current_function = Some(finfo.clone());
+            store_class = finfo.storage_class;
         }
 
         let mut fn_ctx: FunctionContext = FunctionContext::new(self.label_id);
@@ -138,8 +143,15 @@ impl AstToMirLowerer {
         let func_anchor = self.ir_builder.create_function(
             func_name.clone(),
             func_ir_params,
-            IRType::from(ast.result_type.clone())
+            IRType::from(ast.result_type.clone()),
+            store_class
         );
+
+        if store_class == StorageClass::EXTERN {
+            // create the function but skip body lowering as there is 
+            // no body associated with 'extern' functions
+            return Ok(INVALID_BLOCK_ID);
+        }
 
         let return_label = func_anchor.exit_block; // single point of return
         fn_ctx.set_return_label(return_label);
@@ -163,6 +175,14 @@ impl AstToMirLowerer {
         self.ctx.borrow_mut().scope.exit_scope();
         self.label_id = fn_ctx.next_label;
         Ok(current_block_id)
+    }
+
+    fn lower_function_call(&mut self, node: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        if let ASTKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
+            let _ = self.lower_function_call_expr(func_call, fn_ctx)?;
+            return Ok(self.ir_builder.current_block_id_unchecked());
+        }
+        panic!()
     }
 
     fn lower_variable_declaration(&mut self, var_ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
@@ -196,12 +216,12 @@ impl AstToMirLowerer {
             fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
-        bug!("Required VarDeclStmt--but found {var_ast:#?}! Aborting...");
+        bug!("required VarDeclStmt--but found {var_ast:#?}");
     }
 
     fn lower_expression_ast(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if !ast.kind.is_expr() {
-            bug!("Needed an Expr--but found {ast:#?}");
+            bug!("needed an Expr--but found {ast:#?}");
         }
         let expr = ast
             .kind
@@ -212,9 +232,9 @@ impl AstToMirLowerer {
 
     fn lower_expression(&mut self, expr: &mut Expr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         match expr {
-            Expr::LitVal(lit_expr) =>           self.lower_literal_value_expr(lit_expr, fn_ctx),
-            Expr::Ident(ident_expr) =>           self.lower_identifier_expr(ident_expr, fn_ctx),
-            Expr::Binary(bin_expr) =>              self.lower_binary_expr(bin_expr, fn_ctx),
+            Expr::LitVal(lit_expr) => self.lower_literal_value_expr(lit_expr, fn_ctx),
+            Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
+            Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
             Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
             Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access(rec_field_access, fn_ctx),
             _ => unimplemented!()
@@ -499,11 +519,11 @@ impl AstToMirLowerer {
     }
 
     fn lower_import(&mut self) -> StmtLoweringResult {
-        Ok(BlockId(0xFFFFFFFF)) // import statements aren't supported inside functions
+        Ok(INVALID_BLOCK_ID) // import statements aren't supported inside functions
     }
 
     fn lower_record_declaration(&mut self, _node: &mut AST) -> StmtLoweringResult {
-        Ok(BlockId(0xFFFFFFFF)) // record declaration statements aren't supported inside functions
+        Ok(INVALID_BLOCK_ID) // record declaration statements aren't supported inside functions
     }
 
     fn get_func_name(&mut self, index: usize) -> Option<String> {

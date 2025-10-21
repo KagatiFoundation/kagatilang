@@ -85,6 +85,8 @@ impl LivenessAnalyzer {
 
 #[cfg(test)]
 mod tests {
+    use kagc_symbol::StorageClass;
+
     use crate::analyzer::LivenessAnalyzer;
     use crate::block::Terminator;
     use crate::builder::IRBuilder;
@@ -96,7 +98,7 @@ mod tests {
     #[test]
     fn test_inst_level_liveness_analysis() {
        let mut builder = IRBuilder::default();
-        let fn_ctx = builder.create_function("loop_test".to_owned(), vec![], IRType::I64); // block id 0
+        let fn_ctx = builder.create_function("loop_test".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1
         builder.link_blocks(func_entry, loop_entry);
@@ -132,7 +134,7 @@ mod tests {
     #[test]
     fn test_complex_function_live_ranges_construction() {
         let mut builder = IRBuilder::default();
-        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1
         builder.link_blocks(func_entry, loop_entry);

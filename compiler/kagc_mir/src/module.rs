@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use crate::function::*;
 
 #[derive(Default, Debug)]
-pub struct Module {
+pub struct MirModule {
     pub functions: HashMap<FunctionId, IRFunction>
 }
 
-impl Module {
+impl MirModule {
     pub fn new() -> Self {
         Self { functions: HashMap::new() }
     }

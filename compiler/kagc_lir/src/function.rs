@@ -7,6 +7,7 @@ use kagc_mir::block::BlockId;
 use kagc_mir::function::FunctionFrame;
 use kagc_mir::function::FunctionId;
 use kagc_mir::types::IRType;
+use kagc_symbol::StorageClass;
 
 use crate::block::LirBasicBlock;
 use crate::instruction::LirInstruction;
@@ -25,6 +26,7 @@ pub struct LirFunctionParam {
 pub struct LirFunctionSignature {
     pub params: Vec<LirFunctionParam>,
     pub return_type: IRType,
+    pub class: StorageClass
 }
 
 #[derive(Debug)]
@@ -114,11 +116,12 @@ mod tests {
     use kagc_mir::instruction::IRCondition;
     use kagc_mir::types::IRType;
     use kagc_mir::value::IRValue;
+    use kagc_symbol::StorageClass;
 
     #[test]
     fn test_vreg_generation() {
         let mut builder = IRBuilder::default();
-        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1
         builder.link_blocks(func_entry, loop_entry);

@@ -8,3 +8,4 @@ itertools = "0.13.0"
 lazy_static = "1.4.0"
 
 kagc_mir = { path = "../kagc_mir" }
+kagc_symbol = { path = "../kagc_symbol" }

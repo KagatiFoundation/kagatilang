@@ -85,6 +85,7 @@ mod tests {
     use kagc_mir::types::IRType;
     use kagc_mir::value::IRValue;
     use kagc_mir::block::{BlockId, Terminator};
+    use kagc_symbol::StorageClass;
 
     use crate::regalloc::register::aarch64::standard_aarch64_register_file;
     use crate::regalloc::register::{RegClass, Register};
@@ -101,7 +102,7 @@ mod tests {
     #[test]
     fn test_reg_allocation_for_simple_function() {
         let mut builder = IRBuilder::default();
-        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::I64); // block id 0
+        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let op1 = builder.create_move(IRValue::Constant(2)); // value id 0
         let op2 = builder.create_move(IRValue::Constant(2)); // value id 1
