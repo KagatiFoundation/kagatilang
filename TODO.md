@@ -1,12 +1,11 @@
 # Bugs to Fix:
 [✅] Semantic analyzer not reporting an undefined symbol error when calling a non-existing function.
-[] Fix the instruction order after parameter parsing
+[X] Fix the instruction order after parameter parsing
 [✅] Fix "no symbol found" issues
-[] Fix registers not being freed after being used in record filling process
+[X] Fix registers not being freed after being used in record filling process
 
 # Features to implement:
 [✅] Allocate registers from x0-x7 only for function parameters.
-[] Constant Folding Optimization Pass
 [✅] Semantic Analysis of function declaration and return statement
 [] calculate space for register spilling
 [✅] Loop statements
@@ -18,13 +17,15 @@
 [✅] Make sure the functions aren't overriding other functions' labels.
 [✅] Support all of the arithmetic operations--add, sub, mul, and div
 [] Support arrays
-[] Good error reporting engine
-[] Support empty function bodies
+[✅] Good error reporting engine
+[✅] Support empty function bodies
+[] Remove entry blocks from function IR
+[] Dead code elimination
 
 # Improvements to make:
 [✅] Remove double insertion of function parameters in local params list and arguments list
-[] Remove every IR type except IRInstr (IMPORTANT)
-[] Change the type of symbol list to HashMap from Vec
+[✅] Remove every IR type except IRInstr (IMPORTANT)
+[X] Change the type of symbol list to HashMap from Vec
 [] Constant Folding
-[] Module-level symbol table management
-[] Do not allow non-existing fields to be assigned in record
+[X] Module-level symbol table management
+[✅] Do not allow non-existing fields to be assigned in record

@@ -110,10 +110,6 @@ impl AstToMirLowerer {
         todo!("{node_type:#?}", node_type = node.operation);
     }
 
-    fn lower_load_string(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        self.lower_load_heap_allocated_value(idx, fn_ctx)
-    }
-
     fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
         let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
             self.ctx.borrow_mut().scope.enter_scope(func_decl.scope_id);
@@ -293,6 +289,10 @@ impl AstToMirLowerer {
         assert_ne!(reg_sz, 0);
         let load_value_id = self.ir_builder.create_load(IRAddress::StackOffset(sym_off));
         Ok(load_value_id)
+    }
+
+    fn lower_load_string(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        self.lower_load_heap_allocated_value(idx, fn_ctx)
     }
 
     fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -497,25 +497,25 @@ impl AstToMirLowerer {
     }
 
     fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let ctx_borrow = self.ctx.borrow();
-        let obj = ctx_borrow.const_pool.get(idx);
-        if obj.is_none() {
+        let compiler_cx = self.ctx.borrow();
+        let object = compiler_cx.const_pool.get(idx);
+        if object.is_none() {
             bug!("ConstEntry(index '{idx}') not found");
         }
 
-        let obj = obj.unwrap();
-        let ob_size = self.ctx.borrow().const_pool.size(idx).unwrap();
-
-        let mem_alloc_value_id = self.ir_builder.occupy_value_id();
-        self.ir_builder.inst(
-            IRInstruction::MemAlloc {
-                ob_ty: obj.ob_type.clone(),
-                size: ob_size,
-                result: mem_alloc_value_id,
-                pool_idx: idx
-            }
-        );
-        Ok(mem_alloc_value_id)
+        let object = object.unwrap();
+        let ob_size = self
+            .ctx
+            .borrow()
+            .const_pool
+            .size(idx)
+            .unwrap_or_else(|| bug!("could not compute size of a ConstEntry"));
+        
+        Ok(self.ir_builder.create_memory_allocation(
+            IRValue::Constant(ob_size as i64),
+            IRValue::Constant(object.ob_type as i64),
+            idx
+        ))
     }
 
     fn lower_import(&mut self) -> StmtLoweringResult {

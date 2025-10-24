@@ -43,6 +43,12 @@ pub enum LirInstruction {
         op: IRCondition
     },
 
+    MemAlloc {
+        dest: VReg,
+        ob_size: LirOperand,
+        ob_type: LirOperand,
+    },
+
     Call {
         func: String,
         args: Vec<VReg>,

@@ -112,7 +112,7 @@ impl Compiler {
 
     fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
         let mut mir_lowerer = MirToLirLowerer::default();
-        let mut cg = Aarch64CodeGenerator::default();
+        let mut cg = Aarch64CodeGenerator::new(self.ctx.clone());
 
         for (mod_id, module) in modules.iter().enumerate() {
             let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
@@ -125,6 +125,8 @@ impl Compiler {
                 cg.gen_function(&func_lowered); 
             }
         }
+
+        cg.dump_globals();
     }
 
     fn compile_unit_recursive(&mut self, file_path: &str) -> Result<Option<CompilationUnit>, std::io::Error> {

@@ -27,6 +27,8 @@ use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_scope::ctx::ScopeCtx;
 
+use crate::builder::CompilerCtxBuilder;
+
 #[derive(Debug)]
 pub struct CompilerCtx {
     pub const_pool: ConstPool,
@@ -51,5 +53,11 @@ impl CompilerCtx {
             files: file_ctx,
             scope: scope_ctx
         }
+    }
+}
+
+impl Default for CompilerCtx {
+    fn default() -> Self {
+        CompilerCtxBuilder::new(ScopeCtx::default()).build()
     }
 }

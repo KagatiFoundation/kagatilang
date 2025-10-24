@@ -2,7 +2,6 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_const::pool::PoolIdx;
-use kagc_types::builtins::obj::KObjType;
 
 use crate::value::*;
 
@@ -67,8 +66,8 @@ pub enum IRInstruction {
     },
 
     MemAlloc {
-        size:       usize,
-        ob_ty:      KObjType,
+        size:       IRValue,
+        ob_ty:      IRValue,
         result:     IRValueId,
         pool_idx:   PoolIdx
     },

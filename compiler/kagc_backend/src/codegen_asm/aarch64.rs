@@ -1,33 +1,34 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
+use kagc_const::pool::{ConstEntry, KagcConst};
+use kagc_ctx::CompilerCtx;
 use kagc_lir::block::LirTerminator;
-use kagc_lir::instruction::LirAddress;
-use kagc_lir::instruction::LirInstruction;
+use kagc_lir::instruction::{LirAddress, LirInstruction};
 use kagc_lir::operand::LirOperand;
 use kagc_lir::function::LirFunction;
 use kagc_lir::block::LirBasicBlock;
 use kagc_lir::vreg::VReg;
-use kagc_mir::block::BlockId;
-use kagc_mir::block::INVALID_BLOCK_ID;
+use kagc_mir::block::{BlockId, INVALID_BLOCK_ID};
 use kagc_mir::instruction::IRCondition;
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
 use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
-use crate::regalloc::LinearScanAllocator;
-use crate::regalloc::Location;
-use crate::regalloc::register::RegClass;
-use crate::regalloc::register::Register;
+use crate::regalloc::{Location, LinearScanAllocator};
+use crate::regalloc::register::{RegClass, Register};
 use crate::CodeGenerator;
 
 pub struct Aarch64CodeGenerator {
     allocations: Option<HashMap<VReg, Location>>,
     scratch_register0: Register,
     scratch_register1: Register,
-    function_entry_block: Option<BlockId>
+    function_entry_block: Option<BlockId>,
+    compiler_cx: Rc<RefCell<CompilerCtx>>
 }
 
 impl Default for Aarch64CodeGenerator {
@@ -44,7 +45,28 @@ impl Default for Aarch64CodeGenerator {
                 name: "x10".to_string(),
                 class: RegClass::GPR
             },
-            function_entry_block: None
+            function_entry_block: None,
+            compiler_cx: Rc::new(RefCell::new(CompilerCtx::default()))
+        }
+    }
+}
+
+impl Aarch64CodeGenerator {
+    pub fn new(ccx: Rc<RefCell<CompilerCtx>>) -> Self {
+        Self { 
+            allocations: None,
+            scratch_register0: Register {
+                id: 0x9,
+                name: "x9".to_string(),
+                class: RegClass::GPR
+            },
+            scratch_register1: Register {
+                id: 10,
+                name: "x10".to_string(),
+                class: RegClass::GPR
+            },
+            function_entry_block: None,
+            compiler_cx: ccx
         }
     }
 }
@@ -100,6 +122,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
                 LirInstruction::CJump { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
                 LirInstruction::Call { func, args, result } => self.emit_call_inst(func, args, result),
+                LirInstruction::MemAlloc { ob_size, ob_type, dest } => self.emit_memory_alloc_inst(ob_size, ob_type, dest),
                 _ => panic!()
             }
         }
@@ -146,6 +169,23 @@ impl Aarch64CodeGenerator {
 
     fn emit_raw_code(&self, code: &str) {
         println!("{code}");
+    }
+
+    fn emit_memory_alloc_inst(&self, ob_size: &LirOperand, ob_type: &LirOperand, dest: &VReg) {
+        match (ob_size, ob_type) {
+            (LirOperand::Constant(size_imm), LirOperand::Constant(type_imm)) => {
+                self.emit_raw_code(&format!("mov {r}, #{s}", r = aarch64::ABI_ARG_REGISTERS_64_BIT[0], s = *size_imm));
+                self.emit_raw_code(&format!("mov {r}, #{s}", r = aarch64::ABI_ARG_REGISTERS_64_BIT[1], s = *type_imm));
+            },
+            _ => bug!("object's size and type must be constant values")
+        }
+
+        self.emit_raw_code("bl _object_new"); // call allocation function
+        let loc = self.current_allocations().get(dest).unwrap_or_else(|| bug!("cannot find VReg {dest:#?}"));
+        match loc {
+            Location::Reg(register) => self.emit_raw_code(&format!("mov {d}, x0", d = register.name)),
+            Location::StackSlot(ss) => self.emit_raw_code(&format!("str x0, [sp, #{}]", *ss * 8)),
+        }
     }
 
     fn emit_call_inst(&self, func: &str, args: &[VReg], result: &Option<VReg>) {
@@ -472,6 +512,59 @@ impl Aarch64CodeGenerator {
 
     fn emit_move_const_to_reg(&self, r1: &Register, s: i64) {
         println!("mov {d}, #{s}", d = r1.name);
+    }
+
+    /// This function is public only for a short period of time.
+    pub fn dump_globals(&self) {
+        if self.compiler_cx.borrow().const_pool.is_empty() {
+            return;
+        }
+
+        let mut output_str: String = String::new();
+        for (index, c_item) in self.compiler_cx.borrow().const_pool.iter_enumerated() {
+            output_str.push_str(&self.dump_const(index, c_item, false));
+        }
+        println!("{output_str}")
+    }
+
+    fn dump_const(&self, c_item_index: usize, c_item: &ConstEntry, parent_is_record: bool) -> String {
+        let mut output_str = String::new();
+        if let KagcConst::Str(str_value) = &c_item.value {
+            if parent_is_record {
+                output_str.push_str(&format!("\t.xword .L.str.{c_item_index}\n"));
+            }
+            else {
+                output_str.push_str(
+                    &format!(
+                        ".section __TEXT,__cstring\n\t.L.str.{}:\n\t.asciz \"{}\"\n", 
+                        c_item_index, 
+                        str_value
+                    )
+                );
+            }
+        }
+        else if let KagcConst::Int(int_value) = &c_item.value {
+            if parent_is_record {
+                // output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
+                output_str.push_str(&format!("\t.xword {int_value}\n"));
+            }
+        }
+        else if let KagcConst::Record(rec) = &c_item.value {
+            output_str.push_str(
+                &format!(
+                    ".section __DATA,__const\n.align {}\n.L__const.{}.{}:\n", 
+                    rec.alignment, 
+                    c_item.origin_func.unwrap(), 
+                    rec.alias.clone()
+                )
+            );
+            for rec_field in &rec.fields {
+                if let Some(rec_pool_item) = self.compiler_cx.borrow().const_pool.get(*rec_field.1) {
+                    output_str.push_str(&self.dump_const(*rec_field.1, rec_pool_item, true));
+                }
+            }
+        }
+        output_str
     }
 
     fn current_allocations(&self) -> &HashMap<VReg, Location> {

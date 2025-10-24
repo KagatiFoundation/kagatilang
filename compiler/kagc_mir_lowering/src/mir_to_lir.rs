@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
+use kagc_ctx::CompilerCtx;
 use kagc_mir::block::{IRBasicBlock, Terminator};
 use kagc_mir::function::{FunctionSignature, IRFunction};
 use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
@@ -16,7 +19,8 @@ use kagc_lir::vreg::VRegMapper;
 
 #[derive(Debug, Default)]
 pub struct MirToLirLowerer {
-    vreg_mapper: VRegMapper
+    vreg_mapper: VRegMapper,
+    compiler_cx: Rc<RefCell<CompilerCtx>>
 }
 
 impl MirToLirLowerer {
@@ -66,6 +70,7 @@ impl MirToLirLowerer {
                 IRInstruction::Load { src, result } => self.lower_load(result, *src),
                 IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
                 IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
+                IRInstruction::MemAlloc { size, ob_ty, result, pool_idx } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -129,6 +134,28 @@ impl MirToLirLowerer {
             func: func.to_owned(), 
             args: lir_args, 
             result: lir_result 
+        }]
+    }
+
+    fn lower_memory_allocation(
+        &mut self, 
+        size: IRValue, 
+        ob_ty: IRValue, 
+        result: IRValueId, 
+        pool_idx: usize
+    ) -> Vec<LirInstruction> {
+        // let compiler_cx = self.compiler_cx.borrow();
+        // let object = compiler_cx.const_pool.get(pool_idx);
+        // if object.is_none() {
+            // bug!("ConstEntry(index '{pool_idx}') not found");
+        // }
+        let size_op = self.resolve_to_operand(size);
+        let type_op = self.resolve_to_operand(ob_ty);
+        let dest_reg = self.vreg_mapper.get_or_create(result);
+        vec![LirInstruction::MemAlloc {
+            ob_size: size_op,
+            ob_type: type_op,
+            dest: dest_reg
         }]
     }
 
