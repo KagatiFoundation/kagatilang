@@ -376,7 +376,7 @@ impl Codegen for Aarch64Codegen {
     }
     
     fn gen_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String {
-        let mut output_str: String = "".to_string();
+        let mut output_str = "".to_string();
         output_str.push_str(&format!("\n.global _{fn_label}\n_{fn_label}:"));
 
         if stack_size != 0 {
@@ -395,7 +395,7 @@ impl Codegen for Aarch64Codegen {
     }
 
     fn gen_non_leaf_fn_prol(&self, fn_label: &str, stack_size: usize) -> String {
-        let mut output_str: String = "".to_string();
+        let mut output_str = "".to_string();
         output_str.push_str(&format!("\n.global _{fn_label}\n_{fn_label}:\n"));
         output_str.push_str(&format!("\tSUB SP, SP, #{stack_size}\n"));
         output_str.push_str(&format!("\tSTP x29, x30, [SP, #{}]\n", stack_size - 16));
@@ -404,7 +404,7 @@ impl Codegen for Aarch64Codegen {
     }
     
     fn gen_non_leaf_fn_epl(&self, stack_size: usize) -> String {
-        let mut output_str: String = "".to_string();
+        let mut output_str = "".to_string();
         output_str.push_str(&format!("\tLDP x29, x30, [SP, #{}]\n", stack_size - 16));
         output_str.push_str(&format!("\tADD SP, SP, #{}\nRET\n", stack_size));
         output_str

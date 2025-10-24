@@ -39,7 +39,8 @@ pub struct IRFunction {
     pub blocks: IndexMap<BlockId, IRBasicBlock>,
     pub entry_block: BlockId,
     pub exit_block: BlockId,
-    pub frame_info: FunctionFrame
+    pub frame_info: FunctionFrame,
+    pub is_leaf: bool
 }
 
 #[derive(Debug)]

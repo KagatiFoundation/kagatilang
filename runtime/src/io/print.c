@@ -13,6 +13,6 @@ void print(K_Object *obj) {
     fflush(stdout);
 }
 
-void print_int(int x) {
-    printf("%d\n", x);
+void print_int(long long x) {
+    printf("%lld\n", x);
 }

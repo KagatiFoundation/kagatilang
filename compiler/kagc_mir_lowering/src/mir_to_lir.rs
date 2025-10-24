@@ -3,23 +3,14 @@
 
 use std::collections::HashMap;
 
-use kagc_mir::block::IRBasicBlock;
-use kagc_mir::block::Terminator;
-use kagc_mir::function::FunctionSignature;
-use kagc_mir::function::IRFunction;
-use kagc_mir::instruction::IRAddress;
-use kagc_mir::instruction::IRCondition;
-use kagc_mir::instruction::IRInstruction;
-use kagc_mir::value::IRValue;
-use kagc_mir::value::IRValueId;
+use kagc_mir::block::{IRBasicBlock, Terminator};
+use kagc_mir::function::{FunctionSignature, IRFunction};
+use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
+use kagc_mir::value::{IRValue, IRValueId};
 
-use kagc_lir::block::LirBasicBlock;
-use kagc_lir::block::LirTerminator;
-use kagc_lir::function::LirFunction;
-use kagc_lir::function::LirFunctionParam;
-use kagc_lir::function::LirFunctionSignature;
-use kagc_lir::instruction::LirAddress;
-use kagc_lir::instruction::LirInstruction;
+use kagc_lir::block::{LirBasicBlock, LirTerminator};
+use kagc_lir::function::{LirFunction, LirFunctionParam, LirFunctionSignature};
+use kagc_lir::instruction::{LirAddress, LirInstruction};
 use kagc_lir::operand::LirOperand;
 use kagc_lir::vreg::VRegMapper;
 
@@ -47,7 +38,8 @@ impl MirToLirLowerer {
             frame_info: ir_func.frame_info,
             blocks: lir_blocks, 
             entry_block: ir_func.entry_block,
-            exit_block: ir_func.exit_block
+            exit_block: ir_func.exit_block,
+            is_leaf: ir_func.is_leaf
         }
     }
 
@@ -122,7 +114,22 @@ impl MirToLirLowerer {
         args: &[IRValueId], 
         result: &Option<IRValueId>
     ) -> Vec<LirInstruction> {
-        vec![]
+        let mut lir_args = vec![];
+        for arg in args {
+            let a = self.vreg_mapper.get_or_create(*arg);
+            lir_args.push(a);
+        }
+        let lir_result = if let Some(value) = result {
+            Some(self.vreg_mapper.get_or_create(*value))
+        }
+        else {
+            None
+        };
+        vec![LirInstruction::Call { 
+            func: func.to_owned(), 
+            args: lir_args, 
+            result: lir_result 
+        }]
     }
 
     fn lower_conditional(

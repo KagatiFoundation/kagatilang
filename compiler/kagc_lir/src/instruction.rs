@@ -41,6 +41,12 @@ pub enum LirInstruction {
         lhs: LirOperand,
         rhs: LirOperand,
         op: IRCondition
+    },
+
+    Call {
+        func: String,
+        args: Vec<VReg>,
+        result: Option<VReg>
     }
 }
 

@@ -273,7 +273,8 @@ impl IRBuilder {
                     blocks: func_blocks.clone(),
                     entry_block: anchor.entry_block,
                     exit_block: anchor.exit_block,
-                    frame_info: FunctionFrame { size: func_stack_size }
+                    frame_info: FunctionFrame { size: func_stack_size },
+                    is_leaf: false
                 };
                 module.add_function(function);
             }

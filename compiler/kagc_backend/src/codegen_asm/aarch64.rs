@@ -16,7 +16,7 @@ use kagc_mir::instruction::IRCondition;
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
-use crate::regalloc::register::aarch64::standard_aarch64_register_file;
+use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
 use crate::regalloc::LinearScanAllocator;
 use crate::regalloc::Location;
 use crate::regalloc::register::RegClass;
@@ -99,6 +99,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 LirInstruction::Store { src, dest } => self.emit_str_inst(src, *dest),
                 LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
                 LirInstruction::CJump { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
+                LirInstruction::Call { func, args, result } => self.emit_call_inst(func, args, result),
                 _ => panic!()
             }
         }
@@ -126,8 +127,8 @@ impl CodeGenerator for Aarch64CodeGenerator {
                     IRCondition::GThan  => "b.gt",
                     IRCondition::LThan  => "b.lt",
                 };
-                println!("{cmp_code} _L{bid}", bid = then_block.0);
-                println!("b _L{bid}", bid = else_block.0);
+                self.emit_raw_code(&format!("{cmp_code} _L{bid}", bid = then_block.0));
+                self.emit_raw_code(&format!("b _L{bid}", bid = else_block.0));
             },
         }
     }
@@ -147,26 +148,74 @@ impl Aarch64CodeGenerator {
         println!("{code}");
     }
 
+    fn emit_call_inst(&self, func: &str, args: &[VReg], result: &Option<VReg>) {
+        if args.len() > 8 {
+            bug!("compiler doesn't support more than 8 arguments");
+        }
+        for (idx, arg) in args.iter().enumerate() {
+            let loc = self.current_allocations().get(arg).unwrap_or_else(|| bug!("bug"));
+            match loc {
+                Location::Reg(register) => {
+                    self.emit_raw_code(
+                        &format!(
+                            "mov {reg}, {val}", 
+                            reg = aarch64::ABI_ARG_REGISTERS_64_BIT[idx],
+                            val = register.name
+                        )
+                    );
+                },
+                Location::StackSlot(slot) => {
+                    self.emit_ldr(&self.scratch_register0, LirAddress::Offset(*slot));
+                    self.emit_raw_code(
+                        &format!(
+                            "mov {reg}, {val}",
+                            reg = aarch64::ABI_ARG_REGISTERS_64_BIT[idx],
+                            val = self.scratch_register0.name
+                        )
+                    );
+                },
+            }
+        }
+        self.emit_raw_code(&format!("bl _{func}"));
+    }
+
     fn emit_function_preamble(&self, lir_func: &LirFunction, spill_ss: usize) {
-        let mut output = format!(".global _{name}\n_{name}:", name = lir_func.name);
+        let mut output = format!(".global _{name}\n_{name}:\n", name = lir_func.name);
         let stack_size = Self::align_to_16(lir_func.frame_info.size + spill_ss);
-        if stack_size > 0 {
-            output.push_str(&format!("\nsub sp, sp, #{off}\n", off = stack_size));
-            output.push_str(&format!("stp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
-            output.push_str(&format!("add x29, sp, #{off}", off = stack_size - 16));
+
+        if lir_func.is_leaf {
+            if stack_size > 0 {
+                output.push_str(&format!("sub sp, sp, #{stack_size}\n"));
+            }
+        } else {
+            output.push_str("stp x29, x30, [sp, #-16]!\n");
+            output.push_str("mov x29, sp\n");
+            if stack_size > 0 {
+                output.push_str(&format!("sub sp, sp, #{stack_size}\n"));
+            }
         }
         println!("{output}");
     }
 
+
     fn emit_function_postamble(&self, lir_func: &LirFunction, spill_ss: usize) {
-        let mut output = "".to_owned();
+        let mut output = String::new();
         output.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
 
         let stack_size = Self::align_to_16(lir_func.frame_info.size + spill_ss);
-        if stack_size > 0 {
-            output.push_str(&format!("add sp, sp, #{off}\n", off = stack_size));
+
+        if lir_func.is_leaf {
+            if stack_size > 0 {
+                output.push_str(&format!("add sp, sp, #{stack_size}\n"));
+            }
+        } else {
+            if stack_size > 0 {
+                output.push_str(&format!("add sp, sp, #{stack_size}\n"));
+            }
+            output.push_str("ldp x29, x30, [sp], #16\n");
         }
-        output.push_str("ret");
+
+        output.push_str("ret\n");
         println!("{output}");
     }
 

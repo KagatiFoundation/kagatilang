@@ -54,6 +54,11 @@ pub mod aarch64 {
     use crate::regalloc::register::Register;
     use crate::regalloc::register::RegClass;
 
+    pub const ABI_ARG_REGISTERS_64_BIT: [&str; 8] = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+    pub const ABI_ARG_REGISTERS_32_BIT: [&str; 8] = ["w0", "w1", "w2", "w3", "w4", "w5", "w6", "w7"];
+    pub const ABI_RETURN_REGISTER_64_BIT: &str = "x0";
+    pub const ABI_RETURN_REGISTER_32_BIT: &str = "w0";
+
     pub fn standard_aarch64_register_file() -> RegisterFile {
         // Helper closure to make register construction cleaner
         let make_reg = |id: u8, name: &str| Register {
