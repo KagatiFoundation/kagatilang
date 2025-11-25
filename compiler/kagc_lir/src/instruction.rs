@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_mir::instruction::IRCondition;
+use kagc_mir::instruction::{IRCondition, StackSlotId};
 
 use crate::operand::LirOperand;
 use crate::vreg::VReg;
@@ -47,6 +47,9 @@ pub enum LirInstruction {
         dest: VReg,
         ob_size: LirOperand,
         ob_type: LirOperand,
+        pool_idx: usize,
+        base_ptr_slot: StackSlotId,
+        data_ptr_slot: StackSlotId
     },
 
     Call {
@@ -58,6 +61,6 @@ pub enum LirInstruction {
 
 #[derive(Debug, Clone, Copy)]
 pub enum LirAddress {
-    Offset(usize),
-    BaseOffset(VReg, usize)
+    Offset(StackSlotId),
+    BaseOffset(VReg, StackSlotId)
 }

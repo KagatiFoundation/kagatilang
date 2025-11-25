@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 
 use kagc_mir::block::BlockId;
-use kagc_mir::function::FunctionFrame;
 use kagc_mir::function::FunctionId;
 use kagc_mir::types::IRType;
 use kagc_symbol::StorageClass;
@@ -34,7 +33,6 @@ pub struct LirFunction {
     pub id: FunctionId,
     pub name: String,
     pub signature: LirFunctionSignature,
-    pub frame_info: FunctionFrame,
     pub blocks: HashMap<BlockId, LirBasicBlock>,
     pub entry_block: BlockId,
     pub exit_block: BlockId,
@@ -73,6 +71,9 @@ impl LirFunction {
                     },
                     LirInstruction::Store { src, .. } => {
                         vregs_used.push(*src);
+                    },
+                    LirInstruction::MemAlloc { dest, .. } => {
+                        vregs_defined.push(*dest);
                     },
                     LirInstruction::CJump { dest, lhs, rhs, ..} => {
                         vregs_defined.push(*dest);

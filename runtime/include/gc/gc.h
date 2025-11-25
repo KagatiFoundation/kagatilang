@@ -2,6 +2,7 @@
 #define KAG_GC_H
 
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,6 +24,8 @@ typedef struct _object {
 } K_Object;
 
 K_Object* object_new(size_t size, K_Object_Type type);
+
+void object_copy(void* dest, void *src, size_t size);
 
 void object_delete(K_Object *obj);
 

@@ -26,11 +26,6 @@ pub struct FunctionSignature {
     pub class: StorageClass
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct FunctionFrame {
-    pub size: usize
-}
-
 #[derive(Default, Debug)]
 pub struct IRFunction {
     pub id: FunctionId,
@@ -39,7 +34,6 @@ pub struct IRFunction {
     pub blocks: IndexMap<BlockId, IRBasicBlock>,
     pub entry_block: BlockId,
     pub exit_block: BlockId,
-    pub frame_info: FunctionFrame,
     pub is_leaf: bool
 }
 

@@ -8,7 +8,7 @@ use std::rc::Rc;
 use kagc_ctx::CompilerCtx;
 use kagc_mir::block::{IRBasicBlock, Terminator};
 use kagc_mir::function::{FunctionSignature, IRFunction};
-use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
+use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
 use kagc_mir::value::{IRValue, IRValueId};
 
 use kagc_lir::block::{LirBasicBlock, LirTerminator};
@@ -39,7 +39,6 @@ impl MirToLirLowerer {
             id: ir_func.id, 
             name: ir_func.name.clone(),
             signature: self.lower_function_signature(&ir_func.signature), 
-            frame_info: ir_func.frame_info,
             blocks: lir_blocks, 
             entry_block: ir_func.entry_block,
             exit_block: ir_func.exit_block,
@@ -70,7 +69,7 @@ impl MirToLirLowerer {
                 IRInstruction::Load { src, result } => self.lower_load(result, *src),
                 IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
                 IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
-                IRInstruction::MemAlloc { size, ob_ty, result, pool_idx } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx),
+                IRInstruction::MemAlloc { size, ob_ty, result, pool_idx, data_ptr_slot, base_ptr_slot } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx, *base_ptr_slot, *data_ptr_slot),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -142,7 +141,9 @@ impl MirToLirLowerer {
         size: IRValue, 
         ob_ty: IRValue, 
         result: IRValueId, 
-        pool_idx: usize
+        pool_idx: usize,
+        base_ptr_slot: StackSlotId,
+        data_ptr_slot: StackSlotId
     ) -> Vec<LirInstruction> {
         // let compiler_cx = self.compiler_cx.borrow();
         // let object = compiler_cx.const_pool.get(pool_idx);
@@ -155,7 +156,10 @@ impl MirToLirLowerer {
         vec![LirInstruction::MemAlloc {
             ob_size: size_op,
             ob_type: type_op,
-            dest: dest_reg
+            dest: dest_reg,
+            pool_idx,
+            base_ptr_slot,
+            data_ptr_slot
         }]
     }
 
@@ -210,8 +214,8 @@ impl MirToLirLowerer {
 
     fn lower_mir_addr_to_lir_addr(&mut self, address: IRAddress) -> LirAddress {
         match address {
-            IRAddress::StackOffset(off) => LirAddress::Offset(off),
-            IRAddress::BaseOffset(base, off) => {
+            IRAddress::StackSlot(off) => LirAddress::Offset(off),
+            IRAddress::BaseSlot(base, off) => {
                 let base_reg = self.vreg_mapper.get_or_create(base);
                 LirAddress::BaseOffset(base_reg, off)
             }

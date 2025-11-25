@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_lir::vreg::VRegLiveRange;
+use kagc_mir::instruction::StackSlotId;
 
 use crate::regalloc::allocation::Allocation;
 use crate::regalloc::allocation::Location;
@@ -72,7 +73,7 @@ impl LinearScanAllocator {
     fn next_stack_slot(&mut self) -> Location {
         let nss = self.stack_slot;
         self.stack_slot += 1;
-        Location::StackSlot(nss)
+        Location::StackSlot(StackSlotId(nss))
     }
 }
 

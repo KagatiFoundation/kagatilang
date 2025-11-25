@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+itertools = "0.13.0"
+lazy_static = "1.4.0"
+
 kagc_types = { path = "../kagc_types" }
 kagc_mir = { path = "../kagc_mir" }
 kagc_mir_lowering = { path = "../kagc_mir_lowering" }

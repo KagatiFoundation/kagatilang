@@ -9,6 +9,6 @@ elif [ "$1" = "run" ]; then
     export DYLD_LIBRARY_PATH=./:$DYLD_LIBRARY_PATH
     ./out
 else
-    echo "Usage: $0 {build|compile}"
+    echo "Usage: $0 {build|run}"
     exit 1
 fi

@@ -13,7 +13,7 @@ use kagc_types::*;
 
 use kagc_mir::value::{IRValue, IRValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
-use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
+use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
 use kagc_mir::builder::IRBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
@@ -25,9 +25,6 @@ use kagc_utils::bug;
 
 use crate::fn_ctx::FunctionContext;
 use crate::loop_ctx::LoopContext;
-
-// constants
-use kagc_mir::GCOBJECT_BUFFER_IDX;
 
 /// Expression lowering result
 type ExprLoweringResult = Result<IRValueId, Diagnostic>;
@@ -191,25 +188,22 @@ impl AstToMirLowerer {
             fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
             let var_decl_value = self.lower_expression_ast(var_ast.left.as_mut().unwrap(), fn_ctx)?;
 
-            let var_stack_off = fn_ctx.next_stack_off();
-            self.ir_builder.inst(
-                IRInstruction::Store { 
-                    src: var_decl_value, 
-                    address: IRAddress::StackOffset(var_stack_off) 
-                }
-            );
-
-            if var_ast.result_type.is_gc_alloced() {
-                let data_ptr_value_id = self.ir_builder.create_load(IRAddress::BaseOffset(var_decl_value, GCOBJECT_BUFFER_IDX));
+            if !var_ast.result_type.is_gc_alloced() {
+                let var_stack_off = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
                     IRInstruction::Store { 
-                        src: data_ptr_value_id, 
-                        address: IRAddress::StackOffset(fn_ctx.next_stack_off())
+                        src: var_decl_value, 
+                        address: IRAddress::StackSlot(var_stack_off) 
                     }
                 );
+                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off.0);
             }
-
-            fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off);
+            else {
+                // Subtract 2 from the slot ID because a heap-allocated variable occupies
+                // two consecutive stack slots: one for the object’s base pointer and
+                // one for its data pointer.
+                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), fn_ctx.current_local_slot().0 - 2);
+            }
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
         bug!("required VarDeclStmt--but found {var_ast:#?}");
@@ -287,7 +281,7 @@ impl AstToMirLowerer {
 
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);
-        let load_value_id = self.ir_builder.create_load(IRAddress::StackOffset(sym_off));
+        let load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(sym_off)));
         Ok(load_value_id)
     }
 
@@ -492,8 +486,8 @@ impl AstToMirLowerer {
             .get(&access.rec_alias)
             .unwrap_or_else(|| bug!("record's stack offset not found"));
 
-        let base_pointer_value = self.ir_builder.create_load(IRAddress::StackOffset(rec_stack_off + 1));
-        Ok(self.ir_builder.create_load(IRAddress::BaseOffset(base_pointer_value, access.rel_stack_off)))
+        let base_pointer_value = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(rec_stack_off + 1)));
+        Ok(self.ir_builder.create_load(IRAddress::BaseSlot(base_pointer_value, StackSlotId(access.rel_stack_off))))
     }
 
     fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -502,6 +496,9 @@ impl AstToMirLowerer {
         if object.is_none() {
             bug!("ConstEntry(index '{idx}') not found");
         }
+
+        let base_ptr_slot = fn_ctx.alloc_local_slot(); // for object's base address
+        let data_ptr_slot = fn_ctx.alloc_local_slot(); // for object's data pointer
 
         let object = object.unwrap();
         let ob_size = self
@@ -514,7 +511,9 @@ impl AstToMirLowerer {
         Ok(self.ir_builder.create_memory_allocation(
             IRValue::Constant(ob_size as i64),
             IRValue::Constant(object.ob_type as i64),
-            idx
+            idx,
+            base_ptr_slot,
+            data_ptr_slot
         ))
     }
 

@@ -28,6 +28,10 @@ K_Object* object_new(size_t size, K_Object_Type type) {
     return obj; 
 }
 
+void object_copy(void* dest, void *src, size_t size) {
+    memcpy(dest, src, size);
+}
+
 void obj_alloc_fail()   { 
     const char msg[] = "object_new failed\n";
     write(STDERR_FILENO, msg, sizeof(msg)-1);

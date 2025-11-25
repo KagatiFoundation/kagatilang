@@ -5,6 +5,7 @@ use kagc_mir::block::BlockId;
 use kagc_mir::ir_operands::TempId;
 use kagc_mir::value::IRValueId;
 use kagc_mir::LabelId;
+use kagc_mir::instruction::StackSlotId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use crate::loop_ctx::LoopContext;
@@ -14,7 +15,9 @@ use crate::typedefs::*;
 #[derive(Debug)]
 pub struct FunctionContext {
     /// Next available stack slot for local variables.
-    pub stack_offset: StackOffset,
+    /// NOTE: The offsets generated using this field are not
+    /// the physical slots. They are just placeholders.
+    pub stack_slot_id: usize,
 
     /// Counter for generating fresh temporary variable IDs.
     pub temp_counter: TempCounter,
@@ -47,7 +50,7 @@ pub struct FunctionContext {
 impl FunctionContext {
     pub fn new(next_label: LabelId) -> Self {
         Self {
-            stack_offset: Default::default(), 
+            stack_slot_id: Default::default(), 
             temp_counter: 0, 
             early_return: Default::default(), 
             prev_ast_kind: None,
@@ -122,9 +125,13 @@ impl FunctionContext {
         nt
     }
 
-    pub fn next_stack_off(&mut self) -> StackOffset {
-        let so = self.stack_offset;
-        self.stack_offset += 1;
-        so
+    pub fn alloc_local_slot(&mut self) -> StackSlotId {
+        let so = self.stack_slot_id;
+        self.stack_slot_id += 1;
+        StackSlotId(so)
+    }
+
+    pub fn current_local_slot(&self) -> StackSlotId {
+        StackSlotId(self.stack_slot_id)
     }
 }

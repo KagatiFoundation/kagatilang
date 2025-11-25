@@ -69,7 +69,9 @@ pub enum IRInstruction {
         size:       IRValue,
         ob_ty:      IRValue,
         result:     IRValueId,
-        pool_idx:   PoolIdx
+        pool_idx:   PoolIdx,
+        base_ptr_slot: StackSlotId,
+        data_ptr_slot: StackSlotId
     },
 
     LoadGlobal {
@@ -143,11 +145,15 @@ impl IRInstruction {
     }
 }
 
+/// A placeholder for local stack slots.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StackSlotId(pub usize);
+
 #[derive(Debug, Clone, Copy)]
 pub enum IRAddress {
-    StackOffset(usize),
+    StackSlot(StackSlotId),
 
-    BaseOffset(IRValueId, usize)
+    BaseSlot(IRValueId, StackSlotId)
 }
 
 #[cfg(test)]

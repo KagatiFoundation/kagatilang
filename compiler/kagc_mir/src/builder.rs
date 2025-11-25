@@ -10,6 +10,7 @@ use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
 use crate::function::*;
+use crate::instruction::StackSlotId;
 use crate::instruction::{IRAddress, IRCondition};
 use crate::module::MirModule;
 use crate::types::*;
@@ -220,9 +221,16 @@ impl IRBuilder {
             .expect("create_move: no value ID created")
     }
 
-    pub fn create_memory_allocation(&mut self, size: IRValue, ob_type: IRValue, pool_idx: PoolIdx) -> IRValueId {
+    pub fn create_memory_allocation(
+        &mut self, 
+        size: IRValue, 
+        ob_type: IRValue, 
+        pool_idx: PoolIdx,
+        base_ptr_slot: StackSlotId,
+        data_ptr_slot: StackSlotId
+    ) -> IRValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::MemAlloc { size, ob_ty: ob_type, result, pool_idx })
+        self.inst(IRInstruction::MemAlloc { size, ob_ty: ob_type, result, pool_idx, base_ptr_slot, data_ptr_slot })
             .unwrap_or_else(|| bug!("cannot create memory allocation instruction"))
     }
 
@@ -278,7 +286,6 @@ impl IRBuilder {
                     blocks: func_blocks.clone(),
                     entry_block: anchor.entry_block,
                     exit_block: anchor.exit_block,
-                    frame_info: FunctionFrame { size: func_stack_size },
                     is_leaf: false
                 };
                 module.add_function(function);

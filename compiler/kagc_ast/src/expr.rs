@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 use kagc_symbol::function::FunctionId;
 use kagc_types::*;
-use lazy_static::lazy_static;
 
 use super::{ASTOperation, AST};
 
@@ -138,15 +138,4 @@ impl Expr {
             Expr::Null => todo!(),
         }
     }
-}
-
-lazy_static! {
-    pub static ref TYPE_PRECEDENCE_EXPR: std::collections::HashMap<u8, u8> = {
-        let typ: std::collections::HashMap<u8, u8> = HashMap::new();
-        // typ.insert(LitTypeVariant::I64 as u8, 3);
-        // typ.insert(LitTypeVariant::I32 as u8, 2);
-        // typ.insert(LitTypeVariant::I16 as u8, 1);
-        // typ.insert(LitTypeVariant::U8 as u8, 0);
-        typ
-    };
 }
