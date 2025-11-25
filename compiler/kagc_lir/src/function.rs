@@ -36,7 +36,6 @@ pub struct LirFunction {
     pub blocks: HashMap<BlockId, LirBasicBlock>,
     pub entry_block: BlockId,
     pub exit_block: BlockId,
-    pub is_leaf: bool
 }
 
 impl LirFunction {

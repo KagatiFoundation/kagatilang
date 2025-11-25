@@ -114,11 +114,9 @@ impl Compiler {
         let mut mir_lowerer = MirToLirLowerer::default();
         let mut cg = Aarch64CodeGenerator::new(self.ctx.clone());
 
-        for (mod_id, module) in modules.iter().enumerate() {
+        for module in modules.iter() {
             let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
             module_funcs.sort_by_key(|fid| fid.0);
-
-            println!("// module {mod_id}");
             for func_id in module_funcs {
                 let func = &module.functions[&func_id];
                 let func_lowered = mir_lowerer.lower_function(func);

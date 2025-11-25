@@ -65,7 +65,7 @@ impl OffsetGenerator {
     }
 
     pub fn get_offset_unchecked(&self, slot_id: StackSlotId) -> usize {
-        *self.off_map.get(&slot_id).unwrap()
+        *self.off_map.get(&slot_id).unwrap() * self.off_size
     }
 
     pub fn get_or_create_offset(&mut self, slot_id: StackSlotId) -> usize {

@@ -18,6 +18,7 @@ use kagc_mir::instruction::{IRCondition, StackSlotId};
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
+use crate::codegen_asm::state::CurrentFunctionState;
 use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
 use crate::regalloc::{Location, LinearScanAllocator};
 use crate::regalloc::register::{RegClass, Register};
@@ -45,6 +46,7 @@ pub struct Aarch64CodeGenerator {
     function_entry_block: Option<BlockId>,
     compiler_cx: Rc<RefCell<CompilerCtx>>,
     offset_generator: OffsetGenerator,
+    current_function_state: Option<CurrentFunctionState>, // none indicates no function is currently being processed
     code: String
 }
 
@@ -55,6 +57,7 @@ impl Default for Aarch64CodeGenerator {
             function_entry_block: None,
             compiler_cx: Rc::new(RefCell::new(CompilerCtx::default())),
             code: String::new(),
+            current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
         }
     }
@@ -67,6 +70,7 @@ impl Aarch64CodeGenerator {
             function_entry_block: None,
             compiler_cx: ccx,
             code: String::new(),
+            current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
         }
     }
@@ -86,6 +90,13 @@ impl CodeGenerator for Aarch64CodeGenerator {
         self.allocations = Some(vreg_mappings);
         self.function_entry_block = Some(lir_func.entry_block);
 
+        // current function's metadata
+        let is_leaf = self.is_function_leaf(lir_func);
+        self.current_function_state = Some(CurrentFunctionState {
+            is_leaf,
+            id: lir_func.id
+        });
+
         // manage function's stack
         self.emit_function_preamble(lir_func);
 
@@ -100,11 +111,10 @@ impl CodeGenerator for Aarch64CodeGenerator {
             let block = &lir_func.blocks[&bid];
             self.gen_block(block);
         }
-
-        // dump the globals
-        self.dump_globals();
         // return from the function
         self.emit_function_postamble(lir_func);
+        // dump the globals
+        self.dump_globals();
         println!("{code}", code = self.code);
     }
 
@@ -126,7 +136,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
                 LirInstruction::CJump { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
                 LirInstruction::Call { func, args, result } => self.emit_call_inst(func, args, result),
-                LirInstruction::MemAlloc { ob_size, ob_type, pool_idx, dest, base_ptr_slot, data_ptr_slot } => self.emit_memory_alloc_inst(ob_size, ob_type, *pool_idx, dest, *base_ptr_slot, *data_ptr_slot),
+                LirInstruction::MemAlloc { ob_size, ob_type, pool_idx, base_ptr_slot, data_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, ob_type, *pool_idx, *base_ptr_slot, *data_ptr_slot),
                 _ => panic!()
             }
         }
@@ -180,7 +190,6 @@ impl Aarch64CodeGenerator {
         ob_size: &LirOperand, 
         ob_type: &LirOperand, 
         pool_idx: usize, 
-        dest: &VReg,
         base_ptr_slot: StackSlotId,
         data_ptr_slot: StackSlotId
     ) {
@@ -218,19 +227,6 @@ impl Aarch64CodeGenerator {
 
         self.emit_raw_code(&format!("mov x1, {d}\n", d = SCRATCH_REGISTER_0.name));
         self.emit_raw_code(&format!("mov x2, #{object_size_const}\nbl _object_copy\n"));
-
-        let loc = self.current_allocations().get(dest).unwrap_or_else(|| bug!("cannot find VReg {dest:#?}")).clone();
-        match loc {
-            // Location::Reg(register) => {
-                // let base_addr = self.offset_generator.get_offset_unchecked(base_ptr_slot);
-                // self.code.push_str(&format!("ldr 1st call {d}, [sp, #{base_addr}]\n", d = register.name));
-            // },
-            Location::StackSlot(ss) => {
-                let off_addr = self.offset_generator.get_or_create_offset(ss);
-                self.emit_raw_code(&format!("str x0, [sp, #{off_addr}]\n"));
-            },
-            _ => ()
-        }
     }
 
     fn emit_str_mem_alloc_inst(&mut self, str_id: usize) {
@@ -288,39 +284,65 @@ impl Aarch64CodeGenerator {
         self.emit_raw_code(&format!("bl _{func}\n"));
     }
 
-    fn emit_function_preamble(&mut self, lir_func: &LirFunction) {
-        let mut output = format!(".global _{name}\n_{name}:\n", name = lir_func.name);
-        let stack_size = Self::align_to_16(16);
-        assert_eq!(stack_size, 16);
+    fn calculate_function_stack_size(&self, lir_func: &LirFunction) -> usize {
+        let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
+        let mut final_stack_size = 0;
+        // non-leaf functions call other functions
+        if !curr_func_is_leaf {
+            final_stack_size += 16;
+        }
 
-        if lir_func.is_leaf {
+        for block in lir_func.blocks.values() {
+            for instr in &block.instructions {
+                // store instructions take space
+                // NOTE: machine's CPU word size is not considered at the moment.
+                if let LirInstruction::Store { .. } = instr {
+                    final_stack_size += 8;
+                }
+                else if let LirInstruction::MemAlloc { .. } = instr {
+                    // each memory allocation instruction takes 16-bytes of memory
+                    final_stack_size += 16; 
+                }
+            }
+        }
+        final_stack_size
+    }
+
+    fn emit_function_preamble(&mut self, lir_func: &LirFunction) {
+        let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
+        let mut output = format!(".global _{name}\n_{name}:\n", name = lir_func.name);
+        let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func));
+
+        if curr_func_is_leaf {
             if stack_size > 0 {
                 output.push_str(&format!("sub sp, sp, #{stack_size}\n"));
             }
         } else {
             output.push_str(&format!("sub sp, sp, #{stack_size}\n"));
             output.push_str(&format!("stp x29, x30, [sp, #{}]\n", stack_size - 16));
-            output.push_str(&format!("add x29, sp, {}\n", stack_size - 16));
+            output.push_str(&format!("add x29, sp, #{}\n", stack_size - 16));
         }
         self.code.push_str(&output);
     }
 
-    fn emit_function_postamble(&self, lir_func: &LirFunction) {
+    fn emit_function_postamble(&mut self, lir_func: &LirFunction) {
+        let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
         let mut output = String::new();
         output.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
 
-        let stack_size = Self::align_to_16(0);
-        if lir_func.is_leaf {
+        let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func));
+        if curr_func_is_leaf {
             if stack_size > 0 {
                 output.push_str(&format!("add sp, sp, #{stack_size}\n"));
             }
         } else {
+            output.push_str(&format!("ldp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
             if stack_size > 0 {
                 output.push_str(&format!("add sp, sp, #{stack_size}\n"));
             }
-            output.push_str("ldp x29, x30, [sp], #16\n");
         }
         output.push_str("ret\n");
+        self.code.push_str(&output);
     }
 
     fn emit_cjump_inst(&mut self, lhs: &LirOperand, rhs: &LirOperand) {
@@ -531,13 +553,15 @@ impl Aarch64CodeGenerator {
     fn emit_ldr(&mut self, r1: &Register, addr: LirAddress) {
         match addr {
             LirAddress::Offset(off) => {
-                self.code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = off.0));
+                let addr_off = self.offset_generator.get_offset_unchecked(off);
+                self.code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
             },
             LirAddress::BaseOffset(vreg, off) => {
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
                     Location::Reg(register) => {
-                        self.code.push_str(&format!("ldr {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = off.0));
+                        let addr_off = self.offset_generator.get_offset_unchecked(off);
+                        self.code.push_str(&format!("ldr {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = addr_off));
                     },
                     Location::StackSlot(_) => todo!(),
                 }
@@ -548,13 +572,15 @@ impl Aarch64CodeGenerator {
     fn emit_str(&mut self, r1: &Register, addr: LirAddress) {
         match addr {
             LirAddress::Offset(off) => {
-                self.code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = off.0 * 8));
+                let addr_off = self.offset_generator.get_offset_unchecked(off);
+                self.code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
             },
             LirAddress::BaseOffset(vreg, off) => {
+                let addr_off = self.offset_generator.get_offset_unchecked(off);
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
                     Location::Reg(register) => {
-                        self.code.push_str(&format!("str {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = off.0 * 8));
+                        self.code.push_str(&format!("str {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = addr_off));
                     },
                     Location::StackSlot(_) => todo!(),
                 }
@@ -638,5 +664,32 @@ impl Aarch64CodeGenerator {
         else {
             bug!("no allocations found");
         }
+    }
+
+    /// Check whether a function is leaf or not.
+    /// A leaf function does not call any other functions.
+    fn is_function_leaf(&self, lir_func: &LirFunction) -> bool {
+        let mut is_leaf = true;
+        for block in lir_func.blocks.values() {
+            for instr in &block.instructions {
+                if let LirInstruction::Call { .. } = instr {
+                    // Any function which calls another function is a leaf function.
+                    is_leaf = false;
+                }
+            }
+        }
+        is_leaf
+    }
+
+    fn get_current_fn_state(&self) -> &CurrentFunctionState {
+        self.current_function_state
+            .as_ref()
+            .expect("Compile time function info not found! Aborting...")
+    }
+
+    fn get_current_fn_state_mut(&mut self) -> &mut CurrentFunctionState {
+        self.current_function_state
+            .as_mut()
+            .expect("Compile time function info not found! Aborting...")
     }
 }

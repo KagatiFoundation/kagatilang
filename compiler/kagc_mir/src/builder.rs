@@ -236,8 +236,6 @@ impl IRBuilder {
 
     pub fn build(&mut self) -> MirModule {
         let mut module = MirModule::new();
-        let mut func_stack_size = 0;
-
         for (func_id, func_blocks) in &mut self.function_blocks {
             let func_anchor = self
                 .function_anchors
@@ -266,7 +264,6 @@ impl IRBuilder {
                         terminator: block_terminator.clone(),
                         name: self.block_names.get(block_id).unwrap().to_string()
                     };
-                    func_stack_size += IRBuilder::calculate_block_stack_usage(&ir_block);
                     func_blocks.insert(
                         *block_id,
                         ir_block
@@ -278,7 +275,6 @@ impl IRBuilder {
                 self.function_signatures.get(func_id),
                 self.function_anchors.get(func_id)
             ) {
-                func_stack_size += signature.params.len() * 8; // each param accounts for 8 bytes of space
                 let function = IRFunction {
                     signature: signature.clone(),
                     id: *func_id,
@@ -292,17 +288,6 @@ impl IRBuilder {
             }
         }
         module
-    }
-
-    // Calculate the amount of space a function's block takes.
-    fn calculate_block_stack_usage(block: &IRBasicBlock) -> usize {
-        let mut size = 0;
-        for inst in block.instructions.iter() {
-            if let IRInstruction::Store { .. } = inst {
-                size += 8;
-            }
-        }
-        size
     }
 
     pub fn get_block(&self, block_id: BlockId) -> Option<&IRBasicBlock> {

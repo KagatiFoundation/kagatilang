@@ -42,7 +42,6 @@ impl MirToLirLowerer {
             blocks: lir_blocks, 
             entry_block: ir_func.entry_block,
             exit_block: ir_func.exit_block,
-            is_leaf: ir_func.is_leaf
         }
     }
 
