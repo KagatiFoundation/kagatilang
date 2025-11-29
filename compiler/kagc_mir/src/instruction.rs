@@ -146,7 +146,7 @@ impl IRInstruction {
 }
 
 /// A placeholder for local stack slots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct StackSlotId(pub usize);
 
 #[derive(Debug, Clone, Copy)]

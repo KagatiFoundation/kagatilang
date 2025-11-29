@@ -89,7 +89,7 @@ mod tests {
 
     use crate::analyzer::LivenessAnalyzer;
     use crate::block::Terminator;
-    use crate::builder::IRBuilder;
+    use crate::mir_builder::MirBuilder;
     use crate::function::FunctionId;
     use crate::instruction::IRCondition;
     use crate::types::IRType;
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_inst_level_liveness_analysis() {
-       let mut builder = IRBuilder::default();
+       let mut builder = MirBuilder::default();
         let fn_ctx = builder.create_function("loop_test".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_complex_function_live_ranges_construction() {
-        let mut builder = IRBuilder::default();
+        let mut builder = MirBuilder::default();
         let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1

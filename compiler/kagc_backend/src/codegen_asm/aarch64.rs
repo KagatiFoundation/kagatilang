@@ -14,7 +14,10 @@ use kagc_lir::function::LirFunction;
 use kagc_lir::block::LirBasicBlock;
 use kagc_lir::vreg::VReg;
 use kagc_mir::block::{BlockId, INVALID_BLOCK_ID};
+use kagc_mir::function::FunctionId;
 use kagc_mir::instruction::{IRCondition, StackSlotId};
+use kagc_mir::module::MirModule;
+use kagc_mir_lowering::MirToLirLowerer;
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
@@ -47,7 +50,7 @@ pub struct Aarch64CodeGenerator {
     compiler_cx: Rc<RefCell<CompilerCtx>>,
     offset_generator: OffsetGenerator,
     current_function_state: Option<CurrentFunctionState>, // none indicates no function is currently being processed
-    code: String
+    current_function_code: String
 }
 
 impl Default for Aarch64CodeGenerator {
@@ -56,7 +59,7 @@ impl Default for Aarch64CodeGenerator {
             allocations: None,
             function_entry_block: None,
             compiler_cx: Rc::new(RefCell::new(CompilerCtx::default())),
-            code: String::new(),
+            current_function_code: String::new(),
             current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
         }
@@ -69,7 +72,7 @@ impl Aarch64CodeGenerator {
             allocations: None,
             function_entry_block: None,
             compiler_cx: ccx,
-            code: String::new(),
+            current_function_code: String::new(),
             current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
         }
@@ -78,8 +81,10 @@ impl Aarch64CodeGenerator {
 
 impl CodeGenerator for Aarch64CodeGenerator {
     fn gen_function(&mut self, lir_func: &LirFunction) {
+        // println!("{lir_func:#?}");
+        // return;
         if lir_func.signature.class == StorageClass::EXTERN {
-            self.emit_raw_code(&format!(".extern _{fn_name}\n", fn_name = lir_func.name));
+            println!(".extern _{fn_name}\n", fn_name = lir_func.name); // an extern function
             return;
         }
 
@@ -113,9 +118,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
         }
         // return from the function
         self.emit_function_postamble(lir_func);
-        // dump the globals
-        self.dump_globals();
-        println!("{code}", code = self.code);
+        println!("{code}", code = self.current_function_code);
     }
 
     fn gen_block(&mut self, block: &LirBasicBlock) {
@@ -130,27 +133,27 @@ impl CodeGenerator for Aarch64CodeGenerator {
 
         for instr in block.instructions.iter() {
             match instr {
-                LirInstruction::Mov { dest, src } => self.emit_mov_inst(dest, src),
-                LirInstruction::Add { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
-                LirInstruction::Store { src, dest } => self.emit_str_inst(src, *dest),
-                LirInstruction::Load { src, dest } => self.emit_ldr_inst(*src, dest),
-                LirInstruction::CJump { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-                LirInstruction::Call { func, args, result } => self.emit_call_inst(func, args, result),
+                LirInstruction::Mov      { dest, src } => self.emit_mov_inst(dest, src),
+                LirInstruction::Add      { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
+                LirInstruction::Store    { src, dest } => self.emit_str_inst(src, *dest),
+                LirInstruction::Load     { src, dest } => self.emit_ldr_inst(*src, dest),
+                LirInstruction::CJump    { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
+                LirInstruction::Call     { func, args, result } => self.emit_call_inst(func, args, result),
                 LirInstruction::MemAlloc { ob_size, ob_type, pool_idx, base_ptr_slot, data_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, ob_type, *pool_idx, *base_ptr_slot, *data_ptr_slot),
                 _ => panic!()
             }
         }
 
         match block.terminator {
-            LirTerminator::Jump(block_id) => self.code.push_str(&format!("b _L{}", block_id.0)),
+            LirTerminator::Jump(block_id) => self.current_function_code.push_str(&format!("b _L{}", block_id.0)),
             LirTerminator::Return { value, target } => {
                 if let Some(ret_val_vreg) = value {
                     let src_loc = self.current_allocations().get(&ret_val_vreg).unwrap();
                     match src_loc {
-                        Location::Reg(r1) => self.code.push_str(&format!("mov x0, {s}\nb _L{d}", s = r1.name, d = target.0)),
+                        Location::Reg(r1) => self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}", s = r1.name, d = target.0)),
                         Location::StackSlot(ss) => {
                             self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(*ss));
-                            self.code.push_str(&format!("mov x0, {s}\nb _L{d}", s = SCRATCH_REGISTER_0.name, d = target.0));
+                            self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}", s = SCRATCH_REGISTER_0.name, d = target.0));
                         }
                     }
                 }
@@ -168,6 +171,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 self.emit_raw_code(&format!("b _L{bid}", bid = else_block.0));
             },
         }
+        // self.emit_raw_code("***** BLOCK END *****\n");
     }
 
     fn gen_instruction(&mut self, _: &LirInstruction) {
@@ -176,13 +180,29 @@ impl CodeGenerator for Aarch64CodeGenerator {
 }
 
 impl Aarch64CodeGenerator {
+    pub fn generate_module_code(&mut self, module: &MirModule) {
+        let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
+        let mut mir_lowerer = MirToLirLowerer::default();
+        module_funcs.sort_by_key(|fid| fid.0);
+        for func_id in module_funcs {
+            let func = &module.functions[&func_id];
+            let func_lowered = mir_lowerer.lower_function(func);
+            self.gen_function(&func_lowered); 
+
+            // reset current function
+            self.current_function_code = String::new();
+            // self.offset_generator = OffsetGenerator::new(8);
+            self.current_function_state = None;
+        }
+    }
+
     /// Align the given address into an address divisible by 16.
     fn align_to_16(value: usize) -> usize {
         (value + 16 - 1) & !15
     }
 
     fn emit_raw_code(&mut self, code: &str) {
-        self.code.push_str(code);
+        self.current_function_code.push_str(code);
     }
 
     fn emit_memory_alloc_inst(
@@ -216,7 +236,7 @@ impl Aarch64CodeGenerator {
 
         if let Some(c_item) = c_item {
             match &c_item.value {
-                KagcConst::Str(_) => self.emit_str_mem_alloc_inst(pool_idx),
+                KagcConst::Str(_) => self.emit_string_mem_alloc_inst(pool_idx),
                 KagcConst::Record(rec_value) => self.emit_rec_mem_alloc_inst(c_item.origin_func, &rec_value.alias),
                 _ => bug!("doesn't match any const entry type")
             }
@@ -229,7 +249,7 @@ impl Aarch64CodeGenerator {
         self.emit_raw_code(&format!("mov x2, #{object_size_const}\nbl _object_copy\n"));
     }
 
-    fn emit_str_mem_alloc_inst(&mut self, str_id: usize) {
+    fn emit_string_mem_alloc_inst(&mut self, str_id: usize) {
         self.emit_raw_code(&format!("ADRP {d}, .L.str.{str_id}@PAGE\n", d = SCRATCH_REGISTER_0.name));
         self.emit_raw_code(&format!("ADD {d}, {d}, .L.str.{str_id}@PAGEOFF\n", d = SCRATCH_REGISTER_0.name));
     }
@@ -310,39 +330,41 @@ impl Aarch64CodeGenerator {
 
     fn emit_function_preamble(&mut self, lir_func: &LirFunction) {
         let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
-        let mut output = format!(".global _{name}\n_{name}:\n", name = lir_func.name);
         let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func));
 
+        self.current_function_code.push_str(&format!(".global _{name}\n_{name}:\n", name = lir_func.name));
         if curr_func_is_leaf {
             if stack_size > 0 {
-                output.push_str(&format!("sub sp, sp, #{stack_size}\n"));
+                self.current_function_code.push_str(&format!("sub sp, sp, #{stack_size}\n"));
             }
         } else {
-            output.push_str(&format!("sub sp, sp, #{stack_size}\n"));
-            output.push_str(&format!("stp x29, x30, [sp, #{}]\n", stack_size - 16));
-            output.push_str(&format!("add x29, sp, #{}\n", stack_size - 16));
+            self.current_function_code.push_str(&format!("sub sp, sp, #{stack_size}\n"));
+            self.current_function_code.push_str(&format!("stp x29, x30, [sp, #{}]\n", stack_size - 16));
+            self.current_function_code.push_str(&format!("add x29, sp, #{}\n", stack_size - 16));
         }
-        self.code.push_str(&output);
+
+        for (reg_counter, param) in lir_func.signature.params.iter().enumerate() {
+            let param_addr = self.offset_generator.next(param.stack_slot);
+            self.current_function_code.push_str(&format!("str x{reg_counter}, [sp, #{param_addr}]\n"));
+        }
     }
 
     fn emit_function_postamble(&mut self, lir_func: &LirFunction) {
         let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
-        let mut output = String::new();
-        output.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
+        self.current_function_code.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
 
         let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func));
         if curr_func_is_leaf {
             if stack_size > 0 {
-                output.push_str(&format!("add sp, sp, #{stack_size}\n"));
+                self.current_function_code.push_str(&format!("add sp, sp, #{stack_size}\n"));
             }
         } else {
-            output.push_str(&format!("ldp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
+            self.current_function_code.push_str(&format!("ldp x29, x30, [sp, #{off}]\n", off = stack_size - 16));
             if stack_size > 0 {
-                output.push_str(&format!("add sp, sp, #{stack_size}\n"));
+                self.current_function_code.push_str(&format!("add sp, sp, #{stack_size}\n"));
             }
         }
-        output.push_str("ret\n");
-        self.code.push_str(&output);
+        self.current_function_code.push_str("ret\n");
     }
 
     fn emit_cjump_inst(&mut self, lhs: &LirOperand, rhs: &LirOperand) {
@@ -388,15 +410,15 @@ impl Aarch64CodeGenerator {
     }
 
     fn emit_cmp_reg_reg(&mut self, r1: &Register, r2: &Register) {
-        self.code.push_str(&format!("cmp {a}, {b}\n", a = r1.name, b = r2.name));
+        self.current_function_code.push_str(&format!("cmp {a}, {b}\n", a = r1.name, b = r2.name));
     }
 
     fn emit_cmp_reg_imm(&mut self, r1: &Register, imm: i64) {
-        self.code.push_str(&format!("cmp {a}, #{imm}\n", a = r1.name));
+        self.current_function_code.push_str(&format!("cmp {a}, #{imm}\n", a = r1.name));
     }
 
     fn emit_label(&mut self, id: usize) {
-        self.code.push_str(&format!("_L{id}:\n"));
+        self.current_function_code.push_str(&format!("_L{id}:\n"));
     }
 
     fn emit_str_inst(&mut self, src: &VReg, addr: LirAddress) {
@@ -554,14 +576,14 @@ impl Aarch64CodeGenerator {
         match addr {
             LirAddress::Offset(off) => {
                 let addr_off = self.offset_generator.get_offset_unchecked(off);
-                self.code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
+                self.current_function_code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
             },
             LirAddress::BaseOffset(vreg, off) => {
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
                     Location::Reg(register) => {
                         let addr_off = self.offset_generator.get_offset_unchecked(off);
-                        self.code.push_str(&format!("ldr {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = addr_off));
+                        self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = addr_off));
                     },
                     Location::StackSlot(_) => todo!(),
                 }
@@ -572,36 +594,34 @@ impl Aarch64CodeGenerator {
     fn emit_str(&mut self, r1: &Register, addr: LirAddress) {
         match addr {
             LirAddress::Offset(off) => {
-                let addr_off = self.offset_generator.get_offset_unchecked(off);
-                self.code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
+                let addr_off = self.offset_generator.next(off);
+                self.current_function_code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
             },
             LirAddress::BaseOffset(vreg, off) => {
-                let addr_off = self.offset_generator.get_offset_unchecked(off);
+                let addr_off = self.offset_generator.next(off);
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
-                    Location::Reg(register) => {
-                        self.code.push_str(&format!("str {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = addr_off));
-                    },
-                    Location::StackSlot(_) => todo!(),
+                    Location::Reg(register) => self.current_function_code.push_str(&format!("str {s}, [{b}, #{o}]\n", s = r1.name, b = register.name, o = addr_off)),
+                    Location::StackSlot(ss) => self.emit_str(r1, LirAddress::Offset(*ss)),
                 }
             },
         }
     }
 
     fn emit_add_reg_reg_reg(&mut self, r1: &Register, r2: &Register, r3: &Register) {
-        self.code.push_str(&format!("add {d}, {a}, {b}\n", d = r1.name, a = r2.name, b = r3.name));
+        self.current_function_code.push_str(&format!("add {d}, {a}, {b}\n", d = r1.name, a = r2.name, b = r3.name));
     }
 
     fn emit_add_reg_reg_imm(&mut self, r1: &Register, r2: &Register, imm: i64) {
-        self.code.push_str(&format!("add {d}, {a}, #{b}\n", d = r1.name, a = r2.name, b = imm));
+        self.current_function_code.push_str(&format!("add {d}, {a}, #{b}\n", d = r1.name, a = r2.name, b = imm));
     }
 
     fn emit_move_reg_to_reg(&mut self, r1: &Register, r2: &Register) {
-        self.code.push_str(&format!("mov {d}, {s}\n", d = r1.name, s = r2.name));
+        self.current_function_code.push_str(&format!("mov {d}, {s}\n", d = r1.name, s = r2.name));
     }
 
     fn emit_move_const_to_reg(&mut self, r1: &Register, s: i64) {
-        self.code.push_str(&format!("mov {d}, #{s}\n", d = r1.name));
+        self.current_function_code.push_str(&format!("mov {d}, #{s}\n", d = r1.name));
     }
 
     /// This function is public only for a short period of time.
@@ -609,12 +629,11 @@ impl Aarch64CodeGenerator {
         if self.compiler_cx.borrow().const_pool.is_empty() {
             return;
         }
-
-        let mut output_str: String = String::new();
+        let mut global_vars_code = String::new();
         for (index, c_item) in self.compiler_cx.borrow().const_pool.iter_enumerated() {
-            output_str.push_str(&self.dump_const(index, c_item, false));
+            global_vars_code.push_str(&self.dump_const(index, c_item, false));
         }
-        self.code.push_str(&output_str);
+        println!("{global_vars_code}");
     }
 
     fn dump_const(&self, c_item_index: usize, c_item: &ConstEntry, parent_is_record: bool) -> String {
@@ -684,12 +703,6 @@ impl Aarch64CodeGenerator {
     fn get_current_fn_state(&self) -> &CurrentFunctionState {
         self.current_function_state
             .as_ref()
-            .expect("Compile time function info not found! Aborting...")
-    }
-
-    fn get_current_fn_state_mut(&mut self) -> &mut CurrentFunctionState {
-        self.current_function_state
-            .as_mut()
             .expect("Compile time function info not found! Aborting...")
     }
 }

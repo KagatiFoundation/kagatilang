@@ -19,7 +19,7 @@ use crate::instruction::IRInstruction;
 use crate::value::{IRValue, IRValueId};
 
 #[derive(Debug, Default)]
-pub struct IRBuilder {
+pub struct MirBuilder {
     current_function: Option<FunctionId>,
     current_block: Option<BlockId>,
 
@@ -27,7 +27,7 @@ pub struct IRBuilder {
     function_blocks: IndexMap<FunctionId, IndexMap<BlockId, IRBasicBlock>>,
     function_anchors: IndexMap<FunctionId, FunctionAnchor>,
 
-    block_instructions: HashMap<BlockId, Vec<IRInstruction>>,
+    block_instructions: HashMap<(FunctionId, BlockId), Vec<IRInstruction>>,
     block_terminators: HashMap<BlockId, Terminator>,
 
     block_successors: HashMap<BlockId, HashSet<BlockId>>,
@@ -36,12 +36,14 @@ pub struct IRBuilder {
     block_names: HashMap<BlockId, &'static str>,
     function_names: HashMap<FunctionId, String>,
 
+    block_owner: HashMap<BlockId, FunctionId>,
+
     function_id: usize,
     block_id: usize,
     value_id: usize,
 }
 
-impl IRBuilder {
+impl MirBuilder {
     pub fn create_function(
         &mut self, 
         name: String, 
@@ -74,7 +76,8 @@ impl IRBuilder {
         if self.current_function.is_some() {
             let bid = self.next_block_id();
             self.current_block = Some(bid);
-            self.block_instructions.insert(bid, vec![]);
+            self.block_owner.insert(bid, self.current_function.unwrap());
+            self.block_instructions.insert((self.current_function.unwrap(), bid), vec![]);
             self.block_successors.insert(bid, HashSet::new());
             self.block_predecessors.insert(bid, HashSet::new());
             self.block_names.insert(bid, name);
@@ -86,14 +89,18 @@ impl IRBuilder {
     }
 
     pub fn switch_to_block(&mut self, block_id: BlockId) {
-        if !self.block_instructions.contains_key(&block_id) {
+        assert_ne!(self.current_function, None);
+
+        if !self.block_instructions.contains_key(&(self.current_function.unwrap(), block_id)) {
             bug!("cannot switch to a non-existing block");
         }
         self.current_block = Some(block_id);
     }
 
     pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
-        if !self.block_instructions.contains_key(&bid) {
+        assert_ne!(self.current_function, None);
+
+        if !self.block_instructions.contains_key(&(self.current_function.unwrap(), bid)) {
             bug!("cannot set a terminator for a non-existing block");
         }
         self.block_terminators.insert(bid, term);
@@ -135,7 +142,10 @@ impl IRBuilder {
     }
 
     pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
-        if !self.block_instructions.contains_key(&from) || !self.block_instructions.contains_key(&to) {
+        assert_ne!(self.current_function, None);
+
+        if !self.block_instructions.contains_key(&(self.current_function.unwrap(), from)) 
+            || !self.block_instructions.contains_key(&(self.current_function.unwrap(), to)) {
             bug!("cannot link non-existing blocks");
         }
         self.block_successors.get_mut(&from).unwrap().insert(to);
@@ -149,6 +159,7 @@ impl IRBuilder {
     }
 
     pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
+        assert_ne!(self.current_function, None);
         let block_id = self.current_block.unwrap_or_else(|| bug!("no active block to insert into"));
 
         if self.block_terminators.contains_key(&block_id) {
@@ -157,7 +168,7 @@ impl IRBuilder {
 
         let value_id = instruction.get_value_id();
         self.block_instructions
-            .get_mut(&block_id)
+            .get_mut(&(self.current_function.unwrap(), block_id))
             .unwrap_or_else(|| bug!("block not found"))
             .push(instruction);
 
@@ -172,10 +183,11 @@ impl IRBuilder {
         self.next_block_id()
     }
 
-    pub fn create_function_parameter(&mut self, ty: IRType) -> FunctionParam {
+    pub fn create_function_parameter(&mut self, ty: IRType, stack_slot: StackSlotId) -> FunctionParam {
         FunctionParam { 
             id: self.next_value_id(), 
-            ty
+            ty,
+            stack_slot
         }
     }
 
@@ -235,6 +247,82 @@ impl IRBuilder {
     }
 
     pub fn build(&mut self) -> MirModule {
+    let mut module = MirModule::new();
+
+    for (func_id, func_anchor) in &mut self.function_anchors {
+        // let func_anchor = self
+        //     .function_anchors
+        //     .get(func_id)
+        //     .unwrap_or_else(|| bug!("function is not anchored"));
+
+        // Start with an empty map (or clear existing)
+        let mut blocks_for_func: IndexMap<BlockId, IRBasicBlock> = IndexMap::new();
+
+        // iterate block_owner to find blocks for this function
+        for (&block_id, &owner_func) in self.block_owner.iter() {
+            if owner_func != *func_id {
+                continue;
+            }
+
+            let block_instrs = self.block_instructions
+                .get(&(owner_func, block_id))
+                .cloned()
+                .unwrap_or_else(Vec::new);
+
+            let block_terminator = self
+                .block_terminators
+                .get(&block_id)
+                .cloned()
+                .unwrap_or({
+                    Terminator::Return {
+                        value: None,
+                        target: func_anchor.exit_block,
+                    }
+                });
+
+            let ir_block = IRBasicBlock {
+                id: block_id,
+                instructions: block_instrs,
+                successors: self.block_successors
+                    .get(&block_id)
+                    .cloned()
+                    .unwrap_or_else(HashSet::new),
+                predecessors: self.block_predecessors
+                    .get(&block_id)
+                    .cloned()
+                    .unwrap_or_else(HashSet::new),
+                terminator: block_terminator,
+                name: self.block_names
+                    .get(&block_id)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("block_{}", block_id.0)),
+            };
+
+            blocks_for_func.insert(block_id, ir_block);
+        }
+
+        // now use blocks_for_func instead of func_blocks.clone()
+        if let Some(signature) = self.function_signatures.get(func_id) {
+            let function = IRFunction {
+                signature: signature.clone(),
+                id: *func_id,
+                name: self.function_names.get(func_id).unwrap().clone(),
+                blocks: blocks_for_func,
+                entry_block: func_anchor.entry_block,
+                exit_block: func_anchor.exit_block,
+                is_leaf: false,
+            };
+            module.add_function(function);
+        }
+    }
+
+    module
+}
+
+
+    pub fn build2(&mut self) -> MirModule {
+        assert_ne!(self.current_function, None);
+
         let mut module = MirModule::new();
         for (func_id, func_blocks) in &mut self.function_blocks {
             let func_anchor = self
@@ -242,49 +330,53 @@ impl IRBuilder {
                 .get(func_id)
                 .unwrap_or_else(|| bug!("function is not anchored"));
 
-            for (block_id, block_instrs) in self.block_instructions.iter() {
-                let block_terminator = self
-                    .block_terminators
-                    .get(block_id)
-                    .cloned()
-                    .unwrap_or({ 
-                        Terminator::Return { 
-                                value: None, 
-                                target: func_anchor.exit_block
+            let function_block_ids: Vec<BlockId> = func_blocks.iter().map(|fb| *fb.0).collect();
+            for block_id in function_block_ids {
+                if let Some(block_instrs) = self.block_instructions.get(&(*func_id, block_id)) {
+                    let block_terminator = self
+                        .block_terminators
+                        .get(&block_id)
+                        .cloned()
+                        .unwrap_or({ 
+                            Terminator::Return { 
+                                    value: None, 
+                                    target: func_anchor.exit_block
+                                }
                             }
-                        }
-                    );
+                        );
                     
-                if self.block_instructions.contains_key(block_id) {
                     let ir_block = IRBasicBlock { 
-                        id: *block_id, 
+                        id: block_id, 
                         instructions: block_instrs.clone(), 
-                        successors: self.block_successors.get(block_id).unwrap().clone(), 
-                        predecessors: self.block_predecessors.get(block_id).unwrap().clone(),
+                        successors: self.block_successors.get(&block_id).unwrap().clone(), 
+                        predecessors: self.block_predecessors.get(&block_id).unwrap().clone(),
                         terminator: block_terminator.clone(),
-                        name: self.block_names.get(block_id).unwrap().to_string()
+                        name: self.block_names.get(&block_id).unwrap().to_string()
                     };
                     func_blocks.insert(
-                        *block_id,
+                        block_id,
                         ir_block
                     );
-                }
-            }
 
-            if let (Some(signature), Some(anchor)) = (
-                self.function_signatures.get(func_id),
-                self.function_anchors.get(func_id)
-            ) {
-                let function = IRFunction {
-                    signature: signature.clone(),
-                    id: *func_id,
-                    name: self.function_names.get(func_id).unwrap().clone(),
-                    blocks: func_blocks.clone(),
-                    entry_block: anchor.entry_block,
-                    exit_block: anchor.exit_block,
-                    is_leaf: false
-                };
-                module.add_function(function);
+                    if let (Some(signature), Some(anchor)) = (
+                        self.function_signatures.get(func_id),
+                        self.function_anchors.get(func_id)
+                    ) {
+                        let function = IRFunction {
+                            signature: signature.clone(),
+                            id: *func_id,
+                            name: self.function_names.get(func_id).unwrap().clone(),
+                            blocks: func_blocks.clone(),
+                            entry_block: anchor.entry_block,
+                            exit_block: anchor.exit_block,
+                            is_leaf: false
+                        };
+                        module.add_function(function);
+                    }
+                }
+                else {
+                    bug!("no instructions found for given function id and block id pair: ({fid:#?}, {bid:#?})", fid = func_id, bid = block_id);
+                }
             }
         }
         module
@@ -311,8 +403,10 @@ impl IRBuilder {
     }
 
     pub fn current_block_id(&self) -> Option<BlockId> {
+        assert_ne!(self.current_function, None);
+
         let curr_block = self.current_block.unwrap_or_else(|| bug!("no active block"));
-        if self.block_instructions.contains_key(&curr_block) {
+        if self.block_instructions.contains_key(&(self.current_function.unwrap(), curr_block)) {
             Some(curr_block)
         }
         else {
@@ -361,14 +455,14 @@ mod tests {
     use kagc_symbol::StorageClass;
 
     use crate::block::{BlockId, Terminator};
-    use crate::builder::IRBuilder;
+    use crate::mir_builder::MirBuilder;
     use crate::instruction::IRInstruction;
     use crate::types::IRType;
     use crate::value::{IRValue, IRValueId};
 
     #[test]
     fn test_builder() {
-        let mut b = IRBuilder::default();
+        let mut b = MirBuilder::default();
         let fn_ctx = b.create_function("add".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL);
         b.inst(
             IRInstruction::Add {
@@ -417,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_blocks_linking() {
-        let mut builder = IRBuilder::default();
+        let mut builder = MirBuilder::default();
         let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::Void, StorageClass::GLOBAL);
         let f_bid = fn_ctx.entry_block;
         let _ = builder.create_move(IRValue::Constant(12345)); // variable, maybe?

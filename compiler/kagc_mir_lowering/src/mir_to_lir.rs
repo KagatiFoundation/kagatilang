@@ -49,7 +49,7 @@ impl MirToLirLowerer {
         let mut params = vec![];
         for p in sig.params.iter() {
             let reg = self.vreg_mapper.get_or_create(p.id);
-            params.push(LirFunctionParam { reg, ty: p.ty });
+            params.push(LirFunctionParam { reg, ty: p.ty, stack_slot: p.stack_slot });
         }
         LirFunctionSignature { 
             params, 

@@ -6,15 +6,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
-use kagc_backend::CodeGenerator;
 use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
-use kagc_mir::function::FunctionId;
 use kagc_mir::module::MirModule;
-use kagc_mir_lowering::MirToLirLowerer;
 use kagc_lexer::Tokenizer;
 use kagc_ast_lowering::AstToMirLowerer;
 use kagc_parser::builder::ParserBuilder;
@@ -111,19 +108,10 @@ impl Compiler {
     }
 
     fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
-        let mut mir_lowerer = MirToLirLowerer::default();
         let mut cg = Aarch64CodeGenerator::new(self.ctx.clone());
-
         for module in modules.iter() {
-            let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
-            module_funcs.sort_by_key(|fid| fid.0);
-            for func_id in module_funcs {
-                let func = &module.functions[&func_id];
-                let func_lowered = mir_lowerer.lower_function(func);
-                cg.gen_function(&func_lowered); 
-            }
+            cg.generate_module_code(module);
         }
-
         cg.dump_globals();
     }
 

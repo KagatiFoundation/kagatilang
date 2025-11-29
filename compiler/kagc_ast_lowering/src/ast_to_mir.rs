@@ -14,7 +14,7 @@ use kagc_types::*;
 use kagc_mir::value::{IRValue, IRValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
 use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
-use kagc_mir::builder::IRBuilder;
+use kagc_mir::mir_builder::MirBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
 use kagc_mir::LabelId;
@@ -40,9 +40,9 @@ pub struct AstToMirLowerer {
     /// type info, and other data needed during IR lowering.
     ctx: Rc<RefCell<CompilerCtx>>,
 
-    /// Public IR builder used to generate IR instructions, manage
+    /// Public MIR builder used to generate MIR instructions, manage
     /// basic blocks, and keep track of the current insertion point.
-    pub ir_builder: IRBuilder,
+    pub ir_builder: MirBuilder,
 
     // label ID tracker
     label_id: LabelId,
@@ -57,7 +57,7 @@ impl AstToMirLowerer {
             ctx,
             label_id: 0,
             current_function: None,
-            ir_builder: IRBuilder::default()
+            ir_builder: MirBuilder::default()
         }
     }
 
@@ -130,7 +130,12 @@ impl AstToMirLowerer {
             .collect_params(func_scope)
             .iter()
             .map(|&sym| {
-                self.ir_builder.create_function_parameter(IRType::from(sym.lit_type.clone()))
+                let param_stack_slot = fn_ctx.alloc_local_slot();
+                fn_ctx.var_offsets.insert(sym.name.clone(), param_stack_slot.0);
+                self.ir_builder.create_function_parameter(
+                    IRType::from(sym.lit_type.clone()), 
+                    param_stack_slot
+                )
             }).collect::<Vec<FunctionParam>>();
 
         let func_anchor = self.ir_builder.create_function(
@@ -277,7 +282,7 @@ impl AstToMirLowerer {
         let sym_off = *fn_ctx
             .var_offsets
             .get(&ident_expr.sym_name)
-            .unwrap_or_else(|| bug!("undefined symbol"));
+            .unwrap_or_else(|| bug!("undefined symbol '{name}'", name = ident_expr.sym_name));
 
         let reg_sz: RegSize = sym.lit_type.to_reg_size();
         assert_ne!(reg_sz, 0);

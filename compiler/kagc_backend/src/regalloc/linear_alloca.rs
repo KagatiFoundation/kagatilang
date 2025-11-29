@@ -81,7 +81,7 @@ impl LinearScanAllocator {
 mod tests {
     use kagc_mir_lowering::MirToLirLowerer;
 
-    use kagc_mir::builder::IRBuilder;
+    use kagc_mir::mir_builder::MirBuilder;
     use kagc_mir::function::FunctionId;
     use kagc_mir::types::IRType;
     use kagc_mir::value::IRValue;
@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_reg_allocation_for_simple_function() {
-        let mut builder = IRBuilder::default();
+        let mut builder = MirBuilder::default();
         let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let op1 = builder.create_move(IRValue::Constant(2)); // value id 0

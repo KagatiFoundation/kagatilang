@@ -7,6 +7,7 @@ use kagc_symbol::StorageClass;
 use crate::block::IRBasicBlock;
 use crate::block::BlockId;
 
+use crate::instruction::StackSlotId;
 use crate::types::IRType;
 use crate::value::IRValueId;
 
@@ -17,6 +18,7 @@ pub struct FunctionId(pub usize);
 pub struct FunctionParam {
     pub id: IRValueId,
     pub ty: IRType,
+    pub stack_slot: StackSlotId
 }
 
 #[derive(Default, Debug, Clone)]

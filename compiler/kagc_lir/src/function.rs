@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use kagc_mir::block::BlockId;
 use kagc_mir::function::FunctionId;
+use kagc_mir::instruction::StackSlotId;
 use kagc_mir::types::IRType;
 use kagc_symbol::StorageClass;
 
@@ -17,7 +18,8 @@ use crate::vreg::VReg;
 #[derive(Debug, Clone)]
 pub struct LirFunctionParam {
     pub reg: VReg,
-    pub ty: IRType
+    pub ty: IRType,
+    pub stack_slot: StackSlotId
 }
 
 // LIR function signature
@@ -113,7 +115,7 @@ impl LirFunction {
 #[cfg(test)]
 mod tests {
     use kagc_mir::block::Terminator;
-    use kagc_mir::builder::IRBuilder;
+    use kagc_mir::mir_builder::MirBuilder;
     use kagc_mir::instruction::IRCondition;
     use kagc_mir::types::IRType;
     use kagc_mir::value::IRValue;
@@ -121,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_vreg_generation() {
-        let mut builder = IRBuilder::default();
+        let mut builder = MirBuilder::default();
         let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1

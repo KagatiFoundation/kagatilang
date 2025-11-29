@@ -49,7 +49,7 @@ pub mod value;
 pub mod instruction;
 pub mod block;
 pub mod function;
-pub mod builder;
+pub mod mir_builder;
 pub mod types;
 pub mod module;
 pub mod analyzer;
