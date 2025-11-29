@@ -17,7 +17,6 @@ use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
 use kagc_mir::mir_builder::MirBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
-use kagc_mir::LabelId;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_symbol::function::FunctionInfo;
@@ -44,9 +43,6 @@ pub struct AstToMirLowerer {
     /// basic blocks, and keep track of the current insertion point.
     pub ir_builder: MirBuilder,
 
-    // label ID tracker
-    label_id: LabelId,
-
     /// Current function that is being parsed
     current_function: Option<FunctionInfo>,
 }
@@ -55,7 +51,6 @@ impl AstToMirLowerer {
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
         Self {
             ctx,
-            label_id: 0,
             current_function: None,
             ir_builder: MirBuilder::default()
         }
@@ -63,7 +58,7 @@ impl AstToMirLowerer {
 
     pub fn lower_irs(&mut self, nodes: &mut [AST]) -> StmtLoweringResult {
         for node in nodes {
-            self.lower_ir_node(node, &mut FunctionContext::new(0))?;
+            self.lower_ir_node(node, &mut FunctionContext::new())?;
         }
         Ok(self.ir_builder.current_block_id_unchecked())
     }
@@ -122,7 +117,7 @@ impl AstToMirLowerer {
             store_class = finfo.storage_class;
         }
 
-        let mut fn_ctx: FunctionContext = FunctionContext::new(self.label_id);
+        let mut fn_ctx: FunctionContext = FunctionContext::new();
 
         let func_ir_params = self.ctx
             .borrow()
@@ -171,7 +166,6 @@ impl AstToMirLowerer {
         self.current_function = None;
         // exit function's scope
         self.ctx.borrow_mut().scope.exit_scope();
-        self.label_id = fn_ctx.next_label;
         Ok(current_block_id)
     }
 

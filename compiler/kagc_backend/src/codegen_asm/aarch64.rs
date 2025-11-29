@@ -191,7 +191,7 @@ impl Aarch64CodeGenerator {
 
             // reset current function
             self.current_function_code = String::new();
-            // self.offset_generator = OffsetGenerator::new(8);
+            self.offset_generator.next_off = 0;
             self.current_function_state = None;
         }
     }

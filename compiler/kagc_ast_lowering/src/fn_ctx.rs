@@ -48,14 +48,15 @@ pub struct FunctionContext {
 }
 
 impl FunctionContext {
-    pub fn new(next_label: LabelId) -> Self {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         Self {
             stack_slot_id: Default::default(), 
             temp_counter: 0, 
             early_return: Default::default(), 
             prev_ast_kind: None,
             parent_ast_kind: ASTOperation::AST_FUNCTION,
-            next_label,
+            next_label: 0,
             force_label_use: 0,
             var_offsets: HashMap::new(),
             value_id: 0,
