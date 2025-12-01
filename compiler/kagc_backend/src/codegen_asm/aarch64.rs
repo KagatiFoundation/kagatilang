@@ -307,10 +307,13 @@ impl Aarch64CodeGenerator {
     fn calculate_function_stack_size(&self, lir_func: &LirFunction) -> usize {
         let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
         let mut final_stack_size = 0;
-        // non-leaf functions call other functions
+        // non-leaf functions call other functions and thus 
+        // the x29 and x30 registers must be saved on the stack
         if !curr_func_is_leaf {
             final_stack_size += 16;
         }
+
+        final_stack_size += lir_func.signature.params.len() * 8; // each parameter is going take 8-bytes of space
 
         for block in lir_func.blocks.values() {
             for instr in &block.instructions {
