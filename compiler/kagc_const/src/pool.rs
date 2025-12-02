@@ -103,16 +103,17 @@ impl ConstPool {
                 KagcConst::Bool(_) => Some(1),
 
                 KagcConst::Record(record_const) => {
-                    let mut computed = 0;
-                    for (_, item_idx) in record_const.fields.iter() {
-                        if let Some(field_size) = self.size(*item_idx) {
-                            computed += field_size;
-                        }
-                        else {
-                            return None;
-                        }
-                    }
-                    Some(computed)
+                    Some(record_const.fields.iter().len() * 8)
+                    // let mut computed = 0;
+                    // for (_, item_idx) in record_const.fields.iter() {
+                        // if let Some(field_size) = self.size(*item_idx) {
+                            // computed += field_size;
+                        // }
+                        // else {
+                            // return None;
+                        // }
+                    // }
+                    // Some(computed)
                 }
             };
         }

@@ -48,8 +48,7 @@ pub enum LirInstruction {
         ob_size: LirOperand,
         ob_type: LirOperand,
         pool_idx: usize,
-        base_ptr_slot: StackSlotId,
-        data_ptr_slot: StackSlotId
+        base_ptr_slot: StackSlotId
     },
 
     Call {

@@ -23,7 +23,7 @@ typedef struct _object {
     uint8_t*            data;
 } K_Object;
 
-K_Object* object_new(size_t size, K_Object_Type type);
+K_Object* object_new(size_t size, K_Object_Type type, void* src);
 
 void object_copy(void* dest, void *src, size_t size);
 

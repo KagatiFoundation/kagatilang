@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-K_Object* object_new(size_t size, K_Object_Type type) {
+K_Object* object_new(size_t size, K_Object_Type type, void* src) {
    if (size == 0) {
         fprintf(stderr, "kgc_alloc: cannot allocate zero size\n");
         return NULL;
@@ -24,7 +24,9 @@ K_Object* object_new(size_t size, K_Object_Type type) {
         free(obj);
         return NULL;
     }
-    
+    else {
+        object_copy(obj->data, src, size);
+    }
     return obj; 
 }
 

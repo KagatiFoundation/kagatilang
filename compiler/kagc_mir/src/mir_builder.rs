@@ -238,11 +238,10 @@ impl MirBuilder {
         size: IRValue, 
         ob_type: IRValue, 
         pool_idx: PoolIdx,
-        base_ptr_slot: StackSlotId,
-        data_ptr_slot: StackSlotId
+        base_ptr_slot: StackSlotId
     ) -> IRValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::MemAlloc { size, ob_ty: ob_type, result, pool_idx, base_ptr_slot, data_ptr_slot })
+        self.inst(IRInstruction::MemAlloc { size, ob_ty: ob_type, result, pool_idx, base_ptr_slot })
             .unwrap_or_else(|| bug!("cannot create memory allocation instruction"))
     }
 

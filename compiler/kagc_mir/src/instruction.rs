@@ -71,7 +71,6 @@ pub enum IRInstruction {
         result:     IRValueId,
         pool_idx:   PoolIdx,
         base_ptr_slot: StackSlotId,
-        data_ptr_slot: StackSlotId
     },
 
     LoadGlobal {

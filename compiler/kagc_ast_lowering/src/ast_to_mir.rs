@@ -201,7 +201,7 @@ impl AstToMirLowerer {
                 // Subtract 2 from the slot ID because a heap-allocated variable occupies
                 // two consecutive stack slots: one for the object’s base pointer and
                 // one for its data pointer.
-                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), fn_ctx.current_local_slot().0 - 2);
+                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), fn_ctx.current_local_slot().0 - 1);
             }
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
@@ -226,8 +226,24 @@ impl AstToMirLowerer {
             Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
             Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
             Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access(rec_field_access, fn_ctx),
+            Expr::RecordCreation(rec_create_expr) => self.lower_record_creation_expr(rec_create_expr, fn_ctx),
             _ => unimplemented!()
         }
+    }
+
+    fn lower_record_creation_expr(&mut self, rec_create_expr: &mut RecordCreationExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        for field in &mut rec_create_expr.fields {
+            let res = self.lower_record_field_creation_expr(field, fn_ctx)?;
+        }
+
+        self.lower_load_heap_allocated_value(rec_create_expr.pool_idx, fn_ctx)
+    }
+
+    /// Every field of the record gets a space in heap.
+    fn lower_record_field_creation_expr(&mut self, rec_field_expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        let expr_eval_res = self.lower_expression(&mut rec_field_expr.value, fn_ctx)?;
+        let field_stack_off = fn_ctx.alloc_local_slot();
+        Ok(expr_eval_res)
     }
 
     fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -251,6 +267,9 @@ impl AstToMirLowerer {
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
             return self.lower_load_string(*pool_idx, fn_ctx);
+        }
+        else if let LitType::PoolValue(pool_idx) = &lit_expr.value {
+            return self.lower_load_heap_allocated_value(*pool_idx, fn_ctx);
         }
 
         match lit_expr.result_type {
@@ -497,8 +516,6 @@ impl AstToMirLowerer {
         }
 
         let base_ptr_slot = fn_ctx.alloc_local_slot(); // for object's base address
-        let data_ptr_slot = fn_ctx.alloc_local_slot(); // for object's data pointer
-
         let object = object.unwrap();
         let ob_size = self
             .ctx
@@ -511,8 +528,7 @@ impl AstToMirLowerer {
             IRValue::Constant(ob_size as i64),
             IRValue::Constant(object.ob_type as i64),
             idx,
-            base_ptr_slot,
-            data_ptr_slot
+            base_ptr_slot
         ))
     }
 

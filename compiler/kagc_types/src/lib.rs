@@ -88,6 +88,9 @@ pub enum LitType {
     /// Represents a string literal paired with a unique label identifier.
     PoolStr(usize),
 
+    /// Value which allocates space in heap memory.
+    PoolValue(usize), // takes pool index as the sole parameter
+
     /// Represents an array literal.
     ///
     /// The first `usize` denotes the array length,
@@ -130,6 +133,9 @@ pub enum LitTypeVariant {
     Void,
     Str,
     PoolStr,
+
+    /// Value which allocated space in heap memory.
+    PoolValue,
     RawStr,
     Array,
     Null,

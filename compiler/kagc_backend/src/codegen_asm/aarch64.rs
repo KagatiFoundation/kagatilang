@@ -97,9 +97,11 @@ impl CodeGenerator for Aarch64CodeGenerator {
 
         // current function's metadata
         let is_leaf = self.is_function_leaf(lir_func);
+        let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func, is_leaf));
         self.current_function_state = Some(CurrentFunctionState {
             is_leaf,
-            id: lir_func.id
+            id: lir_func.id,
+            computed_stack_size: stack_size
         });
 
         // manage function's stack
@@ -139,21 +141,21 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 LirInstruction::Load     { src, dest } => self.emit_ldr_inst(*src, dest),
                 LirInstruction::CJump    { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
                 LirInstruction::Call     { func, args, result } => self.emit_call_inst(func, args, result),
-                LirInstruction::MemAlloc { ob_size, ob_type, pool_idx, base_ptr_slot, data_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, ob_type, *pool_idx, *base_ptr_slot, *data_ptr_slot),
+                LirInstruction::MemAlloc { ob_size, ob_type, pool_idx, base_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, ob_type, *pool_idx, *base_ptr_slot),
                 _ => panic!()
             }
         }
 
         match block.terminator {
-            LirTerminator::Jump(block_id) => self.current_function_code.push_str(&format!("b _L{}", block_id.0)),
+            LirTerminator::Jump(block_id) => self.current_function_code.push_str(&format!("b _L{}\n", block_id.0)),
             LirTerminator::Return { value, target } => {
                 if let Some(ret_val_vreg) = value {
                     let src_loc = self.current_allocations().get(&ret_val_vreg).unwrap();
                     match src_loc {
-                        Location::Reg(r1) => self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}", s = r1.name, d = target.0)),
+                        Location::Reg(r1) => self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}\n", s = r1.name, d = target.0)),
                         Location::StackSlot(ss) => {
                             self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(*ss));
-                            self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}", s = SCRATCH_REGISTER_0.name, d = target.0));
+                            self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}\n", s = SCRATCH_REGISTER_0.name, d = target.0));
                         }
                     }
                 }
@@ -167,8 +169,8 @@ impl CodeGenerator for Aarch64CodeGenerator {
                     IRCondition::GThan  => "b.gt",
                     IRCondition::LThan  => "b.lt",
                 };
-                self.emit_raw_code(&format!("{cmp_code} _L{bid}", bid = then_block.0));
-                self.emit_raw_code(&format!("b _L{bid}", bid = else_block.0));
+                self.emit_raw_code(&format!("{cmp_code} _L{bid}\n", bid = then_block.0));
+                self.emit_raw_code(&format!("b _L{bid}\n", bid = else_block.0));
             },
         }
         // self.emit_raw_code("***** BLOCK END *****\n");
@@ -210,25 +212,8 @@ impl Aarch64CodeGenerator {
         ob_size: &LirOperand, 
         ob_type: &LirOperand, 
         pool_idx: usize, 
-        base_ptr_slot: StackSlotId,
-        data_ptr_slot: StackSlotId
+        base_ptr_slot: StackSlotId
     ) {
-        let object_size_const = match (ob_size, ob_type) {
-            (LirOperand::Constant(size_imm), LirOperand::Constant(type_imm)) => {
-                self.emit_raw_code(&format!("mov {r}, #{s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[0], s = *size_imm));
-                self.emit_raw_code(&format!("mov {r}, #{s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[1], s = *type_imm));
-                self.emit_raw_code("bl _object_new\n"); // call allocation function
-                *size_imm
-            },
-            _ => bug!("object's size and type must be constant values")
-        };
-
-        let obj_base_addr = self.offset_generator.next(base_ptr_slot);
-        let obj_data_addr = self.offset_generator.next(data_ptr_slot);
-        self.emit_raw_code(&format!("str x0, [sp, #{off}]\n", off = obj_base_addr));
-        self.emit_raw_code(&format!("ldr {d}, [x0, #40]\nmov x0, {d}\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("str x0, [sp, #{obj_data_addr}]\n"));
-
         let c_item = {
             let cx = self.compiler_cx.borrow();
             cx.const_pool.get(pool_idx).cloned()
@@ -237,7 +222,8 @@ impl Aarch64CodeGenerator {
         if let Some(c_item) = c_item {
             match &c_item.value {
                 KagcConst::Str(_) => self.emit_string_mem_alloc_inst(pool_idx),
-                KagcConst::Record(rec_value) => self.emit_rec_mem_alloc_inst(c_item.origin_func, &rec_value.alias),
+                KagcConst::Int(_) => self.emit_integer_mem_alloc_inst(pool_idx),
+                KagcConst::Record(rec_value) => self.emit_record_mem_alloc_inst(c_item.origin_func, &rec_value.alias),
                 _ => bug!("doesn't match any const entry type")
             }
         }
@@ -245,19 +231,56 @@ impl Aarch64CodeGenerator {
             bug!("cannot find const entry");
         }
 
-        self.emit_raw_code(&format!("mov x1, {d}\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("mov x2, #{object_size_const}\nbl _object_copy\n"));
+        match (ob_size, ob_type) {
+            (LirOperand::Constant(size_imm), LirOperand::Constant(type_imm)) => {
+                self.emit_raw_code(&format!("mov {r}, #{s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[0], s = *size_imm));
+                self.emit_raw_code(&format!("mov {r}, #{s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[1], s = *type_imm));
+                // constant loading uses scratch register 0
+                self.emit_raw_code(&format!("mov {r}, {s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[2], s = SCRATCH_REGISTER_0.name));
+                self.emit_raw_code("bl _object_new\n"); // call allocation function
+            },
+            _ => bug!("object's size and type must be constant values")
+        };
+
+        let obj_base_addr = self.offset_generator.next(base_ptr_slot);
+        self.emit_store_reg_by_name("x0", obj_base_addr);
+        // self.emit_raw_code(&format!("str x0, [sp, #{off}]\n", off = obj_base_addr));
     }
 
+    /// WARNING: Use this function with caution.
+    fn emit_store_reg_by_name(&mut self, reg: &str, off: usize) {
+        let is_leaf = self.get_current_fn_state().is_leaf;
+        let stack_size = self.get_current_fn_state().computed_stack_size;
+        let r = Register {
+            class: RegClass::GPR,
+            id: 0xFF,
+            name: reg.to_string()
+        };
+        if is_leaf {
+            self.emit_str_relative_sp(&r, stack_size, off);
+        }
+        else {
+            self.emit_str_relative_fp(&r, off);
+        }
+    }
+
+    /// str_id = String's constant pool index
     fn emit_string_mem_alloc_inst(&mut self, str_id: usize) {
-        self.emit_raw_code(&format!("ADRP {d}, .L.str.{str_id}@PAGE\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("ADD {d}, {d}, .L.str.{str_id}@PAGEOFF\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("adrp {d}, .L.str.{str_id}@page\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("add {d}, {d}, .L.str.{str_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
     }
 
-    fn emit_rec_mem_alloc_inst(&mut self, origin_func: Option<usize>, rec_alias: &str) {
+    // integers in Kagati are 8-bytes in size
+    /// int_id = Integer's constant pool index
+    fn emit_integer_mem_alloc_inst(&mut self, int_id: usize) {
+        self.emit_raw_code(&format!("adrp {d}, .L.int.{int_id}@page\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("add {d}, {d}, .L.int.{int_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
+    }
+
+    fn emit_record_mem_alloc_inst(&mut self, origin_func: Option<usize>, rec_alias: &str) {
         self.emit_raw_code(
             &format!(
-                "ADRP {d}, .L__const.{}.{}@PAGE\n", 
+                "adrp {d}, .L__const.{}.{}@page\n", 
                 origin_func.unwrap(), 
                 rec_alias,
                 d = SCRATCH_REGISTER_0.name
@@ -265,7 +288,7 @@ impl Aarch64CodeGenerator {
         );
         self.emit_raw_code(
             &format!(
-                "ADD {d}, {d}, .L__const.{}.{}@PAGEOFF\n", 
+                "add {d}, {d}, .L__const.{}.{}@pageoff\n", 
                 origin_func.unwrap(), 
                 rec_alias,
                 d = SCRATCH_REGISTER_0.name
@@ -304,12 +327,11 @@ impl Aarch64CodeGenerator {
         self.emit_raw_code(&format!("bl _{func}\n"));
     }
 
-    fn calculate_function_stack_size(&self, lir_func: &LirFunction) -> usize {
-        let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
+    fn calculate_function_stack_size(&self, lir_func: &LirFunction, is_leaf: bool) -> usize {
         let mut final_stack_size = 0;
         // non-leaf functions call other functions and thus 
         // the x29 and x30 registers must be saved on the stack
-        if !curr_func_is_leaf {
+        if !is_leaf {
             final_stack_size += 16;
         }
 
@@ -332,8 +354,9 @@ impl Aarch64CodeGenerator {
     }
 
     fn emit_function_preamble(&mut self, lir_func: &LirFunction) {
-        let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
-        let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func));
+        let curr_fn_state = self.get_current_fn_state();
+        let curr_func_is_leaf = curr_fn_state.is_leaf;
+        let stack_size = curr_fn_state.computed_stack_size;
 
         self.current_function_code.push_str(&format!(".global _{name}\n_{name}:\n", name = lir_func.name));
         if curr_func_is_leaf {
@@ -354,9 +377,9 @@ impl Aarch64CodeGenerator {
 
     fn emit_function_postamble(&mut self, lir_func: &LirFunction) {
         let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
+        let stack_size = self.get_current_fn_state().computed_stack_size;
         self.current_function_code.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
 
-        let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func));
         if curr_func_is_leaf {
             if stack_size > 0 {
                 self.current_function_code.push_str(&format!("add sp, sp, #{stack_size}\n"));
@@ -445,6 +468,52 @@ impl Aarch64CodeGenerator {
             }
         }
     } 
+
+    /// Spill register to stack pointer (SP)
+    fn emit_str_relative_sp(&mut self, reg: &Register, stack_size: usize, off: usize) {
+        let stack_off = stack_size - off;
+        let dest_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
+            format!("[sp, {stack_off:#x}]")
+        }
+        else {
+            "[sp]".to_string()
+        };
+        self.current_function_code.push_str(&format!("str {}, {dest_addr}\n", reg.name));
+    }
+
+    /// Load register from stack pointer (SP)
+    fn emit_ldr_relative_sp(&mut self, reg: &Register, stack_size: usize, off: usize) {
+        let stack_off = stack_size - off;
+        let src_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
+            format!("[sp, {stack_off:#x}]")
+        }
+        else {
+            "[sp]".to_string()
+        };
+        self.current_function_code.push_str(&format!("ldr {}, {src_addr}\n", reg.name));
+    }
+
+    /// Spill register to frame pointer (x29)
+    fn emit_str_relative_fp(&mut self, reg: &Register, off: usize) {
+        let dest_addr = if off != 0 { // if not at the beginning of the frame pointer
+            format!("[x29, -{off:#x}]")
+        }
+        else {
+            "[x29]".to_string()
+        };
+        self.current_function_code.push_str(&format!("str {}, {dest_addr}\n", reg.name));
+    }
+
+    /// Load register from frame pointer (x29)
+    fn emit_ldr_relative_fp(&mut self, reg: &Register, off: usize) {
+        let src_addr = if off != 0 { // if not at the beginning of the frame pointer
+            format!("[x29, -{off:#x}]")
+        }
+        else {
+            "[x29]".to_string()
+        };
+        self.current_function_code.push_str(&format!("ldr {}, {src_addr}\n", reg.name));
+    }
 
     fn emit_mov_inst(&mut self, dest: &VReg, src: &LirOperand) {
         let loc = self.current_allocations().get(dest).unwrap().clone();
@@ -576,10 +645,17 @@ impl Aarch64CodeGenerator {
     }
 
     fn emit_ldr(&mut self, r1: &Register, addr: LirAddress) {
+        let stack_size = self.get_current_fn_state().computed_stack_size;
         match addr {
             LirAddress::Offset(off) => {
                 let addr_off = self.offset_generator.get_offset_unchecked(off);
-                self.current_function_code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
+                if self.get_current_fn_state().is_leaf {
+                    self.emit_ldr_relative_sp(r1, stack_size, addr_off);
+                }
+                else {
+                    self.emit_ldr_relative_fp(r1, addr_off);
+                }
+                // self.current_function_code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
             },
             LirAddress::BaseOffset(vreg, off) => {
                 let loc = self.current_allocations().get(&vreg).unwrap();
@@ -595,10 +671,17 @@ impl Aarch64CodeGenerator {
     }
 
     fn emit_str(&mut self, r1: &Register, addr: LirAddress) {
+        let stack_size = self.get_current_fn_state().computed_stack_size;
         match addr {
             LirAddress::Offset(off) => {
                 let addr_off = self.offset_generator.next(off);
-                self.current_function_code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
+                if self.get_current_fn_state().is_leaf {
+                    self.emit_str_relative_sp(r1, stack_size, addr_off);
+                }
+                else {
+                    self.emit_str_relative_fp(r1, addr_off);
+                    // self.current_function_code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
+                }
             },
             LirAddress::BaseOffset(vreg, off) => {
                 let addr_off = self.offset_generator.next(off);
@@ -646,19 +729,16 @@ impl Aarch64CodeGenerator {
                 output_str.push_str(&format!("\t.xword .L.str.{c_item_index}\n"));
             }
             else {
-                output_str.push_str(
-                    &format!(
-                        ".section __TEXT,__cstring\n\t.L.str.{}:\n\t.asciz \"{}\"\n", 
-                        c_item_index, 
-                        str_value
-                    )
-                );
+                output_str.push_str(&format!(".section __TEXT,__cstring\n\t.L.str.{c_item_index}:\n\t.asciz \"{str_value}\"\n"));
             }
         }
         else if let KagcConst::Int(int_value) = &c_item.value {
             if parent_is_record {
                 // output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
-                output_str.push_str(&format!("\t.xword {int_value}\n"));
+                output_str.push_str(&format!("\t.xword .L.int.{c_item_index}\n"));
+            }
+            else {
+                output_str.push_str(&format!(".section __DATA,__const\n\t.L.int.{c_item_index}:\n\t.xword {int_value}\n"));
             }
         }
         else if let KagcConst::Record(rec) = &c_item.value {
@@ -694,10 +774,7 @@ impl Aarch64CodeGenerator {
         let mut is_leaf = true;
         for block in lir_func.blocks.values() {
             for instr in &block.instructions {
-                if let LirInstruction::Call { .. } = instr {
-                    // Any function which calls another function is a leaf function.
-                    is_leaf = false;
-                }
+                is_leaf = !matches!(instr, LirInstruction::Call { .. } | LirInstruction::MemAlloc { .. });
             }
         }
         is_leaf

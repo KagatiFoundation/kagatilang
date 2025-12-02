@@ -19,6 +19,7 @@ use kagc_types::{
         RecordType
     }, LitType, LitTypeVariant
 };
+use kagc_utils::bug;
 
 use crate::errors::*;
 
@@ -61,7 +62,7 @@ impl Resolver {
 
             ASTOperation::AST_LOOP => {
                 if !node.kind.is_stmt() {
-                    panic!("Needed a LoopStmt--but found {:#?}", node);
+                    bug!("Needed a LoopStmt--but found {:#?}", node);
                 }
                 if let Some(left) = &mut node.left {
                     return self.declare_symbol(left);
@@ -71,14 +72,14 @@ impl Resolver {
 
             ASTOperation::AST_IF => {
                 if !node.kind.is_stmt() {
-                    panic!("Needed a IfStmt--but found {:#?}", node);
+                    bug!("Needed a IfStmt--but found {:#?}", node);
                 }
                 self.declare_if_else_tree(node)
             }
 
             ASTOperation::AST_FUNC_CALL => {
                 if !node.kind.is_expr() {
-                    panic!("Needed a FuncCallExpr--but found {:#?}", node);
+                    bug!("Needed a FuncCallExpr--but found {:#?}", node);
                 }
                 if let Some(func_call) = node.kind.as_expr_mut() {
                     return self.resolve_literal_constant(func_call, false, "");
@@ -102,14 +103,14 @@ impl Resolver {
 
     fn declare_if_else_tree(&mut self, node: &mut AST) -> ResolverResult {
         if !node.kind.is_stmt() {
-            panic!("Needed a IfDecl--but found {:#?}", node);
+            bug!("Needed a IfDecl--but found {:#?}", node);
         }
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &mut node.kind {
             self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
             self.ctx.borrow_mut().scope.exit_scope();
         }
         else {
-            panic!("Provided Stmt {node:#?} is not of type IfStmt! Aborting...");
+            bug!("Provided Stmt {:#?} is not of type IfStmt! Aborting...", node);
         }
 
         if let Some(mid_tree) = &mut node.mid {
@@ -132,7 +133,7 @@ impl Resolver {
 
     fn declare_func(&mut self, node: &mut AST) -> ResolverResult {
         if !node.kind.is_stmt() {
-            panic!("Needed a FuncDecl--but found {:#?}", node);
+            bug!("Needed a FuncDecl--but found {:#?}", node);
         }
 
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt_mut() {
@@ -196,13 +197,13 @@ impl Resolver {
             self.ctx.borrow_mut().scope.exit_scope();
             return Ok(function_id);
         }
-        panic!("Not a function declaration statement!");
+        bug!("Not a function declaration statement!");
     }
 
     fn declare_let_binding(&mut self, node: &mut AST) -> ResolverResult {
         let stmt = match &mut node.kind {
             ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
-            _ => panic!("Invalid node"),
+            _ => bug!("Invalid node"),
         };
 
         // If it's a record type, validate fields
@@ -244,7 +245,7 @@ impl Resolver {
 
     fn validate_and_process_expr(&mut self, ast: &mut AST, symbol_name: &str) -> ResolverResult {
         if !ast.kind.is_expr() {
-            panic!("Expected an Expr--but found {:#?}", ast);
+            bug!("Expected an Expr--but found {:#?}", ast);
         }
 
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
@@ -261,7 +262,7 @@ impl Resolver {
                     let raw_value = if let LitType::RawStr(ref s) = lit_expr.value {
                         s.clone()
                     } else {
-                        panic!("Expected RawStr variant but found something else");
+                        bug!("Expected RawStr variant but found something else");
                     };
 
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
@@ -281,22 +282,18 @@ impl Resolver {
                     }
 
                     let raw_value = match lit_expr.value {
-                        LitType::I32(value) => {
-                            lit_expr.result_type = LitTypeVariant::I32;
-                            value
-                        }
-                        LitType::U8(value) => {
-                            lit_expr.result_type = LitTypeVariant::U8;
-                            value as i32
-                        }
-                        _ => panic!("Expected RawStr variant but found something else")
+                        LitType::I32(value) => value as i64,
+                        | LitType::U8(value) => value as i64,
+                        _ => bug!("Expected Int variant but found something else")
                     };
 
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
-                        KagcConst::Int(raw_value as i64), 
+                        KagcConst::Int(raw_value), 
                         KObjType::KStr,
                         self.curr_func_id
                     );
+                    lit_expr.result_type = LitTypeVariant::PoolValue;
+                    lit_expr.value = LitType::PoolValue(pool_idx);
                     return Ok(pool_idx);
                 },
                 _ => return Ok(0)
@@ -412,6 +409,6 @@ impl Resolver {
             }
             return Ok(0);
         }
-        panic!("Cannot create record!!!")
+        bug!("Cannot create record!!!")
     }
 }

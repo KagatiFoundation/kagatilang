@@ -68,7 +68,7 @@ impl MirToLirLowerer {
                 IRInstruction::Load { src, result } => self.lower_load(result, *src),
                 IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
                 IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
-                IRInstruction::MemAlloc { size, ob_ty, result, pool_idx, data_ptr_slot, base_ptr_slot } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx, *base_ptr_slot, *data_ptr_slot),
+                IRInstruction::MemAlloc { size, ob_ty, result, pool_idx, base_ptr_slot } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx, *base_ptr_slot),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -141,8 +141,7 @@ impl MirToLirLowerer {
         ob_ty: IRValue, 
         result: IRValueId, 
         pool_idx: usize,
-        base_ptr_slot: StackSlotId,
-        data_ptr_slot: StackSlotId
+        base_ptr_slot: StackSlotId
     ) -> Vec<LirInstruction> {
         // let compiler_cx = self.compiler_cx.borrow();
         // let object = compiler_cx.const_pool.get(pool_idx);
@@ -157,8 +156,7 @@ impl MirToLirLowerer {
             ob_type: type_op,
             dest: dest_reg,
             pool_idx,
-            base_ptr_slot,
-            data_ptr_slot
+            base_ptr_slot
         }]
     }
 
