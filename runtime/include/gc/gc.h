@@ -1,6 +1,10 @@
 #ifndef KAG_GC_H
 #define KAG_GC_H
 
+#define INIT_HEAP_SIZE 100
+#define MACH_PTR_SIZE sizeof(void*)
+#define MAX_OBJECTS 1000
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,45 +12,37 @@
 extern "C" {
 #endif
 
-typedef enum _object_type {
+typedef enum ObjectType {
     K_INT = 0,
     K_STR = 1,
     K_REC = 2
-} K_Object_Type;
+} ObjectType;
 
-typedef struct _object {
-    uint64_t            ref_count;
+typedef struct _Object {
+    uint64_t            marked;
     uint64_t            ob_size;
     uint64_t            num_children;
-    struct _object**    children;
-    enum _object_type   ob_type;
+    struct _Object**    children;
+    struct _Object*    next;
+    enum ObjectType     ob_type;
     uint8_t*            data;
-} K_Object;
+} Object;
 
-K_Object* object_new(size_t size, K_Object_Type type, void* src);
+Object* object_new(size_t size, ObjectType type, void* src);
 
-void object_copy(void* dest, void *src, size_t size);
+typedef struct _RootStack {
+    struct _Object ***roots;
+    size_t count;
+    size_t capacity;
+} RootStack;
 
-void object_delete(K_Object *obj);
+// initialize the GC
+void init_gc();
 
-/**
- * Garbage collector object
- */
-typedef struct gc_object {
-    uint64_t            ref_count;
-    uint64_t            size;
-    uint64_t            num_children;
-    struct gc_object**  children;
-    uint8_t*            data;
-} gc_object_t;
+void gc_mark(Object *root);
 
-// increase the reference count
-void kgc_retain(gc_object_t* obj);
-
-void kgc_add_child(gc_object_t* obj, gc_object_t* child);
-
-#ifdef __cplusplus
+#ifdef _cplusplus
 }
 #endif
 
-#endif // KAG_GC_H
+#endif

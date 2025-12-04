@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include <stdio.h>
 
-void print(K_Object *obj) {
+void print(Object *obj) {
     if (obj->ob_type == K_REC) {
         printf("%p", obj);
         return;
