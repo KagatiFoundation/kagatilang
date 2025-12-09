@@ -95,26 +95,38 @@ impl ConstPool {
         }
     }
 
+    fn decode_escapes(raw: &str) -> String {
+        let mut result = String::new();
+        let mut chars = raw.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(next) = chars.next() {
+                    result.push(match next {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '"' => '"',
+                        _ => next, // or error
+                    });
+                    continue;
+                }
+            }
+            result.push(c);
+        }
+        result
+    }
+
     pub fn size(&self, idx: PoolIdx) -> Option<ConstSize> {
         if let Some(item) = self.get(idx) {
             return match &item.value {
-                KagcConst::Str(value) => Some(value.len() + 1 /* +1 for null byte */),
+                KagcConst::Str(value) => {
+                    let len = Self::decode_escapes(value).len();
+                    Some(len + 1) /* +1 for the null byte */
+                },
                 KagcConst::Int(_) => Some(8),
                 KagcConst::Bool(_) => Some(1),
-
-                KagcConst::Record(record_const) => {
-                    Some(record_const.fields.iter().len() * 8)
-                    // let mut computed = 0;
-                    // for (_, item_idx) in record_const.fields.iter() {
-                        // if let Some(field_size) = self.size(*item_idx) {
-                            // computed += field_size;
-                        // }
-                        // else {
-                            // return None;
-                        // }
-                    // }
-                    // Some(computed)
-                }
+                KagcConst::Record(record_const) => Some(record_const.fields.iter().len() * 8)
             };
         }
         None
