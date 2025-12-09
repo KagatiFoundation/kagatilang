@@ -379,7 +379,8 @@ impl Aarch64CodeGenerator {
 
         for (reg_counter, param) in lir_func.signature.params.iter().enumerate() {
             let param_addr = self.offset_generator.next(param.stack_slot);
-            self.current_function_code.push_str(&format!("str x{reg_counter}, [sp, #{param_addr}]\n"));
+            // self.current_function_code.push_str(&format!("str x{reg_counter}, [sp, #{param_addr}]\n"));
+            self.emit_store_reg_by_name(&format!("x{}", reg_counter), param_addr);
         }
     }
 
@@ -663,7 +664,6 @@ impl Aarch64CodeGenerator {
                 else {
                     self.emit_ldr_relative_fp(r1, addr_off);
                 }
-                // self.current_function_code.push_str(&format!("ldr {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
             },
             LirAddress::BaseOffset(vreg, off) => {
                 let loc = self.current_allocations().get(&vreg).unwrap();
@@ -688,7 +688,6 @@ impl Aarch64CodeGenerator {
                 }
                 else {
                     self.emit_str_relative_fp(r1, addr_off);
-                    // self.current_function_code.push_str(&format!("str {d}, [sp, #{s}]\n", d = r1.name, s = addr_off));
                 }
             },
             LirAddress::BaseOffset(vreg, off) => {

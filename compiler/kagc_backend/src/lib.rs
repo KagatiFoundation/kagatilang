@@ -53,7 +53,7 @@ impl OffsetGenerator {
         let off = self.next_off;
         self.off_map.insert(slot_id, off);
         self.next_off += 1;
-        off * self.off_size
+        off * self.off_size + 8
     }
 
     pub fn total_space_used(&self) -> usize {
@@ -65,15 +65,15 @@ impl OffsetGenerator {
     }
 
     pub fn get_offset_unchecked(&self, slot_id: StackSlotId) -> usize {
-        *self.off_map.get(&slot_id).unwrap() * self.off_size
+        (*self.off_map.get(&slot_id).unwrap() * self.off_size) + 8
     }
 
     pub fn get_or_create_offset(&mut self, slot_id: StackSlotId) -> usize {
         if let Some(off) = self.off_map.get(&slot_id) {
-            *off
+            *off + 8
         }
         else {
-            self.next(slot_id)
+            self.next(slot_id) + 8
         }
     }
 }
