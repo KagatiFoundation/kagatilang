@@ -16,3 +16,4 @@ kagc_scope = { path = "../kagc_scope" }
 kagc_symbol = { path = "../kagc_symbol" }
 kagc_lir = { path = "../kagc_lir" }
 kagc_utils = { path = "../kagc_utils" }
+runtime = { path = "../../runtime" }

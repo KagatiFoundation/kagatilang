@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <stdint.h>
 
-#include "../../include/typedefs.h"
+#include "../typedefs.h"
 
 /**
  * Close a socket. Just call this when you’re done with it.

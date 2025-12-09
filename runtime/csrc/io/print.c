@@ -1,4 +1,4 @@
-#include "io/print.h"
+#include "print.h"
 #include <stdio.h>
 
 void print(Object *obj) {

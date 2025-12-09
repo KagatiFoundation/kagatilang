@@ -7,28 +7,14 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "object.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef enum ObjectType {
-    K_INT = 0,
-    K_STR = 1,
-    K_REC = 2
-} ObjectType;
-
-typedef struct _Object {
-    uint64_t            marked;
-    uint64_t            ob_size;
-    uint64_t            num_children;
-    struct _Object**    children;
-    struct _Object*     next;
-    uint64_t            ob_type;
-    uint8_t*            data;
-} Object;
-
-Object* object_new(size_t size, ObjectType type, void* src);
+extern const uint64_t GC_OFFSET_DATA;
+extern const uint64_t GC_OFFSET_CHILDREN;
 
 typedef struct _RootStack {
     struct _Object ***roots;
@@ -46,8 +32,6 @@ size_t count_live_objects();
 Object* make_rt_int(uint64_t);
 
 Object* make_rt_str(void*, uint64_t);
-
-void insert_object(Object*, Object*, uint64_t);
 
 void dbg_print_heap();
 

@@ -10,6 +10,7 @@ use kagc_mir::types::IRType;
 use kagc_symbol::StorageClass;
 
 use crate::block::LirBasicBlock;
+use crate::instruction::LirAddress;
 use crate::instruction::LirInstruction;
 use crate::operand::LirOperand;
 use crate::vreg::VRegLiveRange;
@@ -67,10 +68,16 @@ impl LirFunction {
                         if let LirOperand::VReg(v) = lhs { vregs_used.push(*v); }
                         if let LirOperand::VReg(v) = rhs { vregs_used.push(*v); }
                     },
-                    LirInstruction::Load { dest, .. } => {
+                    LirInstruction::Load { dest, src } => {
+                        if let LirAddress::BaseOffset(vreg, _) = src {
+                            vregs_used.push(*vreg);
+                        }
                         vregs_defined.push(*dest);
                     },
-                    LirInstruction::Store { src, .. } => {
+                    LirInstruction::Store { src, dest } => {
+                        if let LirAddress::BaseOffset(base, _) = dest {
+                            vregs_used.push(*base);
+                        }
                         vregs_used.push(*src);
                     },
                     LirInstruction::MemAlloc { dest, .. } => {

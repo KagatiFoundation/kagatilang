@@ -16,3 +16,4 @@ kagc_utils = { path = "../kagc_utils" }
 kagc_mir = { path = "../kagc_mir" }
 kagc_const = { path = "../kagc_const" }
 kagc_errors = { path = "../kagc_errors" }
+runtime = { path = "../../runtime" }

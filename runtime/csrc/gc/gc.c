@@ -1,4 +1,4 @@
-#include "gc/gc.h"
+#include "gc.h"
 #include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -197,13 +197,17 @@ Object* make_rt_str(void *src, uint64_t size) {
     return object_new(size, K_STR, src);
 }
 
-void insert_object(Object* dest, Object *src, uint64_t index) {
-    if (!dest || !src) {
-        fprintf(stderr, "insert_object: dest and src cannot be null");
+void assign_ref(Object* dest, Object *src, uint64_t index) {
+    if (dest == NULL) {
+        fprintf(stderr, "insert_object: dest cannot be null\n");
         exit(1);
     }
-    if (!dest->children) {
-        fprintf(stderr, "insert_object: object cannot contain any children");
+    if (src == NULL) {
+        fprintf(stderr, "insert_object: src cannot be null\n");
+        exit(1);
+    }
+    if (dest->children == NULL) {
+        fprintf(stderr, "insert_object: object cannot contain any children\n");
         exit(1);
     }
     if (index >= dest->num_children) {
@@ -221,3 +225,6 @@ void dbg_print_heap() {
     }
     fprintf(stderr, "roots=%zu\n", root_stack.count);
 }
+
+const uint64_t GC_OFFSET_DATA = __offsetof(Object, data);
+const uint64_t GC_OFFSET_CHILDREN = __offsetof(Object, children);

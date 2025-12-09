@@ -20,4 +20,5 @@ members = [
     "compiler/kagc_span",
     "compiler/kagc_lir",
     "kagc",
+    "runtime"
 ]

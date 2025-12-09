@@ -27,3 +27,7 @@ kagc_lir = { path = "../compiler/kagc_lir" }
 kagc_comp_unit = { path = "../compiler/kagc_comp_unit" }
 kagc_scope = { path = "../compiler/kagc_scope" }
 kagc_utils = { path = "../compiler/kagc_utils" }
+runtime = { path = "../runtime" }
+
+[build-dependencies]
+cc = "1"

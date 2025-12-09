@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::ops::{Add, Sub};
+
 use kagc_const::pool::PoolIdx;
 
 use crate::value::*;
@@ -153,11 +155,38 @@ impl IRInstruction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct StackSlotId(pub usize);
 
+impl Add for StackSlotId {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Sub for StackSlotId {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self {
+        Self(self.0 - rhs.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum IRAddress {
     StackSlot(StackSlotId),
 
     BaseSlot(IRValueId, StackSlotId)
+}
+
+impl Add for IRAddress {
+    type Output = IRAddress;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (IRAddress::StackSlot(lhs), IRAddress::StackSlot(rhs)) => IRAddress::StackSlot(lhs + rhs),
+            (IRAddress::BaseSlot(base, lhs, ), IRAddress::StackSlot(rhs))
+            | (IRAddress::StackSlot(lhs), IRAddress::BaseSlot(base, rhs)) => IRAddress::BaseSlot(base, lhs + rhs),
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[cfg(test)]

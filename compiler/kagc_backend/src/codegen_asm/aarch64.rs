@@ -481,7 +481,7 @@ impl Aarch64CodeGenerator {
     fn emit_str_relative_sp(&mut self, reg: &Register, stack_size: usize, off: usize) {
         let stack_off = stack_size - off;
         let dest_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
-            format!("[sp, {stack_off:#x}]")
+            format!("[sp, #{stack_off}]")
         }
         else {
             "[sp]".to_string()
@@ -493,7 +493,7 @@ impl Aarch64CodeGenerator {
     fn emit_ldr_relative_sp(&mut self, reg: &Register, stack_size: usize, off: usize) {
         let stack_off = stack_size - off;
         let src_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
-            format!("[sp, {stack_off:#x}]")
+            format!("[sp, #{stack_off}]")
         }
         else {
             "[sp]".to_string()
@@ -504,7 +504,7 @@ impl Aarch64CodeGenerator {
     /// Spill register to frame pointer (x29)
     fn emit_str_relative_fp(&mut self, reg: &Register, off: usize) {
         let dest_addr = if off != 0 { // if not at the beginning of the frame pointer
-            format!("[x29, -{off:#x}]")
+            format!("[x29, #-{off}]")
         }
         else {
             "[x29]".to_string()
@@ -515,7 +515,7 @@ impl Aarch64CodeGenerator {
     /// Load register from frame pointer (x29)
     fn emit_ldr_relative_fp(&mut self, reg: &Register, off: usize) {
         let src_addr = if off != 0 { // if not at the beginning of the frame pointer
-            format!("[x29, -{off:#x}]")
+            format!("[x29, #-{off}]")
         }
         else {
             "[x29]".to_string()
@@ -670,7 +670,7 @@ impl Aarch64CodeGenerator {
                 match loc {
                     Location::Reg(register) => {
                         let addr_off = self.offset_generator.get_offset_unchecked(off);
-                        self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{o}]\n", d = r1.name, b = register.name, o = addr_off));
+                        self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{addr_off}]\n", d = r1.name, b = register.name));
                     },
                     Location::StackSlot(_) => todo!(),
                 }
@@ -692,10 +692,11 @@ impl Aarch64CodeGenerator {
                 }
             },
             LirAddress::BaseOffset(vreg, off) => {
-                let addr_off = self.offset_generator.next(off);
+                let addr_off = self.offset_generator.off_map.insert(off, off.0 * 8).unwrap_or_else(|| bug!("cannot create an offset"));
+                println!("Store: {off:#?}");
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
-                    Location::Reg(register) => self.current_function_code.push_str(&format!("str {s}, [{b}, #{o}]\n", s = r1.name, b = register.name, o = addr_off)),
+                    Location::Reg(register) => self.current_function_code.push_str(&format!("str {s}, [{b}, #{addr_off}]\n", s = r1.name, b = register.name)),
                     Location::StackSlot(ss) => self.emit_str(r1, LirAddress::Offset(*ss)),
                 }
             },
@@ -769,15 +770,14 @@ impl Aarch64CodeGenerator {
         }
         else if let KagcConst::Record(rec) = &c_item.value {
             if parent_is_record {
-                output_str.push_str(&format!("\t.xword .L.__c.{}.{}\n", c_item.origin_func.unwrap(), rec.alias.clone()));
+                output_str.push_str(&format!("\t.xword .L.__c.{}\n", c_item_index));
             }
             else {
                 output_str.push_str(
                     &format!(
-                        ".section __DATA,__const\n.align {}\n.L.__c.{}.{}:\n", 
+                        ".section __DATA,__const\n.align {}\n.L.__c.{}:\n", 
                         rec.alignment, 
-                        c_item.origin_func.unwrap(), 
-                        rec.alias.clone()
+                        c_item_index
                     )
                 );
                 for rec_field in &rec.fields {
