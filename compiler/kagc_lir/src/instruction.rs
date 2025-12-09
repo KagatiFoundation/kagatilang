@@ -32,6 +32,11 @@ pub enum LirInstruction {
         dest: VReg
     },
 
+    LoadConst {
+        label_id: usize,
+        dest: VReg
+    },
+
     Jump {
         label: LirLabel
     },

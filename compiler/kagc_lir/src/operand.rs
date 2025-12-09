@@ -5,6 +5,7 @@ use crate::vreg::VReg;
 
 #[derive(Debug, Clone)]
 pub enum LirOperand {
-    VReg(VReg),
-    Constant(i64)
+    VReg(VReg), // Either register or stack offset
+    Constant(i64), // Literal constant type
+    // Boxed(usize) // Boxed type encapsulates a Pool Index
 }

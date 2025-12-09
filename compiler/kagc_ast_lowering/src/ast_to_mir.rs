@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
+use kagc_const::pool::{ConstEntry, PoolIdx};
 use kagc_symbol::*;
 use kagc_backend::reg::*;
 use kagc_types::*;
@@ -232,18 +233,71 @@ impl AstToMirLowerer {
     }
 
     fn lower_record_creation_expr(&mut self, rec_create_expr: &mut RecordCreationExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        let rec_mem_add_value_id = self.lower_load_heap_allocated_value(rec_create_expr.pool_idx, fn_ctx)?;
         for field in &mut rec_create_expr.fields {
-            let res = self.lower_record_field_creation_expr(field, fn_ctx)?;
+            let field_value_id = self.lower_record_field_creation_expr(field, fn_ctx)?;
+            let field_stack_slot = fn_ctx.alloc_local_slot();
+            self.ir_builder.inst(
+                IRInstruction::Store { 
+                    src: field_value_id, 
+                    address: IRAddress::StackSlot(field_stack_slot) 
+                }
+            );
         }
-
-        self.lower_load_heap_allocated_value(rec_create_expr.pool_idx, fn_ctx)
+        Ok(rec_mem_add_value_id)
     }
 
-    /// Every field of the record gets a space in heap.
-    fn lower_record_field_creation_expr(&mut self, rec_field_expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let expr_eval_res = self.lower_expression(&mut rec_field_expr.value, fn_ctx)?;
-        let field_stack_off = fn_ctx.alloc_local_slot();
-        Ok(expr_eval_res)
+    fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        let expr_result_type = expr.value.result_type();
+        match expr_result_type {
+            LitTypeVariant::I32 | LitTypeVariant::I64 => {
+                let call_result_value_id = self.ir_builder.occupy_value_id();
+                let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
+                self.ir_builder.inst(
+                    IRInstruction::Call { 
+                        func: "make_rt_int".to_string(), 
+                        args: vec![eval_value_id], 
+                        result: Some(call_result_value_id)
+                    }
+                );
+                Ok(call_result_value_id)
+            },
+            LitTypeVariant::PoolStr => {
+                let lit_val_expr = expr.value.as_lit_val_expr().unwrap_or_else(|| {
+                    bug!("Type was PoolStr but the expression itself is not of type LitValExpr")
+                });
+                self.load_str_from_const_pool(lit_val_expr)
+            },
+            _ => unimplemented!()
+        }
+    }
+
+    // returns the id of value and the value's size
+    fn load_str_from_const_pool(&mut self, expr: &LitValExpr) -> Result<IRValueId, Diagnostic> {
+        match expr.value {
+            LitType::PoolStr(pool_idx) => {
+                let const_value_id = self.ir_builder.occupy_value_id();
+                let const_size = self.ctx.borrow().const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
+                self.ir_builder.inst(
+                    IRInstruction::LoadConst { 
+                        label_id: pool_idx,
+                        result: const_value_id
+                    }
+                );
+
+                let const_value_size_id = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
+                let call_result_value_id = self.ir_builder.occupy_value_id();
+                self.ir_builder.inst(
+                    IRInstruction::Call { 
+                        func: "make_rt_str".to_string(), 
+                        args: vec![const_value_id, const_value_size_id],
+                        result: Some(call_result_value_id)
+                    }
+                );
+                Ok(call_result_value_id)
+            },
+            _ => bug!("expected a PoolStr but found '{:#?}'", expr)
+        }
     }
 
     fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -257,7 +311,7 @@ impl AstToMirLowerer {
         self.ir_builder.inst(
             IRInstruction::Call { 
                 func: func_call_expr.symbol_name.clone(), 
-                args: func_call_args, 
+                args: func_call_args,
                 result: Some(call_result_value)
             }
         );
@@ -265,8 +319,9 @@ impl AstToMirLowerer {
     }
 
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        if let LitType::PoolStr(pool_idx) = &lit_expr.value  {
-            return self.lower_load_string(*pool_idx, fn_ctx);
+        if let LitType::PoolStr(_) = &lit_expr.value  {
+            let str_const = self.load_str_from_const_pool(lit_expr)?;
+            return Ok(str_const);
         }
         else if let LitType::PoolValue(pool_idx) = &lit_expr.value {
             return self.lower_load_heap_allocated_value(*pool_idx, fn_ctx);

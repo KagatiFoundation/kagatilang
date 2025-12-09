@@ -73,6 +73,11 @@ pub enum IRInstruction {
         base_ptr_slot: StackSlotId,
     },
 
+    LoadConst {
+        label_id: usize,
+        result: IRValueId
+    },
+
     LoadGlobal {
         pool_idx: PoolIdx,
         result: IRValueId

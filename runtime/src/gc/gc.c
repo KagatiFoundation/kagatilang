@@ -185,6 +185,18 @@ void gc_collect() {
     gc_sweep();
 }
 
+Object* make_rt_int(uint64_t value) {
+    return object_new(8, K_INT, (void*) &value);
+}
+
+Object* make_rt_rec(void *src, uint64_t size) {
+    return object_new(size, K_REC, src);
+}
+
+Object* make_rt_str(void *src, uint64_t size) {
+    return object_new(size, K_STR, src);
+}
+
 void dbg_print_heap() {
     fprintf(stderr, "heap objects:\n");
     for (Object *p = gc_objects; p; p = p->next) {

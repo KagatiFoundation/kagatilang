@@ -88,6 +88,9 @@ impl LirFunction {
                         for arg in args {
                             vregs_used.push(*arg);
                         }
+                    },
+                    LirInstruction::LoadConst { dest, .. } => {
+                        vregs_defined.push(*dest);
                     }
                     _ => {}
                 }

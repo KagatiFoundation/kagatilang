@@ -41,6 +41,10 @@ void init_gc();
 
 void gc_mark(Object *root);
 
+size_t count_live_objects();
+
+void gc_collect();
+
 #ifdef _cplusplus
 }
 #endif

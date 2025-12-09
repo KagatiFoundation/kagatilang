@@ -123,6 +123,14 @@ pub enum Expr {
     Null
 }
 
+#[derive(Clone, Debug)]
+pub enum ExprKind {
+    Binary,
+    Literal,
+    Call,
+    RecordCreation
+}
+
 impl Expr {
     pub fn result_type(&self) -> LitTypeVariant {
         match self {
@@ -136,6 +144,20 @@ impl Expr {
             Expr::RecordCreation(record_creation_expr) => LitTypeVariant::Record{name: record_creation_expr.name.clone()},
             Expr::RecordFieldAssign(_record_field_assign_expr) => todo!(),
             Expr::Null => todo!(),
+        }
+    }
+
+    pub fn kind(&self) -> ExprKind {
+        match self {
+            Expr::Binary(_) => ExprKind::Binary,
+            _ => todo!()
+        }
+    }
+
+    pub fn as_lit_val_expr(&self) -> Option<&LitValExpr> {
+        match self {
+            Expr::LitVal(lit_val_expr) => Some(lit_val_expr),
+            _ => unimplemented!() 
         }
     }
 }

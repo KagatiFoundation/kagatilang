@@ -292,8 +292,8 @@ impl Resolver {
                         KObjType::KStr,
                         self.curr_func_id
                     );
-                    lit_expr.result_type = LitTypeVariant::PoolValue;
-                    lit_expr.value = LitType::PoolValue(pool_idx);
+                    lit_expr.result_type = LitTypeVariant::I64;
+                    lit_expr.value = LitType::I64(raw_value);
                     return Ok(pool_idx);
                 },
                 _ => return Ok(0)
@@ -325,8 +325,9 @@ impl Resolver {
             return Ok(0xFFFFFFFF);
         }
         else if let Expr::Binary(bin) = expr {
-            let _ = self.resolve_literal_constant(&mut bin.left, parent_is_record, symbol_name);
-            let _ = self.resolve_literal_constant(&mut bin.right, parent_is_record, symbol_name);
+            let _ = self.resolve_literal_constant(&mut bin.left, parent_is_record, symbol_name)?;
+            let _ = self.resolve_literal_constant(&mut bin.right, parent_is_record, symbol_name)?;
+            return Ok(0xFFFFFFFF);
         }
         Ok(0xFFFFFFFF)
     }

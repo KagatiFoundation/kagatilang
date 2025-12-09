@@ -33,6 +33,7 @@ use kagc_symbol::Symbol;
 use kagc_symbol::{function::INVALID_FUNC_ID, SymbolType};
 
 use kagc_types::{is_type_coalescing_possible, LitTypeVariant};
+use kagc_utils::bug;
 
 use crate::type_checker::TypeChecker;
 
@@ -129,7 +130,7 @@ impl SemanticAnalyzer {
 
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr, meta),
 
-            Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr),
+            Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr, meta),
 
             Expr::RecordFieldAccess(recfieldexpr) => self.analyze_record_field_access_expr(recfieldexpr, meta),
             
@@ -189,7 +190,13 @@ impl SemanticAnalyzer {
         Err(diag)
     }
 
-    fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr) -> SAResult {
+    fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr, meta: &NodeMeta) -> SAResult {
+        for field in &mut rec_expr.fields {
+            let ff = self.analyze_and_mutate_expr(&mut field.value, meta)?;
+            if ff == LitTypeVariant::None {
+                bug!("record's field expression evaluation resulted in type None")
+            }
+        }
         Ok(LitTypeVariant::Record {
             name: rec_expr.name.clone()
         })
@@ -433,8 +440,6 @@ impl SemanticAnalyzer {
                 
                 if let LitTypeVariant::Record{ name } = &var_value_type {
                     var_sym.sym_type = SymbolType::Record { name: name.clone() }
-                }
-                else {
                 }
 
                 var_sym.func_id = Some(curr_func_id);

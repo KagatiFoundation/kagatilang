@@ -21,7 +21,7 @@ use kagc_mir_lowering::MirToLirLowerer;
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
-use crate::codegen_asm::state::CurrentFunctionState;
+use crate::codegen_asm::fn_state::CurrentFunctionState;
 use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
 use crate::regalloc::{Location, LinearScanAllocator};
 use crate::regalloc::register::{RegClass, Register};
@@ -135,13 +135,14 @@ impl CodeGenerator for Aarch64CodeGenerator {
 
         for instr in block.instructions.iter() {
             match instr {
-                LirInstruction::Mov      { dest, src } => self.emit_mov_inst(dest, src),
-                LirInstruction::Add      { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
-                LirInstruction::Store    { src, dest } => self.emit_str_inst(src, *dest),
-                LirInstruction::Load     { src, dest } => self.emit_ldr_inst(*src, dest),
-                LirInstruction::CJump    { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-                LirInstruction::Call     { func, args, result } => self.emit_call_inst(func, args, result),
-                LirInstruction::MemAlloc { ob_size, ob_type, pool_idx, base_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, ob_type, *pool_idx, *base_ptr_slot),
+                LirInstruction::Mov       { dest, src } => self.emit_mov_inst(dest, src),
+                LirInstruction::Add       { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
+                LirInstruction::Store     { src, dest } => self.emit_str_inst(src, *dest),
+                LirInstruction::Load      { src, dest } => self.emit_ldr_inst(*src, dest),
+                LirInstruction::CJump     { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
+                LirInstruction::Call      { func, args, result } => self.emit_call_inst(func, args, result),
+                LirInstruction::MemAlloc  { ob_size, pool_idx, base_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, *pool_idx, *base_ptr_slot),
+                LirInstruction::LoadConst { label_id, dest } => self.emit_load_const(*label_id, dest),
                 _ => panic!()
             }
         }
@@ -210,7 +211,6 @@ impl Aarch64CodeGenerator {
     fn emit_memory_alloc_inst(
         &mut self, 
         ob_size: &LirOperand, 
-        ob_type: &LirOperand, 
         pool_idx: usize, 
         base_ptr_slot: StackSlotId
     ) {
@@ -218,12 +218,16 @@ impl Aarch64CodeGenerator {
             let cx = self.compiler_cx.borrow();
             cx.const_pool.get(pool_idx).cloned()
         };
+        let ob_size = match ob_size {
+            LirOperand::Constant(imm) => *imm,
+            _ => bug!("ob_size must be a Constant value")
+        } as usize;
 
         if let Some(c_item) = c_item {
             match &c_item.value {
-                KagcConst::Str(_) => self.emit_string_mem_alloc_inst(pool_idx),
+                KagcConst::Str(_) => self.emit_string_mem_alloc_inst(pool_idx, ob_size),
                 KagcConst::Int(_) => self.emit_integer_mem_alloc_inst(pool_idx),
-                KagcConst::Record(rec_value) => self.emit_record_mem_alloc_inst(c_item.origin_func, &rec_value.alias),
+                KagcConst::Record(rec_value) => self.emit_record_mem_alloc_inst(c_item.origin_func, &rec_value.alias, ob_size),
                 _ => bug!("doesn't match any const entry type")
             }
         }
@@ -231,20 +235,8 @@ impl Aarch64CodeGenerator {
             bug!("cannot find const entry");
         }
 
-        match (ob_size, ob_type) {
-            (LirOperand::Constant(size_imm), LirOperand::Constant(type_imm)) => {
-                self.emit_raw_code(&format!("mov {r}, #{s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[0], s = *size_imm));
-                self.emit_raw_code(&format!("mov {r}, #{s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[1], s = *type_imm));
-                // constant loading uses scratch register 0
-                self.emit_raw_code(&format!("mov {r}, {s}\n", r = aarch64::ABI_ARG_REGISTERS_64_BIT[2], s = SCRATCH_REGISTER_0.name));
-                self.emit_raw_code("bl _object_new\n"); // call allocation function
-            },
-            _ => bug!("object's size and type must be constant values")
-        };
-
         let obj_base_addr = self.offset_generator.next(base_ptr_slot);
         self.emit_store_reg_by_name("x0", obj_base_addr);
-        // self.emit_raw_code(&format!("str x0, [sp, #{off}]\n", off = obj_base_addr));
     }
 
     /// WARNING: Use this function with caution.
@@ -265,22 +257,24 @@ impl Aarch64CodeGenerator {
     }
 
     /// str_id = String's constant pool index
-    fn emit_string_mem_alloc_inst(&mut self, str_id: usize) {
-        self.emit_raw_code(&format!("adrp {d}, .L.str.{str_id}@page\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("add {d}, {d}, .L.str.{str_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
+    fn emit_string_mem_alloc_inst(&mut self, str_id: usize, size: usize) {
+        self.emit_raw_code(&format!("adrp {d}, .L.__c.{str_id}@page\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{str_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("mov x0, {s}\nmov x1, {size}\nbl _make_rt_str\n", s = SCRATCH_REGISTER_0.name));
     }
 
     // integers in Kagati are 8-bytes in size
     /// int_id = Integer's constant pool index
     fn emit_integer_mem_alloc_inst(&mut self, int_id: usize) {
-        self.emit_raw_code(&format!("adrp {d}, .L.int.{int_id}@page\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("add {d}, {d}, .L.int.{int_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("adrp {d}, .L.__c.{int_id}@page\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{int_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("mov x0, {s}\nbl _make_rt_int\n", s = SCRATCH_REGISTER_0.name));
     }
 
-    fn emit_record_mem_alloc_inst(&mut self, origin_func: Option<usize>, rec_alias: &str) {
+    fn emit_record_mem_alloc_inst(&mut self, origin_func: Option<usize>, rec_alias: &str, size: usize) {
         self.emit_raw_code(
             &format!(
-                "adrp {d}, .L__const.{}.{}@page\n", 
+                "adrp {d}, .L.__c.{}.{}@page\n", 
                 origin_func.unwrap(), 
                 rec_alias,
                 d = SCRATCH_REGISTER_0.name
@@ -288,15 +282,16 @@ impl Aarch64CodeGenerator {
         );
         self.emit_raw_code(
             &format!(
-                "add {d}, {d}, .L__const.{}.{}@pageoff\n", 
+                "add {d}, {d}, .L.__c.{}.{}@pageoff\n", 
                 origin_func.unwrap(), 
                 rec_alias,
                 d = SCRATCH_REGISTER_0.name
             )
         );
+        self.emit_raw_code(&format!("mov x0, {s1}\nmov x1, #{size}\nbl _make_rt_rec\n", s1 = SCRATCH_REGISTER_0.name));
     }
 
-    fn emit_call_inst(&mut self, func: &str, args: &[VReg], _result: &Option<VReg>) {
+    fn emit_call_inst(&mut self, func: &str, args: &[VReg], result: &Option<VReg>) {
         if args.len() > 8 {
             bug!("compiler doesn't support more than 8 arguments");
         }
@@ -325,6 +320,19 @@ impl Aarch64CodeGenerator {
             }
         }
         self.emit_raw_code(&format!("bl _{func}\n"));
+
+        if let Some(result_pos) = result {
+            let loc = self.current_allocations().get(result_pos).unwrap();
+            match loc {
+                Location::Reg(register) => {
+                    self.emit_raw_code(&format!("mov {d}, x0\n", d = register.name));
+                },
+                Location::StackSlot(stack_slot_id) => {
+                    let call_value_stack_off = self.offset_generator.get_or_create_offset(*stack_slot_id);
+                    self.emit_store_reg_by_name("x0", call_value_stack_off);
+                },
+            }
+        }
     }
 
     fn calculate_function_stack_size(&self, lir_func: &LirFunction, is_leaf: bool) -> usize {
@@ -346,7 +354,7 @@ impl Aarch64CodeGenerator {
                 }
                 else if let LirInstruction::MemAlloc { .. } = instr {
                     // each memory allocation instruction takes 16-bytes of memory
-                    final_stack_size += 16; 
+                    final_stack_size += 8; 
                 }
             }
         }
@@ -694,6 +702,24 @@ impl Aarch64CodeGenerator {
         }
     }
 
+    fn emit_load_const(&mut self, label_id: usize, vreg: &VReg) {
+        let loc = self.current_allocations().get(vreg).unwrap().clone();
+        self.emit_raw_code(&format!("adrp {d}, .L.__c.{label_id}@page\n", d = SCRATCH_REGISTER_0.name));
+        self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{label_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
+        match loc {
+            Location::Reg(register) => {
+                self.emit_raw_code(
+                    &format!(
+                        "mov {d}, {s}\n", 
+                        d = register.name, 
+                        s = SCRATCH_REGISTER_0.name
+                    )
+                );
+            }
+            Location::StackSlot(stack_slot_id) => self.emit_store_reg_by_name(&SCRATCH_REGISTER_0.name, stack_slot_id.0),
+        }
+    }
+
     fn emit_add_reg_reg_reg(&mut self, r1: &Register, r2: &Register, r3: &Register) {
         self.current_function_code.push_str(&format!("add {d}, {a}, {b}\n", d = r1.name, a = r2.name, b = r3.name));
     }
@@ -726,33 +752,41 @@ impl Aarch64CodeGenerator {
         let mut output_str = String::new();
         if let KagcConst::Str(str_value) = &c_item.value {
             if parent_is_record {
-                output_str.push_str(&format!("\t.xword .L.str.{c_item_index}\n"));
+                output_str.push_str(&format!("\t.xword .L.__c.{c_item_index}\n"));
             }
             else {
-                output_str.push_str(&format!(".section __TEXT,__cstring\n\t.L.str.{c_item_index}:\n\t.asciz \"{str_value}\"\n"));
+                output_str.push_str(&format!(".section __TEXT,__cstring\n\t.L.__c.{c_item_index}:\n\t.asciz \"{str_value}\"\n"));
             }
         }
         else if let KagcConst::Int(int_value) = &c_item.value {
             if parent_is_record {
                 // output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
-                output_str.push_str(&format!("\t.xword .L.int.{c_item_index}\n"));
+                output_str.push_str(&format!("\t.xword .L.__c.{c_item_index}\n"));
             }
             else {
-                output_str.push_str(&format!(".section __DATA,__const\n\t.L.int.{c_item_index}:\n\t.xword {int_value}\n"));
+                output_str.push_str(&format!(".section __DATA,__const\n\t.L.__c.{c_item_index}:\n\t.xword {int_value}\n"));
             }
         }
         else if let KagcConst::Record(rec) = &c_item.value {
-            output_str.push_str(
-                &format!(
-                    ".section __DATA,__const\n.align {}\n.L__const.{}.{}:\n", 
-                    rec.alignment, 
-                    c_item.origin_func.unwrap(), 
-                    rec.alias.clone()
-                )
-            );
-            for rec_field in &rec.fields {
-                if let Some(rec_pool_item) = self.compiler_cx.borrow().const_pool.get(*rec_field.1) {
-                    output_str.push_str(&self.dump_const(*rec_field.1, rec_pool_item, true));
+            if parent_is_record {
+                output_str.push_str(&format!("\t.xword .L.__c.{}.{}\n", c_item.origin_func.unwrap(), rec.alias.clone()));
+            }
+            else {
+                output_str.push_str(
+                    &format!(
+                        ".section __DATA,__const\n.align {}\n.L.__c.{}.{}:\n", 
+                        rec.alignment, 
+                        c_item.origin_func.unwrap(), 
+                        rec.alias.clone()
+                    )
+                );
+                for rec_field in &rec.fields {
+                    if let Some(rec_pool_item) = self.compiler_cx.borrow().const_pool.get(*rec_field.1) {
+                        output_str.push_str(&self.dump_const(*rec_field.1, rec_pool_item, true));
+                    }
+                    else {
+                        output_str.push_str("\t.xword 0\n"); // allocate empty space for fields' pointers
+                    }
                 }
             }
         }

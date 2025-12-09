@@ -69,6 +69,7 @@ impl MirToLirLowerer {
                 IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
                 IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
                 IRInstruction::MemAlloc { size, ob_ty, result, pool_idx, base_ptr_slot } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx, *base_ptr_slot),
+                IRInstruction::LoadConst { label_id, result } => self.lower_const_load(*label_id, result),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -243,6 +244,11 @@ impl MirToLirLowerer {
                 src: src_operand 
             }
         ]
+    }
+
+    fn lower_const_load(&mut self, label_id: usize, result: &IRValueId) -> Vec<LirInstruction> {
+        let dest_vreg = self.vreg_mapper.get_or_create(*result);
+        vec![LirInstruction::LoadConst { label_id, dest: dest_vreg }]
     }
 
     fn resolve_to_operand(&mut self, value: IRValue) -> LirOperand {
