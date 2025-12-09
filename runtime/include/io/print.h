@@ -1,3 +1,3 @@
 #include "gc/gc.h"
 
-void println(Object *obj);
+void print(Object *obj);

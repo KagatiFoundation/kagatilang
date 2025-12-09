@@ -23,8 +23,8 @@ typedef struct _Object {
     uint64_t            ob_size;
     uint64_t            num_children;
     struct _Object**    children;
-    struct _Object*    next;
-    enum ObjectType     ob_type;
+    struct _Object*     next;
+    uint64_t            ob_type;
     uint8_t*            data;
 } Object;
 
@@ -42,6 +42,14 @@ void init_gc();
 void gc_mark(Object *root);
 
 size_t count_live_objects();
+
+Object* make_rt_int(uint64_t);
+
+Object* make_rt_str(void*, uint64_t);
+
+void insert_object(Object*, Object*, uint64_t);
+
+void dbg_print_heap();
 
 void gc_collect();
 

@@ -1,15 +1,17 @@
 #include "io/print.h"
-#include <unistd.h>
 #include <stdio.h>
 
 void print(Object *obj) {
     if (obj->ob_type == K_REC) {
-        printf("%p", obj);
+        fputs("Record {}", stdout);
         return;
     }
-
-    if (obj->ob_type != K_STR) return;
-    write(STDOUT_FILENO, obj->data, obj->ob_size);
+    if (obj->ob_type == K_STR) {
+        fprintf(stdout, "%s", (char*) obj->data);
+    }
+    else if (obj->ob_type == K_INT) {
+        fprintf(stdout, "%llu\n", *((uint64_t*) obj->data));
+    }
     fflush(stdout);
 }
 

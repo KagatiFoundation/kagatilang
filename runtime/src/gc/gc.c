@@ -197,6 +197,22 @@ Object* make_rt_str(void *src, uint64_t size) {
     return object_new(size, K_STR, src);
 }
 
+void insert_object(Object* dest, Object *src, uint64_t index) {
+    if (!dest || !src) {
+        fprintf(stderr, "insert_object: dest and src cannot be null");
+        exit(1);
+    }
+    if (!dest->children) {
+        fprintf(stderr, "insert_object: object cannot contain any children");
+        exit(1);
+    }
+    if (index >= dest->num_children) {
+        fprintf(stderr, "insert_object: child index out of range\n");
+        exit(1);
+    }
+    dest->children[index] = src;
+}
+
 void dbg_print_heap() {
     fprintf(stderr, "heap objects:\n");
     for (Object *p = gc_objects; p; p = p->next) {
