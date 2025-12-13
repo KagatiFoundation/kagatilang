@@ -5,7 +5,7 @@ use std::ops::{Add, Sub};
 
 use kagc_const::pool::PoolIdx;
 
-use crate::value::*;
+use crate::{builtin::BuiltinFn, value::*};
 
 #[derive(Debug, Clone, Copy)]
 pub struct IRInstructionId(pub usize);
@@ -67,6 +67,12 @@ pub enum IRInstruction {
         result: Option<IRValueId>
     },
 
+    CallBuiltin {
+        builtin: BuiltinFn,
+        args:   Vec<IRValueId>,
+        result: Option<IRValueId>
+    },
+
     MemAlloc {
         size:       IRValue,
         ob_ty:      IRValue,
@@ -109,7 +115,8 @@ impl IRInstruction {
             IRInstruction::Multiply     { result, .. } |
             IRInstruction::LoadGlobal   { result, .. } |
             IRInstruction::CondJump     { result, .. } => Some(*result),
-            IRInstruction::Call         { result, .. } => *result,
+            IRInstruction::Call         { result, .. } |
+            IRInstruction::CallBuiltin  { result, .. } => *result,
             _ => None
         }
     }
@@ -125,7 +132,8 @@ impl IRInstruction {
             IRInstruction::Multiply     { result, .. } |
             IRInstruction::LoadGlobal   { result, .. } |
             IRInstruction::CondJump     { result, .. } => vec![*result],
-            IRInstruction::Call { result, .. } => vec![result.unwrap()],
+            IRInstruction::Call         { result, .. } |
+            IRInstruction::CallBuiltin  { result, .. } => vec![result.unwrap()],
             _ => vec![]
         }
     }
@@ -144,7 +152,8 @@ impl IRInstruction {
                     .chain(rhs.as_value_id())
                     .collect()
             },
-            IRInstruction::Call        { args, .. } => args.clone(),
+            IRInstruction::Call        { args, .. } |
+            IRInstruction::CallBuiltin { args, .. } => args.clone(),
             IRInstruction::Store       { src, .. } => vec![*src],
             _ => vec![]
         }

@@ -18,6 +18,7 @@ use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
 use kagc_mir::mir_builder::MirBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
+use kagc_mir::builtin::BuiltinFn;
 use kagc_ctx::CompilerCtx;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_symbol::function::FunctionInfo;
@@ -233,29 +234,28 @@ impl AstToMirLowerer {
     }
 
     fn lower_record_creation_expr(&mut self, rec_create_expr: &mut RecordCreationExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let mut field_stack_slot_ids = vec![];
+        let mut field_stack_slot_ids = Vec::with_capacity(rec_create_expr.fields.len());
         for field in &mut rec_create_expr.fields {
-            let field_value_id = self.lower_record_field_creation_expr(field, fn_ctx)?;
-            let field_stack_slot_id = fn_ctx.alloc_local_slot();
+            let field_value = self.lower_record_field_creation_expr(field, fn_ctx)?;
+            let field_slot = fn_ctx.alloc_local_slot();
             self.ir_builder.inst(
                 IRInstruction::Store { 
-                    src: field_value_id, 
-                    address: IRAddress::StackSlot(field_stack_slot_id)
+                    src: field_value, 
+                    address: IRAddress::StackSlot(field_slot)
                 }
             );
-            field_stack_slot_ids.push(field_stack_slot_id);
+            field_stack_slot_ids.push(field_slot);
         }
 
-        let _ = self.load_record_from_const_pool(rec_create_expr.pool_idx, fn_ctx)?;
-        let rec_stack_slot_id = fn_ctx.current_local_slot() - StackSlotId(1); // record's stack slot
+        let rec_stack_slot = self.load_record_from_const_pool(rec_create_expr.pool_idx, fn_ctx)?;
 
         for (index, field_slot_id) in field_stack_slot_ids.iter().enumerate() {
-            let rec_data_off_value_id = self.ir_builder.create_load(IRAddress::StackSlot(rec_stack_slot_id));
+            let rec_data_off_value_id = self.ir_builder.create_load(IRAddress::StackSlot(rec_stack_slot));
             let field_slot_load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(*field_slot_id));
             let index_value_id = self.ir_builder.create_move(IRValue::Constant(index as i64));
             self.ir_builder.inst(
-                IRInstruction::Call { 
-                    func: "assign_ref".to_string(), 
+                IRInstruction::CallBuiltin { 
+                    builtin: BuiltinFn::AssignRef, 
                     args: vec![rec_data_off_value_id, field_slot_load_value_id, index_value_id], 
                     result: None 
                 }
@@ -271,8 +271,8 @@ impl AstToMirLowerer {
                 let call_result_value_id = self.ir_builder.occupy_value_id();
                 let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
                 self.ir_builder.inst(
-                    IRInstruction::Call { 
-                        func: "make_rt_int".to_string(), 
+                    IRInstruction::CallBuiltin { 
+                        builtin: BuiltinFn::AllocInt, 
                         args: vec![eval_value_id], 
                         result: Some(call_result_value_id)
                     }
@@ -305,8 +305,8 @@ impl AstToMirLowerer {
                 let const_value_size_id = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
                 let call_result_value_id = self.ir_builder.occupy_value_id();
                 self.ir_builder.inst(
-                    IRInstruction::Call { 
-                        func: "make_rt_str".to_string(), 
+                    IRInstruction::CallBuiltin { 
+                        builtin: BuiltinFn::AllocStr, 
                         args: vec![const_value_id, const_value_size_id],
                         result: Some(call_result_value_id)
                     }
@@ -323,7 +323,7 @@ impl AstToMirLowerer {
         }
     }
 
-    fn load_record_from_const_pool(&mut self, pool_idx: PoolIdx, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn load_record_from_const_pool(&mut self, pool_idx: PoolIdx, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         let const_value_id = self.ir_builder.occupy_value_id();
         let const_size = self.ctx.borrow().const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
         self.ir_builder.inst(
@@ -335,19 +335,20 @@ impl AstToMirLowerer {
         let const_value_size_id = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
         let call_result_value_id = self.ir_builder.occupy_value_id();
         self.ir_builder.inst(
-            IRInstruction::Call { 
-                func: "make_rt_rec".to_string(), 
+            IRInstruction::CallBuiltin { 
+                builtin: BuiltinFn::AllocRec, 
                 args: vec![const_value_id, const_value_size_id],
                 result: Some(call_result_value_id)
             }
         );
+        let stack_slot = fn_ctx.alloc_local_slot();
         self.ir_builder.inst(
             IRInstruction::Store { 
                 src: call_result_value_id, 
-                address: IRAddress::StackSlot(fn_ctx.alloc_local_slot()) 
+                address: IRAddress::StackSlot(stack_slot) 
             }
         );
-        Ok(call_result_value_id)
+        Ok(stack_slot)
     }
 
     fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {

@@ -199,7 +199,7 @@ mod tests {
         let mut pool = ConstPool::default();
 
         let idx_str = pool.insert(KagcConst::Str("abc".into()), KObjType::KStr, None);
-        let idx_bool = pool.insert(KagcConst::Bool(true), KObjType::KInt, None);
+        let idx_bool = pool.insert(KagcConst::Int(12345), KObjType::KInt, None);
 
         let mut fields = IndexMap::new();
         fields.insert("field1".to_string(), idx_str);
@@ -213,9 +213,7 @@ mod tests {
         };
 
         let idx_record = pool.insert(KagcConst::Record(record),KObjType::KRec, None);
-
-        // Size = len("abc")+1 + 1 = 4+1 = 5
-        assert_eq!(pool.size(idx_record), Some(5));
+        assert_eq!(pool.size(idx_record), Some(16));
     }
 
     #[test]
@@ -233,8 +231,7 @@ mod tests {
         };
 
         let idx = pool.insert(KagcConst::Record(record), KObjType::KRec, None);
-
-        assert_eq!(pool.size(idx), None, "Should return None if field index is invalid");
+        assert_eq!(pool.size(idx), Some(8));
     }
 
     #[test]

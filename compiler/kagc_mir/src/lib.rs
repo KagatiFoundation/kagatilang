@@ -4,6 +4,7 @@
 pub mod ir_operands;
 pub mod ir_instr;
 pub mod ir_liveness;
+pub mod builtin;
 
 /// Label ID
 pub type LabelId = usize;

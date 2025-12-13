@@ -88,7 +88,8 @@ impl LirFunction {
                         if let LirOperand::VReg(v) = lhs { vregs_used.push(*v); }
                         if let LirOperand::VReg(v) = rhs { vregs_used.push(*v); }
                     },
-                    LirInstruction::Call { args, result, .. } => {
+                    LirInstruction::Call { args, result, .. } |
+                    LirInstruction::CallBuiltin { args, result, .. } => {
                         if let Some(result) = result {
                             vregs_defined.push(*result);
                         }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::instruction::{IRCondition, StackSlotId};
 
 use crate::operand::LirOperand;
@@ -58,6 +59,12 @@ pub enum LirInstruction {
 
     Call {
         func: String,
+        args: Vec<VReg>,
+        result: Option<VReg>
+    },
+
+    CallBuiltin {
+        builtin: BuiltinFn,
         args: Vec<VReg>,
         result: Option<VReg>
     }

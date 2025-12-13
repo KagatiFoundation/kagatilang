@@ -19,13 +19,13 @@ for i in range(1, iterations + 1):
     result = subprocess.run(cmd, capture_output=True, text=True)
     dur = (time.time() - start) * 1000
     if result.returncode != 0:
-        print(f"❌ {i}: failed ({dur:.2f} ms)")
+        print(f"{i}: failed ({dur:.2f} ms)")
         print(result.stdout)
         failures.append(i)
         if stop_on_fail:
             break
     else:
-        print(f"✅ {i}: passed ({dur:.2f} ms)")
+        print(f"{i}: passed ({dur:.2f} ms)")
 
 print("\n--- SUMMARY ---")
 print(f"Total: {iterations}")

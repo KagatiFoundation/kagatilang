@@ -14,6 +14,7 @@ use kagc_lir::function::LirFunction;
 use kagc_lir::block::LirBasicBlock;
 use kagc_lir::vreg::VReg;
 use kagc_mir::block::{BlockId, INVALID_BLOCK_ID};
+use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::FunctionId;
 use kagc_mir::instruction::{IRCondition, StackSlotId};
 use kagc_mir::module::MirModule;
@@ -135,14 +136,15 @@ impl CodeGenerator for Aarch64CodeGenerator {
 
         for instr in block.instructions.iter() {
             match instr {
-                LirInstruction::Mov       { dest, src } => self.emit_mov_inst(dest, src),
-                LirInstruction::Add       { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
-                LirInstruction::Store     { src, dest } => self.emit_str_inst(src, *dest),
-                LirInstruction::Load      { src, dest } => self.emit_ldr_inst(*src, dest),
-                LirInstruction::CJump     { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-                LirInstruction::Call      { func, args, result } => self.emit_call_inst(func, args, result),
-                LirInstruction::MemAlloc  { ob_size, pool_idx, base_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, *pool_idx, *base_ptr_slot),
-                LirInstruction::LoadConst { label_id, dest } => self.emit_load_const(*label_id, dest),
+                LirInstruction::Mov         { dest, src } => self.emit_mov_inst(dest, src),
+                LirInstruction::Add         { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
+                LirInstruction::Store       { src, dest } => self.emit_str_inst(src, *dest),
+                LirInstruction::Load        { src, dest } => self.emit_ldr_inst(*src, dest),
+                LirInstruction::CJump       { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
+                LirInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
+                LirInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
+                LirInstruction::MemAlloc    { ob_size, pool_idx, base_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, *pool_idx, *base_ptr_slot),
+                LirInstruction::LoadConst   { label_id, dest } => self.emit_load_const(*label_id, dest),
                 _ => panic!()
             }
         }
@@ -333,6 +335,17 @@ impl Aarch64CodeGenerator {
                 },
             }
         }
+    }
+
+    fn emit_builtin_fn_call_inst(&mut self, builtin: BuiltinFn, args: &[VReg], result: &Option<VReg>) {
+        let fn_name = match builtin {
+            BuiltinFn::AssignRef => "assign_ref",
+            BuiltinFn::AllocInt => "make_rt_int",
+            BuiltinFn::AllocStr => "make_rt_str",
+            BuiltinFn::AllocRec => "make_rt_rec",
+            BuiltinFn::Panic => "rt_panic",
+        };
+        self.emit_call_inst(fn_name, args, result);
     }
 
     fn calculate_function_stack_size(&self, lir_func: &LirFunction, is_leaf: bool) -> usize {
@@ -692,7 +705,6 @@ impl Aarch64CodeGenerator {
             },
             LirAddress::BaseOffset(vreg, off) => {
                 let addr_off = self.offset_generator.off_map.insert(off, off.0 * 8).unwrap_or_else(|| bug!("cannot create an offset"));
-                println!("Store: {off:#?}");
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
                     Location::Reg(register) => self.current_function_code.push_str(&format!("str {s}, [{b}, #{addr_off}]\n", s = r1.name, b = register.name)),
