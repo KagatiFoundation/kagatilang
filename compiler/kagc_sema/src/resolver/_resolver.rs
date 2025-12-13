@@ -333,12 +333,11 @@ impl Resolver {
     }
 
     fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str) -> Result<RecordConst, SAError> {
-        let mut indices = vec![];
+        let mut indices = Vec::with_capacity(rec_create.fields.len());
         for field in &mut rec_create.fields {
             let pool_idx = self.resolve_literal_constant(&mut field.value, true, symbol_name)?;
             indices.push((field.name.clone(), pool_idx));
         }
-
         Ok(RecordConst {
             type_name: rec_create.name.clone(),
             alias: symbol_name.to_string(),

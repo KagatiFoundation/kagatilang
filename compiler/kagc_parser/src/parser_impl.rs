@@ -298,12 +298,9 @@ impl Parser {
 
     fn parse_record_decl_stmt(&mut self) -> ParseResult {
         let start_tok = self.token_match(TokenKind::KW_RECORD)?.pos; // match 'record' keyword
-
         // expect name of the record
         let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-
         _ = self.token_match(TokenKind::T_LBRACE); // match '{'
-
         let mut rec_fields = vec![];
 
         while self.current_token.kind != TokenKind::T_RBRACE {
@@ -325,7 +322,6 @@ impl Parser {
             ),
             vec![]
         );
-
         Ok(
             AST::create_leaf(
                 ASTKind::StmtAST(
@@ -345,9 +341,7 @@ impl Parser {
                     )
                 ), 
                 ASTOperation::AST_RECORD_DECL,
-                LitTypeVariant::Record {
-                    name: id_token.lexeme.clone()
-                },
+                LitTypeVariant::Record { name: id_token.lexeme.clone() },
                 meta
             )
         )

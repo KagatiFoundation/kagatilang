@@ -46,7 +46,7 @@ impl MirToLirLowerer {
     }
 
     fn lower_function_signature(&mut self, sig: &FunctionSignature) -> LirFunctionSignature {
-        let mut params = vec![];
+        let mut params = Vec::with_capacity(sig.params.len());
         for p in sig.params.iter() {
             let reg = self.vreg_mapper.get_or_create(p.id);
             params.push(LirFunctionParam { reg, ty: p.ty, stack_slot: p.stack_slot });

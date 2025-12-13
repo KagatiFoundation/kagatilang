@@ -352,7 +352,7 @@ impl AstToMirLowerer {
     }
 
     fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let mut func_call_args = vec![];
+        let mut func_call_args = Vec::with_capacity(func_call_expr.args.len());
         for (_, arg_expr) in &mut func_call_expr.args {
             let arg_value_id = self.lower_expression(arg_expr, fn_ctx)?;
             func_call_args.push(arg_value_id);
@@ -402,7 +402,6 @@ impl AstToMirLowerer {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
                 Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
-
             _ => unimplemented!("{lit_expr:#?}")
         }
     }

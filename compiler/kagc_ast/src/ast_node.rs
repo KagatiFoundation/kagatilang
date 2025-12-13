@@ -227,12 +227,10 @@ impl AST {
 
     pub fn linearize(&self) -> Vec<&AST> {
         let mut output: Vec<&AST> = vec![];
-
         if self.operation == ASTOperation::AST_GLUE {
             if let Some(left) = &self.left {
                 output.extend(left.linearize());
             }
-
             if let Some(right) = &self.right {
                 output.extend(right.linearize());
             }
@@ -245,7 +243,6 @@ impl AST {
 
     pub fn linearize_mut(&mut self) -> Vec<&mut AST> {
         let mut output: Vec<&mut AST> = vec![];
-
         if self.operation == ASTOperation::AST_GLUE {
             if let Some(left) = &mut self.left {
                 output.extend(left.linearize_mut());
@@ -272,7 +269,6 @@ impl AST {
             }
             false
         }
-
         self.children().any(|child| check_node_for_operation(child, op))
     }
 
