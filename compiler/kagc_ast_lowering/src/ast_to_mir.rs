@@ -200,9 +200,8 @@ impl AstToMirLowerer {
                 fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off.0);
             }
             else {
-                // Subtract 2 from the slot ID because a heap-allocated variable occupies
-                // two consecutive stack slots: one for the object’s base pointer and
-                // one for its data pointer.
+                // Subtract 1 from the slot ID because a heap-allocated variable occupies
+                // one stack slot for the object’s base pointer
                 fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), fn_ctx.current_local_slot().0 - 1);
             }
             return Ok(self.ir_builder.current_block_id_unchecked());
@@ -227,7 +226,7 @@ impl AstToMirLowerer {
             Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
             Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
             Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
-            Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access(rec_field_access, fn_ctx),
+            Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access_expr(rec_field_access, fn_ctx),
             Expr::RecordCreation(rec_create_expr) => self.lower_record_creation_expr(rec_create_expr, fn_ctx),
             _ => unimplemented!()
         }
@@ -248,7 +247,6 @@ impl AstToMirLowerer {
         }
 
         let rec_stack_slot = self.load_record_from_const_pool(rec_create_expr.pool_idx, fn_ctx)?;
-
         for (index, field_slot_id) in field_stack_slot_ids.iter().enumerate() {
             let rec_data_off_value_id = self.ir_builder.create_load(IRAddress::StackSlot(rec_stack_slot));
             let field_slot_load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(*field_slot_id));
@@ -265,8 +263,7 @@ impl AstToMirLowerer {
     }
 
     fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let expr_result_type = expr.value.result_type();
-        match expr_result_type {
+        match expr.value.result_type() {
             LitTypeVariant::I32 | LitTypeVariant::I64 => {
                 let call_result_value_id = self.ir_builder.occupy_value_id();
                 let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
@@ -289,12 +286,42 @@ impl AstToMirLowerer {
         }
     }
 
+    fn lower_record_field_access_expr(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        let rec_stack_off = *fn_ctx
+            .var_offsets
+            .get(&access.rec_alias)
+            .unwrap_or_else(|| bug!("record's stack offset not found"));
+
+        let base_pointer_value = self.ir_builder.create_load(
+            IRAddress::StackSlot(
+                StackSlotId(rec_stack_off)
+            )
+        );
+        let data_pointer_value = self.ir_builder.create_load(
+            IRAddress::BaseSlot(
+                base_pointer_value, 
+                StackSlotId(unsafe { runtime::GC_OFFSET_CHILDREN as usize })
+            )
+        );
+        Ok(self.ir_builder.create_load(
+            IRAddress::BaseSlot(
+                data_pointer_value, 
+                StackSlotId(access.rel_stack_off)
+            )
+        ))
+    }
+
     // returns the id of value and the value's size
     fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         match expr.value {
             LitType::PoolStr(pool_idx) => {
                 let const_value_id = self.ir_builder.occupy_value_id();
-                let const_size = self.ctx.borrow().const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
+                let const_size = self
+                    .ctx
+                    .borrow()
+                    .const_pool
+                    .size(pool_idx)
+                    .unwrap_or_else(|| bug!("cannot find const entry"));
                 self.ir_builder.inst(
                     IRInstruction::LoadConst { 
                         label_id: pool_idx,
@@ -600,24 +627,6 @@ impl AstToMirLowerer {
 
         self.ctx.borrow_mut().scope.exit_scope();
         Ok(last_block_id)
-    }
-
-    fn lower_record_field_access(
-        &mut self,
-        access: &mut RecordFieldAccessExpr,
-        fn_ctx: &mut FunctionContext
-    ) -> ExprLoweringResult {
-        let reg_sz = access.result_type.to_reg_size();
-        assert_ne!(reg_sz, 0);
-
-        // The record's stack offset
-        let rec_stack_off = *fn_ctx
-            .var_offsets
-            .get(&access.rec_alias)
-            .unwrap_or_else(|| bug!("record's stack offset not found"));
-
-        let base_pointer_value = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(rec_stack_off + 1)));
-        Ok(self.ir_builder.create_load(IRAddress::BaseSlot(base_pointer_value, StackSlotId(access.rel_stack_off))))
     }
 
     fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {

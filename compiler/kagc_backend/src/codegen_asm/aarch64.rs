@@ -682,7 +682,7 @@ impl Aarch64CodeGenerator {
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
                     Location::Reg(register) => {
-                        let addr_off = self.offset_generator.get_offset_unchecked(off);
+                        let addr_off = off.0;
                         self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{addr_off}]\n", d = r1.name, b = register.name));
                     },
                     Location::StackSlot(_) => todo!(),

@@ -23,6 +23,7 @@ pub type LabelId = usize;
 ///
 /// This constant represents the **raw byte offset** of the `data` pointer within
 /// the struct. It can be used directly in assembly memory instructions.
+#[deprecated]
 pub const GCOBJECT_BUFFER_OFF: usize = 40; // bytes
 
 /// Index of the `data` field in the `gc_object_t` struct.
@@ -41,6 +42,7 @@ pub const GCOBJECT_BUFFER_OFF: usize = 40; // bytes
 /// the struct. To compute the byte offset in assembly, multiply by the size
 /// of each field (8 bytes on 64-bit systems):
 /// `offset_in_bytes = GCOBJECT_BUFFER_IDX * 8`.
+#[deprecated]
 pub const GCOBJECT_BUFFER_IDX: usize = 5;
 
 pub const REG_SIZE_8: usize = 8;

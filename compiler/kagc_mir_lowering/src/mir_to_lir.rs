@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use kagc_ctx::CompilerCtx;
 use kagc_mir::block::{IRBasicBlock, Terminator};
+use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::{FunctionSignature, IRFunction};
 use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
 use kagc_mir::value::{IRValue, IRValueId};
@@ -70,6 +71,7 @@ impl MirToLirLowerer {
                 IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
                 IRInstruction::MemAlloc { size, ob_ty, result, pool_idx, base_ptr_slot } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx, *base_ptr_slot),
                 IRInstruction::LoadConst { label_id, result } => self.lower_const_load(*label_id, result),
+                IRInstruction::CallBuiltin { builtin, args, result } => self.lower_builtin_function_call(*builtin, args, result),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -118,7 +120,7 @@ impl MirToLirLowerer {
         args: &[IRValueId], 
         result: &Option<IRValueId>
     ) -> Vec<LirInstruction> {
-        let mut lir_args = vec![];
+        let mut lir_args = Vec::with_capacity(args.len());
         for arg in args {
             let a = self.vreg_mapper.get_or_create(*arg);
             lir_args.push(a);
@@ -131,6 +133,30 @@ impl MirToLirLowerer {
         };
         vec![LirInstruction::Call { 
             func: func.to_owned(), 
+            args: lir_args, 
+            result: lir_result 
+        }]
+    }
+
+    fn lower_builtin_function_call(
+        &mut self,
+        builtin: BuiltinFn,
+        args: &[IRValueId],
+        result: &Option<IRValueId>
+    ) -> Vec<LirInstruction> {
+        let mut lir_args = Vec::with_capacity(args.len());
+        for arg in args {
+            let a = self.vreg_mapper.get_or_create(*arg);
+            lir_args.push(a);
+        }
+        let lir_result = if let Some(value) = result {
+            Some(self.vreg_mapper.get_or_create(*value))
+        }
+        else {
+            None
+        };
+        vec![LirInstruction::CallBuiltin { 
+            builtin, 
             args: lir_args, 
             result: lir_result 
         }]
