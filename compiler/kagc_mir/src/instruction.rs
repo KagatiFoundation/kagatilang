@@ -73,6 +73,7 @@ pub enum IRInstruction {
         result: Option<IRValueId>
     },
 
+    #[deprecated]
     MemAlloc {
         size:       IRValue,
         ob_ty:      IRValue,
@@ -109,7 +110,6 @@ impl IRInstruction {
             IRInstruction::Mov          { result, .. } | 
             IRInstruction::Add          { result, .. } |
             IRInstruction::Load         { result, .. } |
-            IRInstruction::MemAlloc     { result, .. } |
             IRInstruction::Subtract     { result, .. } |
             IRInstruction::Divide       { result, .. } |
             IRInstruction::Multiply     { result, .. } |
@@ -126,7 +126,6 @@ impl IRInstruction {
             IRInstruction::Mov          { result, .. } |
             IRInstruction::Load         { result, .. } |
             IRInstruction::Add          { result, .. } |
-            IRInstruction::MemAlloc     { result, .. } |
             IRInstruction::Subtract     { result, .. } |
             IRInstruction::Divide       { result, .. } |
             IRInstruction::Multiply     { result, .. } |

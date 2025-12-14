@@ -143,7 +143,6 @@ impl CodeGenerator for Aarch64CodeGenerator {
                 LirInstruction::CJump       { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
                 LirInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
                 LirInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
-                LirInstruction::MemAlloc    { ob_size, pool_idx, base_ptr_slot, .. } => self.emit_memory_alloc_inst(ob_size, *pool_idx, *base_ptr_slot),
                 LirInstruction::LoadConst   { label_id, dest } => self.emit_load_const(*label_id, dest),
                 _ => panic!()
             }
@@ -210,37 +209,6 @@ impl Aarch64CodeGenerator {
         self.current_function_code.push_str(code);
     }
 
-    fn emit_memory_alloc_inst(
-        &mut self, 
-        ob_size: &LirOperand, 
-        pool_idx: usize, 
-        base_ptr_slot: StackSlotId
-    ) {
-        let c_item = {
-            let cx = self.compiler_cx.borrow();
-            cx.const_pool.get(pool_idx).cloned()
-        };
-        let ob_size = match ob_size {
-            LirOperand::Constant(imm) => *imm,
-            _ => bug!("ob_size must be a Constant value")
-        } as usize;
-
-        if let Some(c_item) = c_item {
-            match &c_item.value {
-                KagcConst::Str(_) => self.emit_string_mem_alloc_inst(pool_idx, ob_size),
-                KagcConst::Int(_) => self.emit_integer_mem_alloc_inst(pool_idx),
-                KagcConst::Record(rec_value) => self.emit_record_mem_alloc_inst(c_item.origin_func, &rec_value.alias, ob_size),
-                _ => bug!("doesn't match any const entry type")
-            }
-        }
-        else {
-            bug!("cannot find const entry");
-        }
-
-        let obj_base_addr = self.offset_generator.next(base_ptr_slot);
-        self.emit_store_reg_by_name("x0", obj_base_addr);
-    }
-
     /// WARNING: Use this function with caution.
     fn emit_store_reg_by_name(&mut self, reg: &str, off: usize) {
         let is_leaf = self.get_current_fn_state().is_leaf;
@@ -256,41 +224,6 @@ impl Aarch64CodeGenerator {
         else {
             self.emit_str_relative_fp(&r, off);
         }
-    }
-
-    /// str_id = String's constant pool index
-    fn emit_string_mem_alloc_inst(&mut self, str_id: usize, size: usize) {
-        self.emit_raw_code(&format!("adrp {d}, .L.__c.{str_id}@page\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{str_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("mov x0, {s}\nmov x1, {size}\nbl _make_rt_str\n", s = SCRATCH_REGISTER_0.name));
-    }
-
-    // integers in Kagati are 8-bytes in size
-    /// int_id = Integer's constant pool index
-    fn emit_integer_mem_alloc_inst(&mut self, int_id: usize) {
-        self.emit_raw_code(&format!("adrp {d}, .L.__c.{int_id}@page\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{int_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("mov x0, {s}\nbl _make_rt_int\n", s = SCRATCH_REGISTER_0.name));
-    }
-
-    fn emit_record_mem_alloc_inst(&mut self, origin_func: Option<usize>, rec_alias: &str, size: usize) {
-        self.emit_raw_code(
-            &format!(
-                "adrp {d}, .L.__c.{}.{}@page\n", 
-                origin_func.unwrap(), 
-                rec_alias,
-                d = SCRATCH_REGISTER_0.name
-            )
-        );
-        self.emit_raw_code(
-            &format!(
-                "add {d}, {d}, .L.__c.{}.{}@pageoff\n", 
-                origin_func.unwrap(), 
-                rec_alias,
-                d = SCRATCH_REGISTER_0.name
-            )
-        );
-        self.emit_raw_code(&format!("mov x0, {s1}\nmov x1, #{size}\nbl _make_rt_rec\n", s1 = SCRATCH_REGISTER_0.name));
     }
 
     fn emit_call_inst(&mut self, func: &str, args: &[VReg], result: &Option<VReg>) {
@@ -364,10 +297,6 @@ impl Aarch64CodeGenerator {
                 // NOTE: machine's CPU word size is not considered at the moment.
                 if let LirInstruction::Store { .. } = instr {
                     final_stack_size += 8;
-                }
-                else if let LirInstruction::MemAlloc { .. } = instr {
-                    // each memory allocation instruction takes 16-bytes of memory
-                    final_stack_size += 8; 
                 }
             }
         }
@@ -791,14 +720,7 @@ impl Aarch64CodeGenerator {
                         c_item_index
                     )
                 );
-                for rec_field in &rec.fields {
-                    if let Some(rec_pool_item) = self.compiler_cx.borrow().const_pool.get(*rec_field.1) {
-                        output_str.push_str(&self.dump_const(*rec_field.1, rec_pool_item, true));
-                    }
-                    else {
-                        output_str.push_str("\t.xword 0\n"); // allocate empty space for fields' pointers
-                    }
-                }
+                output_str.push_str(&"\t.xword 0\n".repeat(rec.fields.iter().len()));
             }
         }
         output_str
@@ -819,7 +741,7 @@ impl Aarch64CodeGenerator {
         let mut is_leaf = true;
         for block in lir_func.blocks.values() {
             for instr in &block.instructions {
-                is_leaf = !matches!(instr, LirInstruction::Call { .. } | LirInstruction::MemAlloc { .. });
+                is_leaf = !matches!(instr, LirInstruction::Call { .. } | LirInstruction::CallBuiltin { .. });
             }
         }
         is_leaf

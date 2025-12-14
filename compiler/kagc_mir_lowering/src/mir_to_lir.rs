@@ -9,7 +9,7 @@ use kagc_ctx::CompilerCtx;
 use kagc_mir::block::{IRBasicBlock, Terminator};
 use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::{FunctionSignature, IRFunction};
-use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
+use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
 use kagc_mir::value::{IRValue, IRValueId};
 
 use kagc_lir::block::{LirBasicBlock, LirTerminator};
@@ -69,7 +69,6 @@ impl MirToLirLowerer {
                 IRInstruction::Load { src, result } => self.lower_load(result, *src),
                 IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
                 IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
-                IRInstruction::MemAlloc { size, ob_ty, result, pool_idx, base_ptr_slot } => self.lower_memory_allocation(*size, *ob_ty, *result, *pool_idx, *base_ptr_slot),
                 IRInstruction::LoadConst { label_id, result } => self.lower_const_load(*label_id, result),
                 IRInstruction::CallBuiltin { builtin, args, result } => self.lower_builtin_function_call(*builtin, args, result),
                 _ => unimplemented!("{instr:#?}")
@@ -159,31 +158,6 @@ impl MirToLirLowerer {
             builtin, 
             args: lir_args, 
             result: lir_result 
-        }]
-    }
-
-    fn lower_memory_allocation(
-        &mut self, 
-        size: IRValue, 
-        ob_ty: IRValue, 
-        result: IRValueId, 
-        pool_idx: usize,
-        base_ptr_slot: StackSlotId
-    ) -> Vec<LirInstruction> {
-        // let compiler_cx = self.compiler_cx.borrow();
-        // let object = compiler_cx.const_pool.get(pool_idx);
-        // if object.is_none() {
-            // bug!("ConstEntry(index '{pool_idx}') not found");
-        // }
-        let size_op = self.resolve_to_operand(size);
-        let type_op = self.resolve_to_operand(ob_ty);
-        let dest_reg = self.vreg_mapper.get_or_create(result);
-        vec![LirInstruction::MemAlloc {
-            ob_size: size_op,
-            ob_type: type_op,
-            dest: dest_reg,
-            pool_idx,
-            base_ptr_slot
         }]
     }
 

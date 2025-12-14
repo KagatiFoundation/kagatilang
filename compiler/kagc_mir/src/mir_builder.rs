@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use indexmap::IndexMap;
-use kagc_const::pool::PoolIdx;
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
@@ -231,18 +230,6 @@ impl MirBuilder {
         let result = self.next_value_id();
         self.inst(IRInstruction::Load { src: addr, result })
             .expect("create_move: no value ID created")
-    }
-
-    pub fn create_memory_allocation(
-        &mut self, 
-        size: IRValue, 
-        ob_type: IRValue, 
-        pool_idx: PoolIdx,
-        base_ptr_slot: StackSlotId
-    ) -> IRValueId {
-        let result = self.next_value_id();
-        self.inst(IRInstruction::MemAlloc { size, ob_ty: ob_type, result, pool_idx, base_ptr_slot })
-            .unwrap_or_else(|| bug!("cannot create memory allocation instruction"))
     }
 
     pub fn build(&mut self) -> MirModule {

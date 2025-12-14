@@ -49,6 +49,7 @@ pub enum LirInstruction {
         op: IRCondition
     },
 
+    #[deprecated]
     MemAlloc {
         dest: VReg,
         ob_size: LirOperand,

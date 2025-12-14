@@ -200,9 +200,10 @@ impl AstToMirLowerer {
                 fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off.0);
             }
             else {
+                let var_stack_off = fn_ctx.alloc_local_slot() - StackSlotId(1);
                 // Subtract 1 from the slot ID because a heap-allocated variable occupies
                 // one stack slot for the object’s base pointer
-                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), fn_ctx.current_local_slot().0 - 1);
+                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off.0);
             }
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
@@ -235,14 +236,7 @@ impl AstToMirLowerer {
     fn lower_record_creation_expr(&mut self, rec_create_expr: &mut RecordCreationExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let mut field_stack_slot_ids = Vec::with_capacity(rec_create_expr.fields.len());
         for field in &mut rec_create_expr.fields {
-            let field_value = self.lower_record_field_creation_expr(field, fn_ctx)?;
-            let field_slot = fn_ctx.alloc_local_slot();
-            self.ir_builder.inst(
-                IRInstruction::Store { 
-                    src: field_value, 
-                    address: IRAddress::StackSlot(field_slot)
-                }
-            );
+            let field_slot = self.lower_record_field_creation_expr(field, fn_ctx)?;
             field_stack_slot_ids.push(field_slot);
         }
 
@@ -262,7 +256,7 @@ impl AstToMirLowerer {
         Ok(IRValueId(0xFFFFFFFF))
     }
 
-    fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         match expr.value.result_type() {
             LitTypeVariant::I32 | LitTypeVariant::I64 => {
                 let call_result_value_id = self.ir_builder.occupy_value_id();
@@ -274,7 +268,14 @@ impl AstToMirLowerer {
                         result: Some(call_result_value_id)
                     }
                 );
-                Ok(call_result_value_id)
+                let stack_slot = fn_ctx.alloc_local_slot();
+                self.ir_builder.inst(
+                    IRInstruction::Store { 
+                        src: eval_value_id, 
+                        address: IRAddress::StackSlot(stack_slot) 
+                    }
+                );
+                Ok(stack_slot)
             },
             LitTypeVariant::PoolStr => {
                 let lit_val_expr = expr.value.as_lit_val_expr().unwrap_or_else(|| {
@@ -283,7 +284,15 @@ impl AstToMirLowerer {
                 self.load_str_from_const_pool(lit_val_expr, fn_ctx)
             },
             LitTypeVariant::RawStr => {
-                self.lower_expression(&mut expr.value, fn_ctx)
+                let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
+                let stack_slot = fn_ctx.alloc_local_slot();
+                self.ir_builder.inst(
+                    IRInstruction::Store { 
+                        src: eval_value_id, 
+                        address: IRAddress::StackSlot(stack_slot) 
+                    }
+                );
+                Ok(stack_slot)
             }
             _ => unimplemented!("cannot assign {typ:#?} to a record's field", typ = expr.value.result_type())
         }
@@ -315,10 +324,10 @@ impl AstToMirLowerer {
     }
 
     // returns the id of value and the value's size
-    fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         match expr.value {
             LitType::PoolStr(pool_idx) => {
-                let const_value_id = self.ir_builder.occupy_value_id();
+                let const_value = self.ir_builder.occupy_value_id();
                 let const_size = self
                     .ctx
                     .borrow()
@@ -328,26 +337,27 @@ impl AstToMirLowerer {
                 self.ir_builder.inst(
                     IRInstruction::LoadConst { 
                         label_id: pool_idx,
-                        result: const_value_id
+                        result: const_value
                     }
                 );
 
-                let const_value_size_id = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
-                let call_result_value_id = self.ir_builder.occupy_value_id();
+                let const_size_value = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
+                let call_result_value = self.ir_builder.occupy_value_id();
                 self.ir_builder.inst(
                     IRInstruction::CallBuiltin { 
                         builtin: BuiltinFn::AllocStr, 
-                        args: vec![const_value_id, const_value_size_id],
-                        result: Some(call_result_value_id)
+                        args: vec![const_value, const_size_value],
+                        result: Some(call_result_value)
                     }
                 );
+                let stack_slot = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
                     IRInstruction::Store { 
-                        src: call_result_value_id, 
-                        address: IRAddress::StackSlot(fn_ctx.alloc_local_slot()) 
+                        src: call_result_value, 
+                        address: IRAddress::StackSlot(stack_slot) 
                     }
                 );
-                Ok(call_result_value_id)
+                Ok(stack_slot)
             },
             _ => bug!("expected a PoolStr but found '{:#?}'", expr)
         }
@@ -413,12 +423,11 @@ impl AstToMirLowerer {
 
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if let LitType::PoolStr(_) = &lit_expr.value {
-            return self.load_str_from_const_pool(lit_expr, fn_ctx);
+            let str_stack_slot = self.load_str_from_const_pool(lit_expr, fn_ctx)?;
+            return Ok(self.ir_builder.create_load(
+                IRAddress::StackSlot(str_stack_slot)
+            ));
         }
-        else if let LitType::PoolValue(pool_idx) = &lit_expr.value {
-            return self.lower_load_heap_allocated_value(*pool_idx, fn_ctx);
-        }
-
         match lit_expr.result_type {
             LitTypeVariant::I32 => {
                 let const_value = *lit_expr.value.unwrap_i32().expect("No i32 value!") as i64;
@@ -630,30 +639,6 @@ impl AstToMirLowerer {
 
         self.ctx.borrow_mut().scope.exit_scope();
         Ok(last_block_id)
-    }
-
-    fn lower_load_heap_allocated_value(&mut self, idx: usize, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let compiler_cx = self.ctx.borrow();
-        let object = compiler_cx.const_pool.get(idx);
-        if object.is_none() {
-            bug!("ConstEntry(index '{idx}') not found");
-        }
-
-        let base_ptr_slot = fn_ctx.alloc_local_slot(); // for object's base address
-        let object = object.unwrap();
-        let ob_size = self
-            .ctx
-            .borrow()
-            .const_pool
-            .size(idx)
-            .unwrap_or_else(|| bug!("could not compute size of a ConstEntry"));
-        
-        Ok(self.ir_builder.create_memory_allocation(
-            IRValue::Constant(ob_size as i64),
-            IRValue::Constant(object.ob_type as i64),
-            idx,
-            base_ptr_slot
-        ))
     }
 
     fn lower_import(&mut self) -> StmtLoweringResult {
