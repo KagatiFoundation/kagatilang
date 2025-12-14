@@ -24,17 +24,14 @@ use kagc_sema::SemanticAnalyzer;
 use kagc_utils::bug;
 
 #[derive(Debug, Clone)]
-pub struct Compiler {
+pub struct CompilerPipeline {
     pub ctx: Rc<RefCell<CompilerCtx>>,
-
     units: HashMap<String, CompilationUnit>,
-
     compiler_order: Vec<String>,
-
     shared_pctx: Rc<RefCell<SharedParserCtx>>
 }
 
-impl Compiler {
+impl CompilerPipeline {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let scope_ctx = ScopeCtxBuilder::new()
@@ -57,7 +54,7 @@ impl Compiler {
     }
 }
 
-impl Compiler {
+impl CompilerPipeline {
     pub fn add_unit(&mut self, path: String, unit: CompilationUnit) {
         self.units.insert(path, unit);
     }
@@ -73,11 +70,8 @@ impl Compiler {
 
         // Semantic analyzer
         let mut analyzer = SemanticAnalyzer::new(self.ctx.clone());
-
         // Symbol resolver
         let mut resolv = Resolver::new(self.ctx.clone());
-
-
         let mut modules: Vec<MirModule> = vec![];
         for unit_file in &self.compiler_order {
             if let Some(unit) = self.units.get_mut(unit_file) {

@@ -278,11 +278,11 @@ impl AstToMirLowerer {
             },
             LitTypeVariant::PoolStr => {
                 let lit_val_expr = expr.value.as_lit_val_expr().unwrap_or_else(|| {
-                    bug!("Type was PoolStr but the expression itself is not of type LitValExpr")
+                    bug!("type was PoolStr but the expression itself is not of type LitValExpr")
                 });
                 self.load_str_from_const_pool(lit_val_expr, fn_ctx)
             },
-            _ => unimplemented!()
+            _ => unimplemented!("cannot assign {expr:#?} to a record's field")
         }
     }
 

@@ -32,7 +32,8 @@ pub struct FuncDeclStmt {
     /// Function ID
     pub func_id: usize, 
 
-    pub stack_off: usize,
+    #[deprecated]
+    pub stack_off_: usize,
 
     pub name: String,
 

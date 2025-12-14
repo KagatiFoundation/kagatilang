@@ -1,20 +1,29 @@
 #[derive(Debug)]
 pub enum ErrCode {
     /// Missing semicolon
-    SYN1001     = 1001,
+    SYN1000     = 1000,
 
     /// Symbol not found
+    SEM2000     = 2000,
+
+    /// Symbol already defined
     SEM2001     = 2001,
 
     /// Non-callable type
-    TYP2101     = 2101,
+    TYP3000     = 3000,
 
     /// Argument length does not match
-    TYP2102     = 2102,
+    TYP3001     = 3001,
 
     /// Types are not compatible
-    TYP2103     = 2103,
+    TYP3002     = 3002,
 
     /// Assignment type mismatch
-    TYP2104     = 2104
+    TYP3003     = 3003,
+
+    /// Unknown field
+    REC4000     = 4000,
+
+    /// Missing field
+    REC4001     = 4001
 }

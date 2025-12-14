@@ -679,7 +679,7 @@ impl Aarch64CodeGenerator {
                 }
             },
             LirAddress::BaseOffset(vreg, off) => {
-                let loc = self.current_allocations().get(&vreg).unwrap();
+                let loc = self.current_allocations().get(&vreg).unwrap_or_else(|| bug!("no allocation found for {vreg:#?}"));
                 match loc {
                     Location::Reg(register) => {
                         let addr_off = off.0;

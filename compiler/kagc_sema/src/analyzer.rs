@@ -65,35 +65,24 @@ impl SemanticAnalyzer {
     fn analyze_node(&mut self, node: &mut AST) -> SAResult {
         match node.operation {
             ASTOperation::AST_VAR_DECL => self.analyze_var_decl_stmt(node),
-
             ASTOperation::AST_FUNCTION => self.analyze_func_decl_stmt(node),
-
             ASTOperation::AST_RETURN => self.analyze_return_stmt(node),
-
             ASTOperation::AST_FUNC_CALL => self.analyze_fn_call(node),
-
             ASTOperation::AST_LOOP => self.analyze_node(node.left.as_mut().unwrap()),
-
             ASTOperation::AST_IF => self.analyze_if_stmt(node),
-
             ASTOperation::AST_IMPORT => Ok(LitTypeVariant::Void),
-            
             ASTOperation::AST_RECORD_DECL => self.analyze_record_decl_stmt(node),
-
             ASTOperation::AST_GLUE => {
                 if let Some(left) = &mut node.left {
                     self.analyze_node(left)?;
                 }
-
                 if let Some(right) = &mut node.right {
                     self.analyze_node(right)?;
                 }
                 Ok(LitTypeVariant::None)
             },
-
             ASTOperation::AST_NONE
             | ASTOperation::AST_BREAK => Ok(LitTypeVariant::None),
-
             _ => panic!("'{:?}' is not supported ASTOperation for 'analyze_node' yet!", node.operation)
         }
     }
@@ -123,19 +112,12 @@ impl SemanticAnalyzer {
     fn analyze_and_mutate_expr(&mut self, expr: &mut Expr, meta: &NodeMeta) -> SAResult {
         match expr {
             Expr::LitVal(litexpr) => self.analyze_lit_expr(litexpr),
-            
             Expr::Binary(binexpr) => self.analyze_bin_expr(binexpr, meta),
-
             Expr::Ident(identexpr) => self.analyze_ident_expr(identexpr, meta),
-
             Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr, meta),
-
             Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr, meta),
-
             Expr::RecordFieldAccess(recfieldexpr) => self.analyze_record_field_access_expr(recfieldexpr, meta),
-            
             Expr::Null => Ok(LitTypeVariant::Null),
-
             _ => todo!()
         }
     }
@@ -155,7 +137,6 @@ impl SemanticAnalyzer {
 
     fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr, meta: &NodeMeta) -> SAResult {
         let ctx_borrow = self.ctx.borrow_mut();
-
         if let Some(rec_sym) = ctx_borrow.scope.deep_lookup(&field_access.rec_alias) {
             if let SymbolType::Record { name } = &rec_sym.sym_type {
                 if let Some(rec) = ctx_borrow.scope.lookup_record(name) {
@@ -168,26 +149,24 @@ impl SemanticAnalyzer {
                 }
             }
             else {
-                let diag = Diagnostic {
-                    code: Some(ErrCode::SEM2001),
+                return Err(Diagnostic {
+                    code: Some(ErrCode::SEM2000),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
                     message: format!("'{}' is not a record type", field_access.rec_name),
                     notes: vec![]
-                };
-                return Err(diag);
+                });
             }
         }
-        let diag = Diagnostic {
-            code: Some(ErrCode::SEM2001),
+        Err(Diagnostic {
+            code: Some(ErrCode::SEM2000),
             severity: Severity::Error,
             primary_span: meta.span,
             secondary_spans: vec![],
             message: format!("type '{}' cannot be resolved", field_access.rec_name),
             notes: vec![]
-        };
-        Err(diag)
+        })
     }
 
     fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr, meta: &NodeMeta) -> SAResult {
@@ -210,7 +189,7 @@ impl SemanticAnalyzer {
         }
         else {
             let diag = Diagnostic {
-                code: Some(ErrCode::SEM2001),
+                code: Some(ErrCode::SEM2000),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -230,7 +209,7 @@ impl SemanticAnalyzer {
         let func_sym_type = if let Some(func_sym) = ctx_borrow.scope.deep_lookup(&func_call.symbol_name) {
             if func_sym.sym_type != SymbolType::Function {
                 let diag = Diagnostic {
-                    code: Some(ErrCode::TYP2101),
+                    code: Some(ErrCode::TYP3000),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -245,7 +224,7 @@ impl SemanticAnalyzer {
         }
         else {
             let diag = Diagnostic {
-                code: Some(ErrCode::SEM2001),
+                code: Some(ErrCode::SEM2000),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -279,7 +258,7 @@ impl SemanticAnalyzer {
     fn check_func_call_args(&mut self, args: &mut [(usize, Expr)], param_types: &[LitTypeVariant], meta: &NodeMeta) -> SAResult {
         if args.len() != param_types.len() {
             let diag = Diagnostic {
-                code: Some(ErrCode::TYP2102),
+                code: Some(ErrCode::TYP3001),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -295,7 +274,7 @@ impl SemanticAnalyzer {
             let assignment_ok: bool = expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res.clone(), param_type.clone());
             if !assignment_ok {
                 let diag = Diagnostic {
-                    code: Some(ErrCode::TYP2103),
+                    code: Some(ErrCode::TYP3002),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -363,7 +342,7 @@ impl SemanticAnalyzer {
 
             if ret_typ_mismatch {
                 let diag = Diagnostic {
-                    code: Some(ErrCode::TYP2103),
+                    code: Some(ErrCode::TYP3002),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
@@ -399,7 +378,7 @@ impl SemanticAnalyzer {
 
             if func_ret_type.is_none() {
                 let diag = Diagnostic {
-                    code: Some(ErrCode::SEM2001),
+                    code: Some(ErrCode::SEM2000),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
@@ -448,7 +427,7 @@ impl SemanticAnalyzer {
                 return Ok(var_type);
             }
             let diag = Diagnostic {
-                code: Some(ErrCode::SEM2001),
+                code: Some(ErrCode::SEM2000),
                 severity: Severity::Error,
                 primary_span: node.meta.span,
                 secondary_spans: vec![],
@@ -494,7 +473,7 @@ impl SemanticAnalyzer {
             && !is_type_coalescing_possible(expr_type.clone(), var_decl_sym.lit_type.clone()) 
         {
             let diag = Diagnostic {
-                code: Some(ErrCode::TYP2104),
+                code: Some(ErrCode::TYP3003),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -519,7 +498,7 @@ impl SemanticAnalyzer {
             let cond_res: LitTypeVariant = self.analyze_expr(node.left.as_mut().unwrap())?;
             if cond_res != LitTypeVariant::I32 {
                 let diag = Diagnostic {
-                    code: Some(ErrCode::TYP2103),
+                    code: Some(ErrCode::TYP3002),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],

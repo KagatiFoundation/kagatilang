@@ -1,27 +1,20 @@
-use std::{
-    cell::RefCell, 
-    rc::Rc
-};
-use indexmap::IndexMap;
-use kagc_ast::*;
-use kagc_const::pool::{
-    KagcConst, OrderedMap, RecordConst
-};
-use kagc_ctx::CompilerCtx;
-use kagc_symbol::{
-    function::*, 
-    *
-};
-use kagc_token::Token;
-use kagc_types::{
-    builtins::obj::KObjType, record::{
-        RecordFieldType, 
-        RecordType
-    }, LitType, LitTypeVariant
-};
-use kagc_utils::bug;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
-use crate::errors::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+use indexmap::IndexMap;
+use kagc_ast::{AST, ASTOperation, ASTKind, Stmt, Expr, RecordCreationExpr};
+use kagc_errors::code::ErrCode;
+use kagc_errors::diagnostic::{Diagnostic, Severity};
+use kagc_symbol::function::FunctionInfo;
+use kagc_symbol::{Symbol, SymbolType};
+use kagc_const::pool::{KagcConst, OrderedMap, RecordConst};
+use kagc_ctx::CompilerCtx;
+use kagc_types::builtins::obj::KObjType;
+use kagc_types::record::{RecordFieldType, RecordType};
+use kagc_types::{LitType, LitTypeVariant};
+use kagc_utils::bug;
 
 pub struct Resolver {
     pub ctx: Rc<RefCell<CompilerCtx>>,
@@ -29,8 +22,7 @@ pub struct Resolver {
     curr_func_id: Option<usize>
 }
 
-/// Ok(usize) = Symbol's symbol table position
-pub type ResolverResult = Result<usize, SAError>;
+pub type ResolverResult = Result<usize, Diagnostic>;
 
 impl Resolver {
     pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
@@ -42,24 +34,18 @@ impl Resolver {
     }
 
     pub fn resolve(&mut self, nodes: &mut Vec<AST>) {
-        let mut errors = vec![];
         for node in nodes {
             if let Err(e) = self.declare_symbol(node) {
-                errors.push(e);
+                self.ctx.borrow_mut().diagnostics.push(e);
             }
         }
-
-        errors.iter().for_each(|err| err.dump());
     }
 
     fn declare_symbol(&mut self, node: &mut AST) -> ResolverResult  {
         match node.operation {
-            ASTOperation::AST_FUNCTION => self.declare_func(node),
-
+            ASTOperation::AST_FUNCTION => self.declare_function_symbol(node),
             ASTOperation::AST_VAR_DECL => self.declare_let_binding(node),
-            
             ASTOperation::AST_RECORD_DECL => self.declare_record(node),
-
             ASTOperation::AST_LOOP => {
                 if !node.kind.is_stmt() {
                     bug!("Needed a LoopStmt--but found {:#?}", node);
@@ -69,14 +55,12 @@ impl Resolver {
                 }
                 Ok(0xFFFFFFFF)
             }
-
             ASTOperation::AST_IF => {
                 if !node.kind.is_stmt() {
                     bug!("Needed a IfStmt--but found {:#?}", node);
                 }
                 self.declare_if_else_tree(node)
             }
-
             ASTOperation::AST_FUNC_CALL => {
                 if !node.kind.is_expr() {
                     bug!("Needed a FuncCallExpr--but found {:#?}", node);
@@ -86,7 +70,6 @@ impl Resolver {
                 }
                 Ok(0xFFFFFFFF)
             }
-
             ASTOperation::AST_GLUE => {
                 if let Some(left) = node.left.as_mut() {
                     let _ = self.declare_symbol(left)?;
@@ -96,7 +79,6 @@ impl Resolver {
                 } 
                 Ok(0)
             }
-
             _ => Ok(0)
         }
     }
@@ -131,16 +113,13 @@ impl Resolver {
         Ok(0)
     }
 
-    fn declare_func(&mut self, node: &mut AST) -> ResolverResult {
+    fn declare_function_symbol(&mut self, node: &mut AST) -> ResolverResult {
         if !node.kind.is_stmt() {
-            bug!("Needed a FuncDecl--but found {:#?}", node);
+            bug!("cannot proceed without a FuncStmt");
         }
 
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt_mut() {
-            // switch to function's scope
             let mut ctx_borrow = self.ctx.borrow_mut();
-            let _ = ctx_borrow.scope.enter_scope(func_decl.scope_id);
-
             let function_id: Option<usize> = {
                 let sym = Symbol::new(
                     func_decl.name.clone(),
@@ -154,17 +133,21 @@ impl Resolver {
                     .declare(sym);
                 insert_pos
             };
-
             // ^^^^ scope.declare() returns None if the symbol cannot be added indicating re-definition of the symbol
             if function_id.is_none() {
-                return Err(
-                    SAError::SymbolAlreadyDefined { 
-                        sym_name: func_decl.name.clone(), 
-                        token: Token::none() 
-                    }
-                );
+                let already_defined_err = Diagnostic {
+                    code: Some(ErrCode::SEM2001),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: Vec::with_capacity(0),
+                    message: "symbol already defined".to_string(),
+                    notes: Vec::with_capacity(0)
+                };
+                return Err(already_defined_err);
             };
 
+            // switch to function's scope
+            let _ = ctx_borrow.scope.enter_scope(func_decl.scope_id);
             let function_id = function_id.unwrap();
             self.curr_func_id = Some(function_id);
 
@@ -175,7 +158,7 @@ impl Resolver {
             let func_info: FunctionInfo = FunctionInfo::new(
                 func_decl.name.clone(),
                 function_id,
-                func_decl.stack_off as i32,
+                func_decl.stack_off_ as i32,
                 func_decl.return_type.clone(),
                 func_decl.storage_class,
                 func_decl.locals.clone(),
@@ -205,19 +188,16 @@ impl Resolver {
             ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => bug!("Invalid node"),
         };
-
         // If it's a record type, validate fields
         if let SymbolType::Record { name: rec_name } = &stmt.symbol_type {
             let value_node = node.left.as_ref().unwrap().clone();
             _ = self.validate_record_let_binding(rec_name, &value_node)?;
         }
-
         if let Some(left) = &mut node.left {
             self.validate_and_process_expr(left, &stmt.sym_name)?;
         }
 
         stmt.func_id = self.ctx.borrow_mut().scope.current_fn();
-
         let sym = Symbol::create(
             stmt.sym_name.clone(),
             stmt.value_type.clone(),
@@ -228,15 +208,18 @@ impl Resolver {
             None,
             stmt.func_id,
         );
-
         let id = self.ctx
             .borrow_mut()
             .scope
             .declare(sym)
             .ok_or({
-                SAError::SymbolAlreadyDefined { 
-                    sym_name: stmt.sym_name.clone(), 
-                    token: Token::none() 
+                Diagnostic {
+                    code: Some(ErrCode::SEM2001),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: Vec::with_capacity(0),
+                    message: "symbol already defined".to_string(),
+                    notes: Vec::with_capacity(0)
                 }
             }
         )?;
@@ -247,11 +230,9 @@ impl Resolver {
         if !ast.kind.is_expr() {
             bug!("Expected an Expr--but found {:#?}", ast);
         }
-
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
             return self.resolve_literal_constant(expr, false, symbol_name);
         }
-
         panic!()
     }
 
@@ -261,16 +242,15 @@ impl Resolver {
                 LitTypeVariant::RawStr => {
                     let raw_value = if let LitType::RawStr(ref s) = lit_expr.value {
                         s.clone()
-                    } else {
+                    } 
+                    else {
                         bug!("Expected RawStr variant but found something else");
                     };
-
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
                         KagcConst::Str(raw_value),
                         KObjType::KStr,
                         self.curr_func_id
                     );
-
                     lit_expr.value = LitType::PoolStr(pool_idx);
                     lit_expr.result_type = LitTypeVariant::PoolStr;
                     return Ok(pool_idx);
@@ -280,13 +260,11 @@ impl Resolver {
                     if !parent_is_record {
                         return Ok(0xFFFFFFFF);
                     }
-
                     let raw_value = match lit_expr.value {
                         LitType::I32(value) => value as i64,
                         | LitType::U8(value) => value as i64,
                         _ => bug!("Expected Int variant but found something else")
                     };
-
                     let pool_idx = self.ctx.borrow_mut().const_pool.insert(
                         KagcConst::Int(raw_value), 
                         KObjType::KStr,
@@ -301,11 +279,9 @@ impl Resolver {
         }
         else if let Expr::RecordCreation(rec_create) = expr {
             let record_const = self.build_record_const(rec_create, symbol_name)?;
-            
             if parent_is_record {
                 // keep the indices of this record const in its parent
             }
-
             if !parent_is_record {
                 let record_idx = self.ctx.borrow_mut().const_pool.insert(
                     KagcConst::Record(record_const),
@@ -314,7 +290,8 @@ impl Resolver {
                 );
                 rec_create.pool_idx = record_idx;
                 return Ok(record_idx);
-            } else {
+            } 
+            else {
                 return Ok(0xFFFFFFFF);
             }
         }
@@ -332,7 +309,7 @@ impl Resolver {
         Ok(0xFFFFFFFF)
     }
 
-    fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str) -> Result<RecordConst, SAError> {
+    fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str) -> Result<RecordConst, Diagnostic> {
         let mut indices = Vec::with_capacity(rec_create.fields.len());
         for field in &mut rec_create.fields {
             let pool_idx = self.resolve_literal_constant(&mut field.value, true, symbol_name)?;
@@ -349,35 +326,44 @@ impl Resolver {
     fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {
         let ctx_borrow = self.ctx.borrow_mut();
         let rec = ctx_borrow.scope.lookup_record(rec_name).ok_or_else(|| {
-            SAError::RecordError(
-                SARecordError::UndefinedRecord {
-                    record_name: rec_name.to_string(),
-                }
-            )
+            Diagnostic {
+                code: Some(ErrCode::SEM2000),
+                severity: Severity::Error,
+                primary_span: value_node.meta.span,
+                secondary_spans: Vec::with_capacity(0),
+                message: "record not found".to_string(),
+                notes: Vec::with_capacity(0)
+            }
         })?;
-
         if let ASTKind::ExprAST(Expr::RecordCreation(rec_create)) = &value_node.kind {
             for field in &rec_create.fields {
                 let found = rec.fields.iter().find(|ac_field| ac_field.name == field.name);
                 if found.is_none() {
-                    return Err(SAError::RecordError(
-                        SARecordError::UnknownRecordField {
-                            field_name: field.name.clone(),
-                            record_name: rec_name.to_string(),
+                    return Err(
+                        Diagnostic {
+                            code: Some(ErrCode::REC4000),
+                            severity: Severity::Error,
+                            primary_span: value_node.meta.span,
+                            secondary_spans: Vec::with_capacity(0),
+                            message: "unknown record field".to_string(),
+                            notes: Vec::with_capacity(0)
                         }
-                    ));
+                    );
                 }
             }
-
             for field in &rec.fields {
                 let found = rec_create.fields.iter().find(|ac_field| ac_field.name == field.name);
                 if found.is_none() {
-                    return Err(SAError::RecordError(
-                        SARecordError::MissingRecordField {
-                            field_name: field.name.clone(),
-                            record_name: rec_name.to_string(),
+                    return Err(
+                        Diagnostic {
+                            code: Some(ErrCode::REC4001),
+                            severity: Severity::Error,
+                            primary_span: value_node.meta.span,
+                            secondary_spans: Vec::with_capacity(0),
+                            message: "missing record field".to_string(),
+                            notes: Vec::with_capacity(0)
                         }
-                    ));
+                    );
                 }
             }
         }
@@ -399,13 +385,15 @@ impl Resolver {
                 }).collect::<Vec<RecordFieldType>>()
             };
             if self.ctx.borrow_mut().scope.create_record(record_entry).is_none() {
-                return Err(
-                    SAError::RecordError(
-                        SARecordError::DuplicateRecord { 
-                            record_name: stmt.name.clone() 
-                        }
-                    )
-                );
+                let already_defined_err = Diagnostic {
+                    code: Some(ErrCode::SEM2001),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: Vec::with_capacity(0),
+                    message: "symbol already defined".to_string(),
+                    notes: Vec::with_capacity(0)
+                };
+                return Err(already_defined_err);
             }
             return Ok(0);
         }

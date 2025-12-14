@@ -59,7 +59,7 @@ impl TypeChecker {
             && !is_type_coalescing_possible(expr_type.clone(), var_decl_sym.lit_type.clone()) 
         {
             let diag = Diagnostic {
-                code: Some(ErrCode::TYP2104),
+                code: Some(ErrCode::TYP3003),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -95,7 +95,7 @@ impl TypeChecker {
                     }
                 }
                 let diag = Diagnostic {
-                    code: Some(ErrCode::TYP2103),
+                    code: Some(ErrCode::TYP3002),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],

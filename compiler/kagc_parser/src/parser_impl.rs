@@ -408,6 +408,14 @@ impl Parser {
         }
 
         let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        let func_name_start_pos = SourcePos {
+            column: id_token.pos.column,
+            line: id_token.pos.line
+        };
+        let func_name_end_pos = SourcePos {
+            column: id_token.pos.column + id_token.lexeme.len(),
+            line: id_token.pos.line
+        };
         _ = self.token_match(TokenKind::T_LPAREN)?;
 
         let mut func_param_types: Vec<LitTypeVariant> = vec![];
@@ -474,7 +482,6 @@ impl Parser {
 
         // And of course the function name as well :)
         self.current_function_name = Some(id_token.lexeme.clone());
-
         let mut function_body: Option<AST> = None;
 
         // create function body
@@ -506,10 +513,10 @@ impl Parser {
         let stack_offset: i32 = (local_offset + 15 + 32) & !15;
 
         // Return AST for function declaration
-        Ok(AST::new(
+        Ok(AST::with_meta(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 func_id: temp_func_id,
-                stack_off: stack_offset as usize,
+                stack_off_: stack_offset as usize,
                 name: id_token.lexeme.clone(),
                 scope_id: func_scope_id,
                 return_type: func_return_type.clone(),
@@ -520,7 +527,16 @@ impl Parser {
             ASTOperation::AST_FUNCTION,
             function_body,
             None,
+            None,
             func_return_type,
+            NodeMeta::new(
+                Span::new(
+                    self.current_file, 
+                    func_name_start_pos, 
+                    func_name_end_pos
+                ), 
+                Vec::with_capacity(0)
+            )
         ))
     }
 
