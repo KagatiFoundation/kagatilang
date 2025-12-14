@@ -27,7 +27,7 @@ pub struct ScopeCtx {
     pub(crate) current_scope: CurrentScopeMeta,
     pub(crate) scope_id_counter: usize,
     pub(crate) prev_scope: usize,
-    pub(crate) records: RecordRegistery,
+    pub records: RecordRegistery,
     pub(crate) user_types: HashSet<String>,
 }
 

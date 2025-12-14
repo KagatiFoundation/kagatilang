@@ -4,7 +4,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use indexmap::IndexMap;
-use kagc_ast::{AST, ASTOperation, ASTKind, Stmt, Expr, RecordCreationExpr};
+use kagc_ast::{AST, ASTKind, ASTOperation, Expr, NodeMeta, RecordCreationExpr, Stmt};
 use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::{Diagnostic, Severity};
 use kagc_symbol::function::FunctionInfo;
@@ -66,7 +66,7 @@ impl Resolver {
                     bug!("Needed a FuncCallExpr--but found {:#?}", node);
                 }
                 if let Some(func_call) = node.kind.as_expr_mut() {
-                    return self.resolve_literal_constant(func_call, false, "");
+                    return self.resolve_literal_constant(func_call, false, "", &node.meta);
                 }
                 Ok(0xFFFFFFFF)
             }
@@ -231,12 +231,12 @@ impl Resolver {
             bug!("Expected an Expr--but found {:#?}", ast);
         }
         if let ASTKind::ExprAST(expr) = &mut ast.kind {
-            return self.resolve_literal_constant(expr, false, symbol_name);
+            return self.resolve_literal_constant(expr, false, symbol_name, &ast.meta);
         }
-        panic!()
+        bug!("")
     }
 
-    fn resolve_literal_constant(&mut self, expr: &mut Expr, parent_is_record: bool, symbol_name: &str) -> ResolverResult {
+    fn resolve_literal_constant(&mut self, expr: &mut Expr, parent_is_record: bool, symbol_name: &str, meta: &NodeMeta) -> ResolverResult {
         if let Expr::LitVal(lit_expr) = expr {
             match lit_expr.result_type {
                 LitTypeVariant::RawStr => {
@@ -278,10 +278,7 @@ impl Resolver {
             }
         }
         else if let Expr::RecordCreation(rec_create) = expr {
-            let record_const = self.build_record_const(rec_create, symbol_name)?;
-            if parent_is_record {
-                // keep the indices of this record const in its parent
-            }
+            let record_const = self.build_record_const(rec_create, symbol_name, meta)?;
             if !parent_is_record {
                 let record_idx = self.ctx.borrow_mut().const_pool.insert(
                     KagcConst::Record(record_const),
@@ -297,22 +294,37 @@ impl Resolver {
         }
         else if let Expr::FuncCall(func_call) = expr {
             for arg in &mut func_call.args {
-                let _ = self.resolve_literal_constant(&mut arg.1, false, "")?;
+                let _ = self.resolve_literal_constant(&mut arg.1, false, "", meta)?;
             }
             return Ok(0xFFFFFFFF);
         }
         else if let Expr::Binary(bin) = expr {
-            let _ = self.resolve_literal_constant(&mut bin.left, parent_is_record, symbol_name)?;
-            let _ = self.resolve_literal_constant(&mut bin.right, parent_is_record, symbol_name)?;
+            let _ = self.resolve_literal_constant(&mut bin.left, parent_is_record, symbol_name, meta)?;
+            let _ = self.resolve_literal_constant(&mut bin.right, parent_is_record, symbol_name, meta)?;
+            return Ok(0xFFFFFFFF);
+        }
+        else if let Expr::RecordFieldAccess(access) = expr {
+            self.require_symbol_exists(&access.rec_alias, meta)?;
+            let ctx_borrow = self.ctx.borrow();
+            let symbol = ctx_borrow.scope.deep_lookup(&access.rec_alias).unwrap(); // safe to unwrap because of require_symbol_exists call
+            // extract record's name
+            let record_name = if let SymbolType::Record { name } = &symbol.sym_type { name }
+            else { bug!("record '{}' not found", access.rec_name); };
+            //
+            if let Some(record) = ctx_borrow.scope.lookup_record(record_name) {
+                if !record.fields.iter().any(|field| field.name == access.field_chain[0]) {
+                    bug!("field '{}' not present in '{}'", access.field_chain[0], record_name);
+                }
+            }
             return Ok(0xFFFFFFFF);
         }
         Ok(0xFFFFFFFF)
     }
 
-    fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str) -> Result<RecordConst, Diagnostic> {
+    fn build_record_const(&mut self, rec_create: &mut RecordCreationExpr, symbol_name: &str, meta: &NodeMeta) -> Result<RecordConst, Diagnostic> {
         let mut indices = Vec::with_capacity(rec_create.fields.len());
         for field in &mut rec_create.fields {
-            let pool_idx = self.resolve_literal_constant(&mut field.value, true, symbol_name)?;
+            let pool_idx = self.resolve_literal_constant(&mut field.value, true, symbol_name, meta)?;
             indices.push((field.name.clone(), pool_idx));
         }
         Ok(RecordConst {
@@ -398,5 +410,21 @@ impl Resolver {
             return Ok(0);
         }
         bug!("Cannot create record!!!")
+    }
+
+    fn require_symbol_exists(&self, symbol_name: &str, meta: &NodeMeta) -> Result<(), Diagnostic> {
+        if self.ctx.borrow().scope.deep_lookup(symbol_name).is_none() {
+            return Err(
+                Diagnostic {
+                    code: Some(ErrCode::SEM2000),
+                    severity: Severity::Error,
+                    primary_span: meta.span,
+                    secondary_spans: Vec::with_capacity(0),
+                    message: "symbol not found".to_string(),
+                    notes: Vec::with_capacity(0)
+                }
+            );
+        }
+        Ok(())
     }
 }

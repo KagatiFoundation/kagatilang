@@ -1,0 +1,7 @@
+def extern make_rt_rec() -> void;
+
+def extern make_rt_int(x: integer) -> integer;
+
+def extern make_rt_str(x: string) -> string;
+
+def extern assign_ref(dest: integer, src: integer, idx: integer) -> void;

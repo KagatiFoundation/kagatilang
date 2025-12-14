@@ -282,7 +282,10 @@ impl AstToMirLowerer {
                 });
                 self.load_str_from_const_pool(lit_val_expr, fn_ctx)
             },
-            _ => unimplemented!("cannot assign {expr:#?} to a record's field")
+            LitTypeVariant::RawStr => {
+                self.lower_expression(&mut expr.value, fn_ctx)
+            }
+            _ => unimplemented!("cannot assign {typ:#?} to a record's field", typ = expr.value.result_type())
         }
     }
 
