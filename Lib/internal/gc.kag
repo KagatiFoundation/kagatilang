@@ -1,4 +1,4 @@
-def extern make_rt_rec() -> void;
+def extern make_rt_rec(size: integer) -> integer;
 
 def extern make_rt_int(x: integer) -> integer;
 

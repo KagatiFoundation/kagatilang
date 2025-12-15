@@ -17,7 +17,7 @@ CFLAGS_BUILD_2=-shared
 
 CC=gcc
 
-CFLAGS_TEST = -Wall -Wextra -fsanitize=address -g
+CFLAGS_TEST = -Wall -Wextra -fsanitize=address,undefined -g
 LDFLAGS_TEST = -lpthread -lm
 
 .PHONY: all clean tests

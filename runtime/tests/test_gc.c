@@ -9,7 +9,7 @@ void println(Object* a) {
     print(b);
 }
 
-int main() {
+int main2() {
     Object* a1 = make_rt_str("hello world", 12);
     println(a1);
     print(a1);

@@ -79,6 +79,7 @@ Object* object_new(size_t size, ObjectType type, void* src) {
     obj->num_children = 0;
     obj->children = NULL;
     obj->ob_type = type;
+    obj->marked = 0;
 
     if (type == K_REC) { // record type
         obj->num_children = size / MACH_PTR_SIZE;
@@ -189,8 +190,9 @@ Object* make_rt_int(uint64_t value) {
     return object_new(8, K_INT, (void*) &value);
 }
 
-Object* make_rt_rec(void *src, uint64_t size) {
-    return object_new(size, K_REC, src);
+Object* make_rt_rec(uint64_t size) {
+    uint64_t ptrs[size / MACH_PTR_SIZE];
+    return object_new(size, K_REC, ptrs);
 }
 
 Object* make_rt_str(void *src, uint64_t size) {

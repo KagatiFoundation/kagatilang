@@ -33,9 +33,15 @@ Object* make_rt_int(uint64_t);
 
 Object* make_rt_str(void*, uint64_t);
 
+Object* make_rt_rec(uint64_t);
+
 void dbg_print_heap();
 
 void gc_collect();
+
+void gc_push_root(Object **root);
+
+void gc_pop_roots(size_t n);
 
 #ifdef _cplusplus
 }
