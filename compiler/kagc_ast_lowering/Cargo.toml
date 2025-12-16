@@ -17,3 +17,7 @@ kagc_mir = { path = "../kagc_mir" }
 kagc_const = { path = "../kagc_const" }
 kagc_errors = { path = "../kagc_errors" }
 runtime = { path = "../../runtime" }
+kagc_parser = { path = "../kagc_parser" }
+
+[dev-dependencies]
+test_support = { path = "../test_support" }
