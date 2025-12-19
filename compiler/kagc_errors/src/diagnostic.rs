@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_comp_unit::source_map::{FileId, FilePoolIdx, SourceMap};
+use kagc_comp_unit::source_map::{FileId, SourceMap};
 use kagc_comp_unit::CompilationUnit;
 use kagc_span::span::{SourcePos, Span};
 use kagc_token::Token;
@@ -27,11 +27,11 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn from_single_token(tok: &Token, file: FilePoolIdx, msg: &str, severity: Severity) -> Self {
+    pub fn from_single_token(tok: &Token, file: FileId, msg: &str, severity: Severity) -> Self {
         let start_pos = tok.pos;
         let lexeme = tok.lexeme.clone();
         let total_span = Span::new(
-            file, 
+            file.0, 
             SourcePos {
                 line: start_pos.line,
                 column: start_pos.column

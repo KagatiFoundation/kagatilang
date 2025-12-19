@@ -1,33 +1,10 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 #![allow(unused_assignments)]
 
 use std::path::Path;
 use std::rc::Rc;
-
-use crate::source_map::FileMeta;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ParsingStageError {
@@ -55,6 +32,15 @@ pub enum ParsingStage {
     /// Some kind of error has occured during reading this file
     /// or during token generation.
     Error(ParsingStageError),
+}
+
+pub const DUMMY_FILE_INDEX: usize = 0xFFFFFFFF;
+
+#[derive(Debug, Default, Clone)]
+pub struct FileMeta {
+    pub name: String,
+
+    pub abs_path: String
 }
 
 #[derive(Clone, Debug)]

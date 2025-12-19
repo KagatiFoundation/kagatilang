@@ -2,12 +2,11 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use core::panic;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_ast::record::*;
 use kagc_ast::*;
-use kagc_comp_unit::source_map::FilePoolIdx;
+use kagc_comp_unit::source_map::FileId;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
@@ -64,9 +63,7 @@ pub struct Parser {
     /// Label generator that is going to be used by string literals only.
     _str_label_: usize,
 
-    var_offsets: HashMap<String, usize>,
-
-    current_file: FilePoolIdx,
+    current_file: FileId,
 
     sess: ParserSession,
 
@@ -85,8 +82,7 @@ impl Parser {
             current_function_name: None,
             next_local_sym_pos: 0,
             _str_label_: 0,
-            var_offsets: HashMap::new(),
-            current_file: sess.file_id.0,
+            current_file: sess.file_id,
             sess,
             lexer
         }
@@ -241,7 +237,7 @@ impl Parser {
 
         let meta = NodeMeta::new(
             Span::new(
-                self.current_file,
+                self.current_file.0,
                 SourcePos { 
                     line: start_tok.line, 
                     column: start_tok.column 
@@ -283,7 +279,7 @@ impl Parser {
         let end_tok = self.token_match(TokenKind::T_RBRACE)?.pos; // match '}'
         let meta = NodeMeta::new(
             Span::new(
-                self.current_file,
+                self.current_file.0,
                 SourcePos { 
                     line: start_tok.line, 
                     column: start_tok.column 
@@ -486,7 +482,7 @@ impl Parser {
             func_return_type,
             NodeMeta::new(
                 Span::new(
-                    self.current_file, 
+                    self.current_file.0, 
                     func_name_start_pos, 
                     func_name_end_pos
                 ), 
@@ -554,7 +550,7 @@ impl Parser {
         if self.current_token.kind == TokenKind::T_SEMICOLON {
             let meta = NodeMeta::new(
                 Span::new(
-                    self.current_file,
+                    self.current_file.0,
                     pos,
                     pos
                 ),
@@ -579,7 +575,7 @@ impl Parser {
             let return_expr: AST = self.parse_record_or_expr(None)?;
             let meta = NodeMeta::new(
                 Span::new(
-                    self.current_file,
+                    self.current_file.0,
                     pos,
                     return_expr.meta.span.end
                 ),
@@ -999,7 +995,7 @@ impl Parser {
         let span_end = self.tokens[self.current - 1].pos;
         let meta = NodeMeta::new(
             Span::new(
-                self.current_file, 
+                self.current_file.0, 
                 SourcePos { line: 
                     span_start.line, 
                     column: span_start.column 
@@ -1098,7 +1094,7 @@ impl Parser {
         let span_end = right.meta.span;
 
         let combined_span = Span {
-            file_id: self.current_file,
+            file_id: self.current_file.0,
             start: span_start.start,
             end: span_end.end
         };
@@ -1132,7 +1128,7 @@ impl Parser {
         };
         let single_token_meta = NodeMeta::new(
             Span::new(
-                self.current_file,
+                self.current_file.0,
                 start_pos,
                 SourcePos { 
                     line: start_pos.line, 
@@ -1296,7 +1292,7 @@ impl Parser {
 
         let meta = NodeMeta::new(
             Span::new(
-                self.current_file,
+                self.current_file.0,
                 SourcePos { 
                     line: start_token.pos.line, 
                     column: start_token.pos.column 
@@ -1306,13 +1302,6 @@ impl Parser {
             vec![]
         );
 
-        let field_off = if let Some(rec_base_off) = self.var_offsets.get(rec_alias) {
-            *rec_base_off
-        }
-        else {
-            0
-        };
-
         Ok(
             AST::create_leaf(
                 ASTKind::ExprAST(
@@ -1321,7 +1310,7 @@ impl Parser {
                             rec_name: "".to_string(), // name will be set by the semantic analyser
                             rec_alias: rec_alias.to_string(), 
                             field_chain,
-                            rel_stack_off: field_off,
+                            rel_stack_off: 0xFFFFFFFF, // resolver resolves this
                             result_type: LitTypeVariant::None // will be determined by the semantic analyzer
                         }
                     )
@@ -1394,7 +1383,7 @@ impl Parser {
             LitTypeVariant::None,
             NodeMeta::new(
                 Span::new(
-                    self.current_file,
+                    self.current_file.0,
                     start_pos,
                     end_pos
                ),
