@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+use std::{cell::RefCell, rc::Rc};
+
 use kagc_comp_unit::ctx::FileCtx;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
@@ -31,7 +33,7 @@ use crate::CompilerCtx;
 
 pub struct CompilerCtxBuilder {
     file_ctx: Option<FileCtx>,
-    scope_ctx: Option<ScopeCtx>,
+    scope_ctx: Option<Rc<RefCell<ScopeCtx>>>,
     diagnostics: Option<DiagnosticBag>,
     const_pool: Option<ConstPool>
 }
@@ -41,7 +43,7 @@ impl CompilerCtxBuilder {
     pub fn new(scope_ctx: ScopeCtx) -> Self {
         Self {
             file_ctx: None,
-            scope_ctx: Some(scope_ctx),
+            scope_ctx: Some(Rc::new(RefCell::new(scope_ctx))),
             diagnostics: None,
             const_pool: None
         }
@@ -52,7 +54,7 @@ impl CompilerCtxBuilder {
         self
     }
 
-    pub fn scope_context(mut self, scope_ctx: ScopeCtx) -> Self {
+    pub fn scope_context(mut self, scope_ctx: Rc<RefCell<ScopeCtx>>) -> Self {
         self.scope_ctx = Some(scope_ctx);
         self
     }

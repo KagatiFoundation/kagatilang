@@ -20,4 +20,3 @@ runtime = { path = "../../runtime" }
 kagc_parser = { path = "../kagc_parser" }
 
 [dev-dependencies]
-test_support = { path = "../test_support" }

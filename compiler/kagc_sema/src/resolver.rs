@@ -88,8 +88,8 @@ impl Resolver {
             bug!("Needed a IfDecl--but found {:#?}", node);
         }
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &mut node.kind {
-            self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
-            self.ctx.borrow_mut().scope.exit_scope();
+            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(if_stmt.scope_id);
+            self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
         }
         else {
             bug!("Provided Stmt {:#?} is not of type IfStmt! Aborting...", node);
@@ -97,17 +97,17 @@ impl Resolver {
 
         if let Some(mid_tree) = &mut node.mid {
             self.declare_symbol(mid_tree)?; // mid tree is the 'if' block
-            self.ctx.borrow_mut().scope.exit_scope(); // exit if-block's scope
+            self.ctx.borrow_mut().scope.borrow_mut().exit_scope(); // exit if-block's scope
         }
 
         if let Some(right_tree) = &mut node.right {
             // right tree is the 'else' block
             if let Some(else_block_tree) = &mut right_tree.left {
                 if let ASTKind::StmtAST(Stmt::Scoping(scoping_stmt)) = &else_block_tree.kind {
-                    self.ctx.borrow_mut().scope.enter_scope(scoping_stmt.scope_id);
+                    self.ctx.borrow_mut().scope.borrow_mut().enter_scope(scoping_stmt.scope_id);
                 }
                 self.declare_symbol(else_block_tree)?;
-                self.ctx.borrow_mut().scope.exit_scope();
+                self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
             }
         }
         Ok(0)
@@ -119,7 +119,7 @@ impl Resolver {
         }
 
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt_mut() {
-            let mut ctx_borrow = self.ctx.borrow_mut();
+            let ctx_borrow = self.ctx.borrow_mut();
             let function_id: Option<usize> = {
                 let sym = Symbol::new(
                     func_decl.name.clone(),
@@ -129,6 +129,7 @@ impl Resolver {
                 );
                 let insert_pos: Option<usize> = ctx_borrow
                     .scope
+                    .borrow_mut()
                     .root_scope_mut()
                     .declare(sym);
                 insert_pos
@@ -147,7 +148,7 @@ impl Resolver {
             };
 
             // switch to function's scope
-            let _ = ctx_borrow.scope.enter_scope(func_decl.scope_id);
+            let _ = ctx_borrow.scope.borrow_mut().enter_scope(func_decl.scope_id);
             let function_id = function_id.unwrap();
             self.curr_func_id = Some(function_id);
 
@@ -158,7 +159,6 @@ impl Resolver {
             let func_info: FunctionInfo = FunctionInfo::new(
                 func_decl.name.clone(),
                 function_id,
-                func_decl.stack_off_ as i32,
                 func_decl.return_type.clone(),
                 func_decl.storage_class,
                 func_decl.locals.clone(),
@@ -166,7 +166,7 @@ impl Resolver {
             );
 
             // create a new FunctionInfo
-            ctx_borrow.scope.declare_fn(func_info);
+            ctx_borrow.scope.borrow_mut().declare_fn(func_info);
 
             // drop context borrow
             drop(ctx_borrow);
@@ -177,7 +177,7 @@ impl Resolver {
             }
 
             // exit the function's scope
-            self.ctx.borrow_mut().scope.exit_scope();
+            self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
             return Ok(function_id);
         }
         bug!("Not a function declaration statement!");
@@ -197,7 +197,7 @@ impl Resolver {
             self.validate_and_process_expr(left, &stmt.sym_name)?;
         }
 
-        stmt.func_id = self.ctx.borrow_mut().scope.current_fn();
+        stmt.func_id = self.ctx.borrow_mut().scope.borrow().current_fn();
         let sym = Symbol::create(
             stmt.sym_name.clone(),
             stmt.value_type.clone(),
@@ -208,9 +208,9 @@ impl Resolver {
             None,
             stmt.func_id,
         );
-        let id = self.ctx
-            .borrow_mut()
-            .scope
+        let ctx_borrow = self.ctx.borrow();
+        let mut scope_borrow = ctx_borrow.scope.borrow_mut();
+        let id = scope_borrow
             .declare(sym)
             .ok_or({
                 Diagnostic {
@@ -306,12 +306,13 @@ impl Resolver {
         else if let Expr::RecordFieldAccess(access) = expr {
             self.require_symbol_exists(&access.rec_alias, meta)?;
             let ctx_borrow = self.ctx.borrow();
-            let symbol = ctx_borrow.scope.deep_lookup(&access.rec_alias).unwrap(); // safe to unwrap because of require_symbol_exists call
+            let scope_borrow = ctx_borrow.scope.borrow();
+            let symbol = scope_borrow.deep_lookup(&access.rec_alias).unwrap(); // safe to unwrap because of require_symbol_exists call
             // extract record's name
             let record_name = if let SymbolType::Record { name } = &symbol.sym_type { name }
             else { bug!("record '{}' not found", access.rec_name); };
             //
-            if let Some(record) = ctx_borrow.scope.lookup_record(record_name) {
+            if let Some(record) = ctx_borrow.scope.borrow().lookup_record(record_name) {
                 if !record.fields.iter().any(|field| field.name == access.field_chain[0]) {
                     bug!("field '{}' not present in '{}'", access.field_chain[0], record_name);
                 }
@@ -337,7 +338,8 @@ impl Resolver {
 
     fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {
         let ctx_borrow = self.ctx.borrow_mut();
-        let rec = ctx_borrow.scope.lookup_record(rec_name).ok_or_else(|| {
+        let scope_borrow = ctx_borrow.scope.borrow();
+        let rec = scope_borrow.lookup_record(rec_name).ok_or_else(|| {
             Diagnostic {
                 code: Some(ErrCode::SEM2000),
                 severity: Severity::Error,
@@ -396,7 +398,7 @@ impl Resolver {
                     }
                 }).collect::<Vec<RecordFieldType>>()
             };
-            if self.ctx.borrow_mut().scope.create_record(record_entry).is_none() {
+            if self.ctx.borrow_mut().scope.borrow_mut().create_record(record_entry).is_none() {
                 let already_defined_err = Diagnostic {
                     code: Some(ErrCode::SEM2001),
                     severity: Severity::Error,
@@ -413,7 +415,7 @@ impl Resolver {
     }
 
     fn require_symbol_exists(&self, symbol_name: &str, meta: &NodeMeta) -> Result<(), Diagnostic> {
-        if self.ctx.borrow().scope.deep_lookup(symbol_name).is_none() {
+        if self.ctx.borrow().scope.borrow().deep_lookup(symbol_name).is_none() {
             return Err(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),

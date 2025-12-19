@@ -9,6 +9,7 @@ use kagc_ast::record::*;
 use kagc_ast::*;
 use kagc_comp_unit::file_pool::FilePoolIdx;
 use kagc_errors::diagnostic::Diagnostic;
+use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
 use kagc_lexer::Tokenizer;
 use kagc_scope::scope::ScopeType;
@@ -72,22 +73,6 @@ pub struct Parser {
     lexer: Tokenizer
 }
 
-#[cfg(test)]
-mod tests {
-    use kagc_lexer::Tokenizer;
-
-    use crate::{Parser, session::ParserSession};
-
-    #[test]
-    fn test_sth() {
-        let s = ParserSession::from_string("let a = 12;");
-        let l = Tokenizer::new();
-        let mut p = Parser::new(s, l);
-        let tokens = p.tokenize_input_stream();
-        println!("{tokens:#?}");
-    }
-}
-
 impl Parser {
     /// Internal parser constructor.
     /// Use `ParserBuilder` instead.
@@ -121,6 +106,10 @@ impl Parser {
         else {
             panic!()
         }
+    }
+
+    pub fn diagnostics(&self) -> &DiagnosticBag {
+        &self.sess.diagnostics
     }
 
     pub fn parse(&mut self) -> Vec<AST> {
@@ -166,29 +155,17 @@ impl Parser {
         let curr_tok_kind: TokenKind = self.current_token.kind;
         let result = match curr_tok_kind {
             TokenKind::KW_DEF => self.parse_function_stmt(),
-
             TokenKind::KW_LET => self.parse_var_decl_stmt(),
-
             TokenKind::T_IDENTIFIER => self.assign_stmt_or_func_call(),
-            
             TokenKind::KW_IF => self.parse_if_stmt(),
-            
             TokenKind::KW_WHILE => self.parse_while_stmt(),
-            
             TokenKind::KW_FOR => self.parse_for_stmt(),
-            
             TokenKind::T_LBRACE => self.parse_compound_stmt(),
-            
             TokenKind::KW_RETURN => self.parse_return_stmt(),
-            
             TokenKind::KW_LOOP => self.parse_loop_stmt(),
-            
             TokenKind::KW_BREAK => self.parse_break_stmt(),
-
             TokenKind::KW_IMPORT => self.parse_import_stmt(),
-
             TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
-            
             _ => {
                 let diag = Diagnostic::from_single_token(
                     &self.current_token, 
@@ -372,10 +349,6 @@ impl Parser {
     // parsing a function declaration and definition
     // supports multiple parameters
     fn parse_function_stmt(&mut self) -> ParseResult {
-        // reset local offset counter to 0
-        // self.local_offset = 0;
-
-        // Creating a new scope for function declaration
         let func_scope_id: usize = self.sess
             .scope
             .borrow_mut()
@@ -488,24 +461,10 @@ impl Parser {
         // create a new FunctionInfo
         self.sess.scope.borrow_mut().exit_scope();
 
-        // reset offset counter after parsing function
-        // let local_offset = self.local_offset;
-        // self.local_offset = 0;
-        
-        /*
-        Stack offset calculation:
-         'x29' and 'x30' has to be preserved. Thus, the extra 15 bytes has to 
-         be allocated for them.
-         Also the x0-x3 has to be preserved if they are used during function calls. 
-         So, allocate extra 32 bytes for them as well.
-         */
-        // let stack_offset: i32 = (local_offset + 15 + 32) & !15;
-
         // Return AST for function declaration
         Ok(AST::with_meta(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 func_id: temp_func_id,
-                stack_off_: 0,
                 name: id_token.lexeme.clone(),
                 scope_id: func_scope_id,
                 return_type: func_return_type.clone(),
@@ -551,13 +510,19 @@ impl Parser {
         let param_name: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
         let _ = self.token_match(TokenKind::T_COLON)?;
         let param_type: LitTypeVariant = self.parse_id_type()?;
-        // let param_loc_off: i32 = self.gen_next_local_offset() as i32;
+        let param_loc_off: i32 = self.gen_next_local_offset() as i32;
         self.skip_to_next_token();
         Ok(FuncParam {
             lit_type: param_type,
             name: param_name.lexeme,
-            offset: 0
+            offset: param_loc_off
         })
+    }
+
+    fn gen_next_local_offset(&mut self) -> usize {
+        let idx = self.next_local_sym_pos;
+        self.next_local_sym_pos += 1;
+        idx
     }
 
     fn parse_return_stmt(&mut self) -> ParseResult {
@@ -854,16 +819,21 @@ impl Parser {
             }
 
             if var_type == LitTypeVariant::Str {
-                let str_const_label = 0;
-                default_value = Some(
-                    LitType::I32(
-                        str_const_label as i32
-                    )
-                );
+                default_value = Some(LitType::I32(self.next_str_label() as i32));
             }
         }
 
-        let local_off = 0;
+        let local_off = if inside_func {
+            if let SymbolType::Record { .. } = sym_type {
+                0
+            } 
+            else {
+                self.gen_next_local_offset()
+            }
+        }
+        else {
+            0
+        };
 
         if let Some(assign_ast_node_res) = assignment_parse_res {
             Ok(AST::new(
@@ -886,6 +856,12 @@ impl Parser {
         else {
             panic!("Variable declared without any assignment!")
         }
+    }
+
+    fn next_str_label(&mut self) -> usize {
+        let l = self._str_label_;
+        self._str_label_ += 1;
+        l
     }
 
     /// Parses the current token as a literal type keyword and returns the 

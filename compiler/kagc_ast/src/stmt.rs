@@ -30,10 +30,7 @@ use super::Expr;
 #[derive(Clone, Debug)]
 pub struct FuncDeclStmt {
     /// Function ID
-    pub func_id: usize, 
-
-    #[deprecated]
-    pub stack_off_: usize,
+    pub func_id: usize,
 
     pub name: String,
 

@@ -46,6 +46,18 @@ impl ParserSession {
             scope
         })
     }
+
+    pub fn from_source_file(file: SourceFile, scope: Rc<RefCell<ScopeCtx>>) -> Self {
+        let mut sources = SourceMap::default();
+        let id = sources.add_file(file);
+        Self {
+            file_id: id,
+            diagnostics: DiagnosticBag::default(),
+            options: ParserOptions {  },
+            sources: Rc::new(RefCell::new(sources)),
+            scope
+        }
+    }
 }
 
 #[cfg(test)]

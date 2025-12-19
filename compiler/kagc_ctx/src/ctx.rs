@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
+use std::{cell::RefCell, rc::Rc};
+
 use kagc_comp_unit::ctx::FileCtx;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
@@ -37,12 +39,12 @@ pub struct CompilerCtx {
 
     pub files: FileCtx,
 
-    pub scope: ScopeCtx
+    pub scope: Rc<RefCell<ScopeCtx>>
 }
 
 impl CompilerCtx {
     pub fn new(
-        scope_ctx: ScopeCtx, 
+        scope_ctx: Rc<RefCell<ScopeCtx>>, 
         file_ctx: FileCtx,
         const_pool: ConstPool,
         diagnostics: DiagnosticBag

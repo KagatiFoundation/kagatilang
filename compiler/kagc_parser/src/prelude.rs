@@ -25,7 +25,7 @@ mod parser_prelude_tests {
     use crate::prelude::parse_single_statement;
 
     #[test]
-    fn test_length() {
+    fn test_length_of_parse_single_statement() {
         let asts = parse_single_statement("let a = 12;");
         assert!(asts.is_ok());
         println!("{:#?}", asts.ok().unwrap());

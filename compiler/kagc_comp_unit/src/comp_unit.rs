@@ -59,15 +59,10 @@ use crate::source::{
 #[derive(Debug, Clone)]
 pub struct CompilationUnit {
     pub source: SourceFile,
-
     pub meta_id: usize,
-
     pub imports: Vec<Import>,
-
     pub stage: ParsingStage,
-
     pub tokens: Option<Rc<Vec<Token>>>,
-
     pub asts: Vec<AST>
 }
 

@@ -58,9 +58,6 @@ pub struct FunctionInfo {
     /// ID of the function.
     pub func_id: FunctionId,
 
-    /// The amount of stack space the function takes.
-    pub stack_size: i32,
-
     /// The return type of the function.
     pub return_type: LitTypeVariant,
 
@@ -77,7 +74,6 @@ impl FunctionInfo {
     pub fn new(
         name: String, 
         func_id: usize, 
-        stack_size: i32, 
         return_type: LitTypeVariant,
         storage_class: StorageClass,
         locals: Vec<SymbolPos>,
@@ -86,7 +82,6 @@ impl FunctionInfo {
         Self {
             name, 
             func_id,
-            stack_size, 
             return_type, 
             local_syms: locals,
             storage_class,

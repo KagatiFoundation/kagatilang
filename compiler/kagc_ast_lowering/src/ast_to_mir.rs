@@ -106,7 +106,7 @@ impl AstToMirLowerer {
 
     fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
         let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
-            self.ctx.borrow_mut().scope.enter_scope(func_decl.scope_id);
+            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(func_decl.scope_id);
             (func_decl.func_id, func_decl.scope_id)
         } else {
             bug!("expected FuncStmt but found {:?}", ast);
@@ -114,7 +114,7 @@ impl AstToMirLowerer {
 
         let func_name = self.get_func_name(func_id).expect("Function name error!");
         let mut store_class = StorageClass::GLOBAL;
-        if let Some(finfo) = self.ctx.borrow().scope.lookup_fn_by_name(func_name.as_str()) {
+        if let Some(finfo) = self.ctx.borrow().scope.borrow().lookup_fn_by_name(func_name.as_str()) {
             self.current_function = Some(finfo.clone());
             store_class = finfo.storage_class;
         }
@@ -124,6 +124,7 @@ impl AstToMirLowerer {
         let func_ir_params = self.ctx
             .borrow()
             .scope
+            .borrow()
             .collect_params(func_scope)
             .iter()
             .map(|&sym| {
@@ -167,7 +168,7 @@ impl AstToMirLowerer {
 
         self.current_function = None;
         // exit function's scope
-        self.ctx.borrow_mut().scope.exit_scope();
+        self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
         Ok(current_block_id)
     }
 
@@ -539,7 +540,7 @@ impl AstToMirLowerer {
 
     fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
-            self.ctx.borrow_mut().scope.enter_scope(if_stmt.scope_id);
+            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(if_stmt.scope_id);
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
@@ -582,7 +583,7 @@ impl AstToMirLowerer {
             }
         }
         // exit if-scope
-        self.ctx.borrow_mut().scope.exit_scope();
+        self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
         
         if let Some(right_tree) = &mut ast.right {
             // dump 'else' block's code
@@ -614,7 +615,7 @@ impl AstToMirLowerer {
 
     fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::Scoping(scope_stmt)) = &ast.kind {
-            self.ctx.borrow_mut().scope.enter_scope(scope_stmt.scope_id);
+            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(scope_stmt.scope_id);
         }
         else {
             bug!("provided AST tree is not of type 'AST_ELSE'");
@@ -637,7 +638,7 @@ impl AstToMirLowerer {
             }
         }
 
-        self.ctx.borrow_mut().scope.exit_scope();
+        self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
         Ok(last_block_id)
     }
 
@@ -650,12 +651,10 @@ impl AstToMirLowerer {
     }
 
     fn get_func_name(&mut self, index: usize) -> Option<String> {
-        let ctx_borrow = self.ctx.borrow();
-        ctx_borrow.scope.lookup_fn(index).map(|func| func.name.clone())
+        self.ctx.borrow().scope.borrow().lookup_fn(index).map(|func| func.name.clone())
     }
 
     fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Symbol> {
-        let ctx_borrow = self.ctx.borrow();
-        ctx_borrow.scope.deep_lookup(sym_name).cloned()
+        self.ctx.borrow().scope.borrow().deep_lookup(sym_name).cloned()
     }
 }

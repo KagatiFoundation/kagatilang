@@ -120,30 +120,25 @@ impl CompilerPipeline {
             }
         );
 
-        let mut unit = CompilationUnit::from_source(file, file_pool_idx.unwrap());
+        let parser_session = ParserSession::from_source_file(
+            file.clone(), 
+            self.ctx.borrow().scope.clone()
+        );
         let mut parser = ParserBuilder::new()
-            .session(
-                ParserSession::from_file(
-                    file_path, 
-                    Rc::new(
-                        RefCell::new(
-                            self.ctx.borrow().scope.clone()
-                        )
-                    )
-                )
-                .ok()
-                .unwrap()
-            )
+            .session(parser_session)
             .lexer(Tokenizer::new())
             .build();
 
         let tokens = parser.tokenize_input_stream();
+        
+        let mut unit = CompilationUnit::from_source(file, file_pool_idx.unwrap());
         unit.tokens = Some(tokens.clone());
         unit.next_stage();
 
         let asts = parser.parse();
-        let ctx = self.ctx.borrow();
-        if ctx.diagnostics.has_errors() {
+        let mut ctx = self.ctx.borrow_mut();
+        if parser.diagnostics().has_errors() {
+            ctx.diagnostics.extend(parser.diagnostics().clone());
             ctx.diagnostics.report_all(&ctx.files, &unit);
             std::process::exit(1);
         }
