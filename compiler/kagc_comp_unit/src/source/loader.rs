@@ -27,6 +27,8 @@ use std::{
     path::PathBuf, rc::Rc, 
 };
 
+use crate::source_map::FileMeta;
+
 use super::SourceFile;
 
 pub struct SourceFileLoader;
@@ -37,12 +39,11 @@ impl SourceFileLoader {
         let content = fs::read_to_string(path)?;
 
         Ok(SourceFile {
-            path: path.to_string_lossy().to_string(),
-            name: path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            content: Rc::new(content)
+            content: Rc::new(content),
+            meta: FileMeta {
+                name: path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                abs_path: path.to_string_lossy().to_string()
+            }
         })
     }
 }

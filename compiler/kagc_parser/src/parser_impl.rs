@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use kagc_ast::record::*;
 use kagc_ast::*;
-use kagc_comp_unit::file_pool::FilePoolIdx;
+use kagc_comp_unit::source_map::FilePoolIdx;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
@@ -94,8 +94,8 @@ impl Parser {
 
     pub fn tokenize_input_stream(&mut self) -> Rc<Vec<Token>> {
         let current_file_id = self.sess.file_id;
-        let files = self.sess.sources.borrow();
-        if let Some(source_file) = files.files.get(&current_file_id) {
+        let files = self.sess.files.borrow();
+        if let Some(source_file) = files.get(current_file_id) {
             let tokens = self.lexer.tokenize(source_file.content.clone());
             self.tokens = Rc::new(tokens);
             let first_token = self.tokens[0].clone();
@@ -110,6 +110,13 @@ impl Parser {
 
     pub fn diagnostics(&self) -> &DiagnosticBag {
         &self.sess.diagnostics
+    }
+
+    pub(crate) fn parse_expression(&mut self) -> ParseResult {
+        if self.tokens.is_empty() {
+            self.tokenize_input_stream();
+        }
+        self.parse_equality()
     }
 
     pub fn parse(&mut self) -> Vec<AST> {
@@ -151,7 +158,7 @@ impl Parser {
     ///
     /// - Returns a `ParseResult` representing the parsed statement or an error
     ///   if parsing fails.
-    fn parse_single_stmt(&mut self) -> ParseResult {
+    pub(crate) fn parse_single_stmt(&mut self) -> ParseResult {
         let curr_tok_kind: TokenKind = self.current_token.kind;
         let result = match curr_tok_kind {
             TokenKind::KW_DEF => self.parse_function_stmt(),
@@ -1246,7 +1253,7 @@ impl Parser {
             },
             _ => {
                 let diag = Diagnostic::from_single_token(
-                    &self.tokens[self.current - 2], 
+                    &self.tokens[self.current - 1], 
                     self.current_file, 
                     "unexpected token",
                     Severity::Error

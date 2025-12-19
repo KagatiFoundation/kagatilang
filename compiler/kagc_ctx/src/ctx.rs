@@ -24,7 +24,7 @@ SOFTWARE.
 
 use std::{cell::RefCell, rc::Rc};
 
-use kagc_comp_unit::ctx::FileCtx;
+use kagc_comp_unit::source_map::SourceMap;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_scope::ctx::ScopeCtx;
@@ -37,22 +37,21 @@ pub struct CompilerCtx {
 
     pub diagnostics: DiagnosticBag,
 
-    pub files: FileCtx,
-
+    pub source_map: Rc<RefCell<SourceMap>>,
     pub scope: Rc<RefCell<ScopeCtx>>
 }
 
 impl CompilerCtx {
     pub fn new(
         scope_ctx: Rc<RefCell<ScopeCtx>>, 
-        file_ctx: FileCtx,
+        source_map: Rc<RefCell<SourceMap>>,
         const_pool: ConstPool,
         diagnostics: DiagnosticBag
     ) -> Self {
         Self {
             const_pool,
             diagnostics,
-            files: file_ctx,
+            source_map,
             scope: scope_ctx
         }
     }

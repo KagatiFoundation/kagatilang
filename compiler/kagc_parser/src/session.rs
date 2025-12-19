@@ -4,57 +4,56 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use kagc_comp_unit::source_map::{FileId, SourceMap};
 use kagc_comp_unit::source::SourceFile;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_scope::ctx::ScopeCtx;
 use kagc_scope::ctx::builder::ScopeCtxBuilder;
 
 use crate::options::ParserOptions;
-use crate::source_map::{FileId, SourceMap};
 
 #[derive(Debug, Clone)]
 pub struct ParserSession {
     pub file_id: FileId,
     pub diagnostics: DiagnosticBag,
     pub options: ParserOptions,
-    pub sources: Rc<RefCell<SourceMap>>,
+    pub files: Rc<RefCell<SourceMap>>,
     pub scope: Rc<RefCell<ScopeCtx>>
 }
 
 impl ParserSession {
     pub fn from_string(source: &str) -> Self {
         let mut sources = SourceMap::default();
-        let id = sources.add_virtual_file("test", source);
+        let file_id = sources.insert(SourceFile::from_string("test", source)).unwrap();
         Self {
-            file_id: id,
+            file_id,
             diagnostics: DiagnosticBag::default(),
             options: ParserOptions {  },
-            sources: Rc::new(RefCell::new(sources)),
+            files: Rc::new(RefCell::new(sources)),
             scope: Rc::new(RefCell::new(ScopeCtxBuilder::new().build()))
         }
     }
 
-    pub fn from_file(path: &str, scope: Rc<RefCell<ScopeCtx>>) -> std::io::Result<Self> {
-        let mut sources = SourceMap::default();
+    pub fn from_file(
+        path: &str, 
+        scope: Rc<RefCell<ScopeCtx>>,
+        files: Rc<RefCell<SourceMap>>
+    ) -> std::io::Result<Self> {
         let file = SourceFile::from_file(path)?;
-        let file_id = sources.add_file(file);
-        Ok(Self {
-            file_id,
-            diagnostics: DiagnosticBag::default(),
-            options: ParserOptions { },
-            sources: Rc::new(RefCell::new(sources)),
-            scope
-        })
+        Ok(Self::from_source_file(file, scope, files))
     }
 
-    pub fn from_source_file(file: SourceFile, scope: Rc<RefCell<ScopeCtx>>) -> Self {
-        let mut sources = SourceMap::default();
-        let id = sources.add_file(file);
+    pub fn from_source_file(
+        file: SourceFile, 
+        scope: Rc<RefCell<ScopeCtx>>,
+        files: Rc<RefCell<SourceMap>>
+    ) -> Self {
+        let file_id = files.borrow_mut().insert(file).unwrap();
         Self {
-            file_id: id,
+            file_id,
             diagnostics: DiagnosticBag::default(),
             options: ParserOptions {  },
-            sources: Rc::new(RefCell::new(sources)),
+            files,
             scope
         }
     }

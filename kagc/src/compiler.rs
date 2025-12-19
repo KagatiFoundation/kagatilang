@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
-use kagc_comp_unit::file_pool::FileMeta;
 use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
+use kagc_comp_unit::source_map::FileId;
 use kagc_ctx::builder::CompilerCtxBuilder;
 use kagc_ctx::CompilerCtx;
 use kagc_mir::module::MirModule;
@@ -75,12 +75,13 @@ impl CompilerPipeline {
             if let Some(unit) = self.units.get_mut(unit_file) {
                 // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
                 // know which file is currently being processed
-                self.ctx.borrow_mut().files.current = unit.meta_id;
+                self.ctx.borrow_mut().source_map.borrow_mut().current = FileId(unit.meta_id);
                 resolv.resolve(&mut unit.asts);
                 analyzer.start_analysis(&mut unit.asts);
 
                 if self.ctx.borrow().diagnostics.has_errors() {
-                    self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().files, unit);
+                    println!("{:#?}", self.ctx.borrow().diagnostics);
+                    // self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().source_map, unit);
                     std::process::exit(1)
                 }
 
@@ -113,17 +114,12 @@ impl CompilerPipeline {
         }
 
         let file = ImportResolver::resolve(file_path)?;
-        let file_pool_idx = self.ctx.borrow_mut().files.insert(
-            FileMeta { 
-                name: file.name.clone(), 
-                abs_path: file.path.clone() 
-            }
-        );
-
         let parser_session = ParserSession::from_source_file(
             file.clone(), 
-            self.ctx.borrow().scope.clone()
+            self.ctx.borrow().scope.clone(),
+            self.ctx.borrow().source_map.clone()
         );
+        let soruce_file_id = parser_session.file_id;
         let mut parser = ParserBuilder::new()
             .session(parser_session)
             .lexer(Tokenizer::new())
@@ -131,7 +127,7 @@ impl CompilerPipeline {
 
         let tokens = parser.tokenize_input_stream();
         
-        let mut unit = CompilationUnit::from_source(file, file_pool_idx.unwrap());
+        let mut unit = CompilationUnit::from_source(file, soruce_file_id.0);
         unit.tokens = Some(tokens.clone());
         unit.next_stage();
 
@@ -139,7 +135,8 @@ impl CompilerPipeline {
         let mut ctx = self.ctx.borrow_mut();
         if parser.diagnostics().has_errors() {
             ctx.diagnostics.extend(parser.diagnostics().clone());
-            ctx.diagnostics.report_all(&ctx.files, &unit);
+            println!("{:#?}", ctx.diagnostics);
+            // ctx.diagnostics.report_all(&ctx.source_map, &unit);
             std::process::exit(1);
         }
         drop(ctx);

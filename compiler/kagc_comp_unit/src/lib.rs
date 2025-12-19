@@ -23,8 +23,7 @@ SOFTWARE.
 */
 
 pub mod source;
-pub mod file_pool;
-pub mod ctx;
+pub mod source_map;
 
 mod comp_unit;
 pub use comp_unit::*;

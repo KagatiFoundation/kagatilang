@@ -7,6 +7,5 @@ pub mod builder;
 pub mod prelude;
 pub mod session;
 pub mod options;
-pub mod source_map;
 
 pub use parser_impl::*;

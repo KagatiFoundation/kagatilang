@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_comp_unit::ctx::FileCtx;
-use kagc_comp_unit::file_pool::FilePoolIdx;
+use kagc_comp_unit::source_map::{FileId, FilePoolIdx, SourceMap};
 use kagc_comp_unit::CompilationUnit;
 use kagc_span::span::{SourcePos, Span};
 use kagc_token::Token;
@@ -52,8 +51,8 @@ impl Diagnostic {
         }
     }
 
-    pub fn report(&self, file_ctx: &FileCtx, unit: &CompilationUnit) {
-        let file_meta = file_ctx.get(self.primary_span.file_id)
+    pub fn report(&self, source_map: &SourceMap, unit: &CompilationUnit) {
+        let source_file = source_map.get(FileId(self.primary_span.file_id))
             .expect("File not found in pool");
 
         // split the file content into lines
@@ -66,7 +65,7 @@ impl Diagnostic {
         eprintln!("{ANSI_COLOR_RED}{:?}{ANSI_COLOR_RESET}: {}", self.severity, self.message);
 
         // print file path with line and column
-        eprintln!(" --> {}:{}:{}", file_meta.abs_path, line_num, col_num + 1);
+        eprintln!(" --> {}:{}:{}", source_file.meta.abs_path, line_num, col_num + 1);
 
         // separator
         eprintln!("  |");
@@ -99,9 +98,9 @@ impl DiagnosticBag {
         self.diagnostics.iter().any(|d| matches!(d.severity, Severity::Error))
     }
 
-    pub fn report_all(&self, file_pool: &FileCtx, unit: &CompilationUnit) {
+    pub fn report_all(&self, source_map: &SourceMap, unit: &CompilationUnit) {
         for diag in &self.diagnostics {
-            diag.report(file_pool, unit);
+            diag.report(source_map, unit);
         }
     }
 

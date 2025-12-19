@@ -24,10 +24,10 @@ SOFTWARE.
 
 #![allow(unused_assignments)]
 
-use std::{
-    path::Path,
-    rc::Rc,
-};
+use std::path::Path;
+use std::rc::Rc;
+
+use crate::source_map::FileMeta;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ParsingStageError {
@@ -59,33 +59,29 @@ pub enum ParsingStage {
 
 #[derive(Clone, Debug)]
 pub struct SourceFile {
-    pub path: String,
-
-    pub name: String,
-
-    pub content: Rc<String>
+    pub content: Rc<String>,
+    pub meta: FileMeta
 }
 
 impl SourceFile {
     pub fn from_file(path: &str) -> std::io::Result<Self> {
         let file_path: &Path = Path::new(path);
         let content: String = std::fs::read_to_string(file_path)?;
+        let name = file_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
 
         Ok(Self {
-            path: path.to_string(),
-            name: file_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default(),
             content: Rc::new(content),
+            meta: FileMeta { abs_path: path.to_string(), name }
         })
     }
 
     pub fn from_string(name: &str, content: &str) -> Self {
         Self {
-            path: format!("<{name}>"),
-            name: name.to_string(),
-            content: Rc::new(content.to_string())
+            content: Rc::new(content.to_string()),
+            meta: FileMeta { name: name.to_string(), abs_path: format!("<{name}>") }
         }
     }
 }

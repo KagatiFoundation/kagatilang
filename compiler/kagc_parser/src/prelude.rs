@@ -16,18 +16,23 @@ pub fn parse_single_statement(source: &str) -> ParseResult {
     let session = ParserSession::from_string(source);
     let lexer = Tokenizer::new();
     let mut parser = Parser::new(session, lexer);
-    let asts = parser.parse();
-    Ok(asts[0].clone())
+    parser.parse_single_stmt()
+}
+
+pub fn parse_expression(source: &str) -> ParseResult {
+    let session = ParserSession::from_string(source);
+    let lexer = Tokenizer::new();
+    let mut parser = Parser::new(session, lexer);
+    parser.parse_expression()
 }
 
 #[cfg(test)]
 mod parser_prelude_tests {
-    use crate::prelude::parse_single_statement;
+    use crate::prelude::parse_expression;
 
     #[test]
-    fn test_length_of_parse_single_statement() {
-        let asts = parse_single_statement("let a = 12;");
+    fn parse_expr_with() {
+        let asts = parse_expression("12 + 12");
         assert!(asts.is_ok());
-        println!("{:#?}", asts.ok().unwrap());
     }
 }
