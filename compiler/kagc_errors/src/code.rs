@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrCode {
     /// Missing semicolon
     SYN1000     = 1000,

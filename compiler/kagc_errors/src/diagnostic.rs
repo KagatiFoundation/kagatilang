@@ -10,14 +10,14 @@ use kagc_token::Token;
 use crate::code::ErrCode;
 use crate::terminal::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Severity {
     Error,
     Warning,
     Help,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Diagnostic {
     pub code:               Option<ErrCode>,
     pub severity:           Severity,
@@ -81,7 +81,7 @@ impl Diagnostic {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DiagnosticBag {
     diagnostics: Vec<Diagnostic>,
 }

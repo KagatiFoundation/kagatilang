@@ -10,7 +10,7 @@ impl RegisteryEntry for RecordType {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RecordRegistery {
     registery: HashMap<String, RecordType>,
 }

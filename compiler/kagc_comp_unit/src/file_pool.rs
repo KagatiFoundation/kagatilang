@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 pub type FilePoolIdx = usize;
 
+pub const DUMMY_FILE_INDEX: usize = 0xFFFFFFFF;
+
 #[derive(Debug, Default)]
 pub struct FileMeta {
     pub name: String,

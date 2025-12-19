@@ -15,7 +15,7 @@ use kagc_mir::module::MirModule;
 use kagc_lexer::Tokenizer;
 use kagc_ast_lowering::AstToMirLowerer;
 use kagc_parser::builder::ParserBuilder;
-use kagc_parser::SharedParserCtx;
+use kagc_parser::session::ParserSession;
 use kagc_scope::ctx::builder::ScopeCtxBuilder;
 use kagc_scope::manager::ScopeManager;
 use kagc_scope::scope::Scope;
@@ -28,7 +28,6 @@ pub struct CompilerPipeline {
     pub ctx: Rc<RefCell<CompilerCtx>>,
     units: HashMap<String, CompilationUnit>,
     compiler_order: Vec<String>,
-    shared_pctx: Rc<RefCell<SharedParserCtx>>
 }
 
 impl CompilerPipeline {
@@ -49,7 +48,6 @@ impl CompilerPipeline {
             ctx: Rc::new(RefCell::new(ctx)),
             compiler_order: vec![],
             units: HashMap::new(),
-            shared_pctx: Rc::new(RefCell::new(SharedParserCtx::default()))
         }
     }
 }
@@ -123,18 +121,25 @@ impl CompilerPipeline {
         );
 
         let mut unit = CompilationUnit::from_source(file, file_pool_idx.unwrap());
-        let mut lexer = Tokenizer::new();
-        let tokens = lexer.tokenize(unit.source.content.clone());
-    
-        unit.tokens = Some(Rc::new(tokens));
-        unit.next_stage();
-
         let mut parser = ParserBuilder::new()
-            .context(self.ctx.clone())
-            .shared_context(self.shared_pctx.clone())
-            .compile_unit(&mut unit)
-            .file(unit.meta_id)
+            .session(
+                ParserSession::from_file(
+                    file_path, 
+                    Rc::new(
+                        RefCell::new(
+                            self.ctx.borrow().scope.clone()
+                        )
+                    )
+                )
+                .ok()
+                .unwrap()
+            )
+            .lexer(Tokenizer::new())
             .build();
+
+        let tokens = parser.tokenize_input_stream();
+        unit.tokens = Some(tokens.clone());
+        unit.next_stage();
 
         let asts = parser.parse();
         let ctx = self.ctx.borrow();
@@ -160,17 +165,14 @@ impl CompilerPipeline {
 }
 
 pub mod parser_test_utils {
-    use std::cell::RefCell;
     use std::io::Write;
     use std::rc::Rc;
 
     use kagc_ast::AST;
     use kagc_comp_unit::source::loader::SourceFileLoader;
     use kagc_comp_unit::CompilationUnit;
-    use kagc_ctx::CompilerCtx;
     use kagc_lexer::Tokenizer;
     use kagc_parser::builder::ParserBuilder;
-    use kagc_parser::SharedParserCtx;
 
     fn make_comp_unit_from_raw_source(filename: &str, content: &str) -> std::io::Result<CompilationUnit> {
         let mut tmp_path = std::env::temp_dir();
@@ -188,7 +190,7 @@ pub mod parser_test_utils {
         Ok(CompilationUnit::from_source(source_file, 0))
     }
 
-    pub fn parse_from_source(ctx: Rc<RefCell<CompilerCtx>>, source: &str) -> Vec<AST> {
+    pub fn parse_from_source(source: &str) -> Vec<AST> {
         let mut comp_unit = make_comp_unit_from_raw_source(
             "parse_test_tmp.kag", 
             source
@@ -199,9 +201,6 @@ pub mod parser_test_utils {
         comp_unit.tokens = Some(Rc::new(tokens));
 
         let mut parser = ParserBuilder::new()
-            .context(ctx)
-            .shared_context(Rc::new(RefCell::new(SharedParserCtx::default())))
-            .compile_unit(&mut comp_unit)
             .build();
         parser.parse()
     }
@@ -228,7 +227,6 @@ mod test_compiler {
             )
         );
         let mut asts = parse_from_source(
-            ctx.clone(),
             "def main() -> void {
                 let a = 12;
                 let b = 12;

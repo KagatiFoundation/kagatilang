@@ -6,7 +6,7 @@ use kagc_symbol::{Symbol, Symtable};
 /// Scope ID
 pub(crate) type ScopeId = usize;
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, Copy)]
 pub enum ScopeType {
     #[default] Function,
     Loop,
@@ -16,7 +16,7 @@ pub enum ScopeType {
     Root
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Scope {
     pub table: Symtable<Symbol>,
 

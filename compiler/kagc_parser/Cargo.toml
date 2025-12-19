@@ -17,3 +17,4 @@ kagc_errors = { path = "../kagc_errors" }
 kagc_comp_unit = { path = "../kagc_comp_unit" }
 kagc_scope = { path = "../kagc_scope" }
 kagc_const = { path = "../kagc_const" }
+kagc_lexer = { path = "../kagc_lexer" }

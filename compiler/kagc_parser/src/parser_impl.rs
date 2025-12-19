@@ -1,38 +1,16 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 use core::panic;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use kagc_ast::record::*;
 use kagc_ast::*;
 use kagc_comp_unit::file_pool::FilePoolIdx;
-use kagc_ctx::CompilerCtx;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::Severity;
+use kagc_lexer::Tokenizer;
 use kagc_scope::scope::ScopeType;
 use kagc_span::span::SourcePos;
 use kagc_span::span::Span;
@@ -42,10 +20,8 @@ use kagc_types::record::RecordFieldType;
 use kagc_types::LitType;
 use kagc_types::LitTypeVariant;
 
-/// A type alias representing the result of parsing, which can either
-/// be an AST node on successful parsing or a ParseError indicating a
-/// parsing failure.
-type ParseResult = Result<AST, Box<Diagnostic>>;
+use crate::prelude::ParseResult;
+use crate::session::ParserSession;
 
 type TokenMatch<'a> = Result<&'a Token, Box<Diagnostic>>;
 
@@ -57,19 +33,6 @@ type TokenMatch<'a> = Result<&'a Token, Box<Diagnostic>>;
 const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
 
 pub type StringLabel = usize;
-
-#[derive(Debug, Clone, Default)]
-pub struct SharedParserCtx {
-    next_str_label: StringLabel
-}
-
-impl SharedParserCtx {
-    pub fn next_str_label(&mut self) -> StringLabel {
-        let ret = self.next_str_label;
-        self.next_str_label += 1;
-        ret
-    }
-}
 
 /// Represents a parser for converting tokens into an
 /// abstract syntax tree (AST).
@@ -92,52 +55,79 @@ pub struct Parser {
     /// Name of the function that is currently being parsed.
     current_function_name: Option<String>,
 
-    /// Offset of next local variable.
-    local_offset: i32,
-
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
-    /// Context in which the ```Parser``` is going to work on.
-    ctx: Rc<RefCell<CompilerCtx>>,
-
-    shared_pctx: Rc<RefCell<SharedParserCtx>>,
+    // shared_pctx: Rc<RefCell<SharedParserCtx>>,
 
     /// Label generator that is going to be used by string literals only.
     _str_label_: usize,
 
     var_offsets: HashMap<String, usize>,
 
-    current_file: FilePoolIdx
+    current_file: FilePoolIdx,
+
+    sess: ParserSession,
+
+    lexer: Tokenizer
+}
+
+#[cfg(test)]
+mod tests {
+    use kagc_lexer::Tokenizer;
+
+    use crate::{Parser, session::ParserSession};
+
+    #[test]
+    fn test_sth() {
+        let s = ParserSession::from_string("let a = 12;");
+        let l = Tokenizer::new();
+        let mut p = Parser::new(s, l);
+        let tokens = p.tokenize_input_stream();
+        println!("{tokens:#?}");
+    }
 }
 
 impl Parser {
     /// Internal parser constructor.
     /// Use `ParserBuilder` instead.
-    pub(crate) fn new(
-        ctx: Rc<RefCell<CompilerCtx>>, 
-        shared_pctx: Rc<RefCell<SharedParserCtx>>,
-        tokens: Rc<Vec<Token>>,
-        current: Token,
-        current_file: usize
-    ) -> Self {
+    pub fn new(sess: ParserSession, lexer: Tokenizer) -> Self {
         Self {
-            tokens,
+            tokens: Rc::new(vec![]),
             current: 0,
-            current_token: current,
+            current_token: Token::none(),
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
-            local_offset: 0,
             next_local_sym_pos: 0,
-            ctx,
-            shared_pctx,
             _str_label_: 0,
             var_offsets: HashMap::new(),
-            current_file
+            current_file: sess.file_id.0,
+            sess,
+            lexer
+        }
+    }
+
+    pub fn tokenize_input_stream(&mut self) -> Rc<Vec<Token>> {
+        let current_file_id = self.sess.file_id;
+        let files = self.sess.sources.borrow();
+        if let Some(source_file) = files.files.get(&current_file_id) {
+            let tokens = self.lexer.tokenize(source_file.content.clone());
+            self.tokens = Rc::new(tokens);
+            let first_token = self.tokens[0].clone();
+            self.current_token = first_token;
+            self.current_function_id = current_file_id.0;
+            self.tokens.clone()
+        }
+        else {
+            panic!()
         }
     }
 
     pub fn parse(&mut self) -> Vec<AST> {
+        if self.tokens.is_empty() {
+            self.tokenize_input_stream();
+        }
+
         let mut nodes: Vec<AST> = vec![];
         loop {
             if self.current_token.kind == TokenKind::T_EOF {
@@ -149,8 +139,7 @@ impl Parser {
             } 
             else if let Err(parse_error) = stmt_parse_result {
                 self
-                    .ctx
-                    .borrow_mut()
+                    .sess
                     .diagnostics
                     .push(*parse_error);
                 break;
@@ -384,12 +373,12 @@ impl Parser {
     // supports multiple parameters
     fn parse_function_stmt(&mut self) -> ParseResult {
         // reset local offset counter to 0
-        self.local_offset = 0;
+        // self.local_offset = 0;
 
         // Creating a new scope for function declaration
-        let func_scope_id: usize = self.ctx
-            .borrow_mut()
+        let func_scope_id: usize = self.sess
             .scope
+            .borrow_mut()
             .enter_new_scope(ScopeType::Function);
 
         // match and ignore function declaration keyword 'def'
@@ -497,11 +486,11 @@ impl Parser {
         self.current_function_id = INVALID_FUNC_ID; 
 
         // create a new FunctionInfo
-        self.ctx.borrow_mut().scope.exit_scope();
+        self.sess.scope.borrow_mut().exit_scope();
 
         // reset offset counter after parsing function
-        let local_offset = self.local_offset;
-        self.local_offset = 0;
+        // let local_offset = self.local_offset;
+        // self.local_offset = 0;
         
         /*
         Stack offset calculation:
@@ -510,13 +499,13 @@ impl Parser {
          Also the x0-x3 has to be preserved if they are used during function calls. 
          So, allocate extra 32 bytes for them as well.
          */
-        let stack_offset: i32 = (local_offset + 15 + 32) & !15;
+        // let stack_offset: i32 = (local_offset + 15 + 32) & !15;
 
         // Return AST for function declaration
         Ok(AST::with_meta(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 func_id: temp_func_id,
-                stack_off_: stack_offset as usize,
+                stack_off_: 0,
                 name: id_token.lexeme.clone(),
                 scope_id: func_scope_id,
                 return_type: func_return_type.clone(),
@@ -562,18 +551,18 @@ impl Parser {
         let param_name: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
         let _ = self.token_match(TokenKind::T_COLON)?;
         let param_type: LitTypeVariant = self.parse_id_type()?;
-        let param_loc_off: i32 = self.gen_next_local_offset() as i32;
+        // let param_loc_off: i32 = self.gen_next_local_offset() as i32;
         self.skip_to_next_token();
         Ok(FuncParam {
             lit_type: param_type,
             name: param_name.lexeme,
-            offset: param_loc_off
+            offset: 0
         })
     }
 
     fn parse_return_stmt(&mut self) -> ParseResult {
         // check whether parser's parsing a function or not
-        let inside_func = self.ctx.borrow().scope.inside_function();
+        let inside_func = self.sess.scope.borrow().inside_function();
         if !inside_func {
             let diag = Diagnostic::from_single_token(
                 &self.current_token, 
@@ -728,19 +717,19 @@ impl Parser {
     fn parse_if_stmt(&mut self) -> ParseResult {
         let cond_ast = self.parse_conditional_stmt(TokenKind::KW_IF)?;
 
-        let if_scope = self.ctx
-            .borrow_mut()
+        let if_scope = self.sess
             .scope
+            .borrow_mut()
             .enter_new_scope(ScopeType::If); // enter if's scope
 
         let if_true_ast = self.parse_single_stmt()?;
-        self.ctx.borrow_mut().scope.exit_scope(); // exit
+        self.sess.scope.borrow_mut().exit_scope(); // exit
 
         let mut if_false_ast = None;
         if self.current_token.kind == TokenKind::KW_ELSE {
-            let else_scope = self.ctx
-                .borrow_mut()
+            let else_scope = self.sess
                 .scope
+                .borrow_mut()
                 .enter_new_scope(ScopeType::If);
 
             self.skip_to_next_token(); // skip 'else'
@@ -755,7 +744,7 @@ impl Parser {
                     LitTypeVariant::None
                 )
             );          
-            self.ctx.borrow_mut().scope.exit_scope();
+            self.sess.scope.borrow_mut().exit_scope();
         }
         Ok(AST::with_mid(
             ASTKind::StmtAST(Stmt::If(IfStmt { scope_id: if_scope })),
@@ -800,7 +789,7 @@ impl Parser {
         _ = self.token_match(TokenKind::KW_LET)?;
 
         // Being "inside" a function means that we are currently parsing a function's body.
-        let inside_func: bool = self.ctx.borrow().scope.live_scope_id() != 0;
+        let inside_func: bool = self.sess.scope.borrow().live_scope_id() != 0;
 
         // Track the storage class for this variable.
         let mut var_class: StorageClass = StorageClass::GLOBAL;
@@ -821,7 +810,7 @@ impl Parser {
         // Name of the variable.
         let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
 
-        self.var_offsets.insert(id_token.lexeme.clone(), self.local_offset as usize);
+        // self.var_offsets.insert(id_token.lexeme.clone(), self.local_offset as usize);
 
         // Parser may encounter a colon after the identifier name.
         // This means the type of this variable has been defined
@@ -865,7 +854,7 @@ impl Parser {
             }
 
             if var_type == LitTypeVariant::Str {
-                let str_const_label = self.shared_pctx.borrow_mut().next_str_label();
+                let str_const_label = 0;
                 default_value = Some(
                     LitType::I32(
                         str_const_label as i32
@@ -874,17 +863,7 @@ impl Parser {
             }
         }
 
-        let local_off = if inside_func {
-            if let SymbolType::Record { .. } = sym_type {
-                0
-            } 
-            else {
-                self.gen_next_local_offset()
-            }
-        } 
-        else {
-            0
-        };
+        let local_off = 0;
 
         if let Some(assign_ast_node_res) = assignment_parse_res {
             Ok(AST::new(
@@ -907,12 +886,6 @@ impl Parser {
         else {
             panic!("Variable declared without any assignment!")
         }
-    }
-
-    fn gen_next_local_offset(&mut self) -> usize {
-        let tmp_off: i32 = self.local_offset;
-        self.local_offset += 1;
-        tmp_off as usize
     }
 
     /// Parses the current token as a literal type keyword and returns the 
@@ -1449,7 +1422,7 @@ impl Parser {
 
     /// Adds the symbol to the current scope.
     fn add_symbol_local(&mut self, sym: Symbol) -> usize {
-        if let Some(insert_pos) = self.ctx.borrow_mut().scope.declare(sym.clone()) {
+        if let Some(insert_pos) = self.sess.scope.borrow_mut().declare(sym.clone()) {
             self.next_local_sym_pos += 1;
             insert_pos
         }
@@ -1459,7 +1432,7 @@ impl Parser {
     }
 
     fn is_scope_global(&self) -> bool {
-        self.ctx.borrow().scope.live_scope_id() == 0
+        self.sess.scope.borrow().live_scope_id() == 0
     }
 
     fn token_match_no_advance(&mut self, kind: TokenKind) -> TokenMatch {

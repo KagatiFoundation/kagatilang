@@ -13,13 +13,13 @@ use crate::ctx::builder::ScopeCtxBuilder;
 use crate::scope::*;
 use crate::manager::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct CurrentScopeMeta {
     pub(crate) id: ScopeId,
     pub(crate) typ: ScopeType
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ScopeCtx {
     pub(crate) functions: FunctionInfoTable,
     pub(crate) current_function: usize,

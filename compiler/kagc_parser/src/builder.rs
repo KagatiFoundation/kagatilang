@@ -1,74 +1,41 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
-use kagc_comp_unit::{file_pool::FilePoolIdx, CompilationUnit};
-use kagc_ctx::CompilerCtx;
-use kagc_token::Token;
+use kagc_lexer::Tokenizer;
 
-use crate::{Parser, SharedParserCtx};
+use crate::{Parser, session::ParserSession};
 
 #[derive(Default, Debug)]
 pub struct ParserBuilder {
-    ctx: Option<Rc<RefCell<CompilerCtx>>>,
-    shared_pctx: Option<Rc<RefCell<SharedParserCtx>>>,
-    tokens: Option<Rc<Vec<Token>>>,
-    current_token: Option<Token>,
-    current_file: usize
+    session: Option<ParserSession>,
+    lexer: Option<Tokenizer>
 }
 
 impl ParserBuilder {
     pub fn new() -> Self {
         Self {
-            ctx: None,
-            shared_pctx: None,
-            tokens: None,
-            current_token: None,
-            current_file: 0
+            session: None,
+            lexer: None
         }
     }
 
-    pub fn context(mut self, ctx: Rc<RefCell<CompilerCtx>>) -> Self {
-        self.ctx = Some(ctx);
+    pub fn session(mut self, sess: ParserSession) -> Self {
+        self.session = Some(sess);
         self
     }
 
-    pub fn file(mut self, file_id: FilePoolIdx) -> Self {
-        self.current_file = file_id;
+    pub fn lexer(mut self, lexer: Tokenizer) -> Self {
+        self.lexer = Some(lexer);
         self
-    }
-
-    pub fn shared_context(mut self, ctx: Rc<RefCell<SharedParserCtx>>) -> Self {
-        self.shared_pctx = Some(ctx);
-        self
-    }
-
-    pub fn compile_unit(mut self, unit: &mut CompilationUnit) -> Self {
-         if let Some(tokens) = &unit.tokens {
-            self.tokens = Some(tokens.clone());
-            self.current_token = Some(tokens[0].clone());
-            self
-        }
-        else {
-            panic!("No tokens provided!");
-        }
     }
 
     pub fn build(self) -> Parser {
-        if self.shared_pctx.is_none() {
-            panic!("Shared parser context is required to build a parser!");
+        if self.lexer.is_none() {
+            panic!("Lexer is required to build a parser!");
         }
-        if self.ctx.is_none() {
-            panic!("Context is required to build a parser!");
+        if self.session.is_none() {
+            panic!("Session is required to build a parser!");
         }
-        if self.tokens.is_none() {
-            panic!("Tokens is required to build a parser!");
-        }
-        Parser::new(
-            self.ctx.unwrap(), 
-            self.shared_pctx.unwrap(),
-            self.tokens.unwrap(),
-            self.current_token.unwrap(),
-            self.current_file
-        )
+        Parser::new(self.session.unwrap(), self.lexer.unwrap())
     }
 }

@@ -80,4 +80,12 @@ impl SourceFile {
             content: Rc::new(content),
         })
     }
+
+    pub fn from_string(name: &str, content: &str) -> Self {
+        Self {
+            path: format!("<{name}>"),
+            name: name.to_string(),
+            content: Rc::new(content.to_string())
+        }
+    }
 }

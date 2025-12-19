@@ -9,7 +9,7 @@ use crate::scope::*;
 
 pub type ScopeItem = (ScopeId, Scope);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ScopeManager {
     pub scopes: HashMap<ScopeId, Scope>
 }

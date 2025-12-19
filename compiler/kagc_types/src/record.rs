@@ -2,7 +2,7 @@ use crate::{LitTypeVariant, TypeSized};
 
 pub type RecordFieldOffset = usize;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RecordType {
     pub name: String,
     pub size: usize,
