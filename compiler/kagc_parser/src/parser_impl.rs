@@ -108,15 +108,34 @@ impl Parser {
         &self.sess.diagnostics
     }
 
-    pub(crate) fn parse_expression(&mut self) -> ParseResult {
-        if self.tokens.is_empty() {
+    pub(crate) fn parse_expression(&mut self) -> Option<Expr> {
+        if self.tokens.is_empty() { // lazily tokenize the input
             self.tokenize_input_stream();
         }
-        self.parse_equality()
+        match self.parse_record_or_expr(None) {
+            Ok(ast) => ast.kind.expr(),
+            Err(diag) => {
+                self.sess.diagnostics.push(*diag);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn parse_statement(&mut self) -> Option<Stmt> {
+        if self.tokens.is_empty() { // lazily tokenize the input
+            self.tokenize_input_stream();
+        }
+        match self.parse_single_stmt() {
+            Ok(ast) => ast.kind.stmt(),
+            Err(diag) => {
+                self.sess.diagnostics.push(*diag);
+                None
+            }
+        }
     }
 
     pub fn parse(&mut self) -> Vec<AST> {
-        if self.tokens.is_empty() {
+        if self.tokens.is_empty() { // lazily tokenize the input
             self.tokenize_input_stream();
         }
 
@@ -125,16 +144,12 @@ impl Parser {
             if self.current_token.kind == TokenKind::T_EOF {
                 break;
             }
-            let stmt_parse_result: ParseResult = self.parse_single_stmt();
-            if let Ok(stmt) = stmt_parse_result {
-                nodes.push(stmt);
-            } 
-            else if let Err(parse_error) = stmt_parse_result {
-                self
-                    .sess
-                    .diagnostics
-                    .push(*parse_error);
-                break;
+            match self.parse_single_stmt() {
+                Ok(stmt) => nodes.push(stmt),
+                Err(diag) => {
+                    self.sess.diagnostics.push(*diag);
+                    break;
+                }
             }
         }
         nodes
@@ -156,52 +171,60 @@ impl Parser {
     ///   if parsing fails.
     pub(crate) fn parse_single_stmt(&mut self) -> ParseResult {
         let curr_tok_kind: TokenKind = self.current_token.kind;
-        let result = match curr_tok_kind {
+        match curr_tok_kind {
+            TokenKind::KW_LET => {
+                let ast = self.parse_var_decl_stmt()?;
+                self.expect_semicolon();
+                Ok(ast)
+            }
+            TokenKind::KW_RETURN => {
+                let ast = self.parse_return_stmt()?;
+                self.expect_semicolon();
+                Ok(ast)
+            }
+            TokenKind::KW_BREAK => {
+                let ast = self.parse_break_stmt()?;
+                self.expect_semicolon();
+                Ok(ast)
+            }
+            TokenKind::T_IDENTIFIER => {
+                let ast = self.assign_stmt_or_func_call()?;
+                self.expect_semicolon();
+                Ok(ast)
+            }
             TokenKind::KW_DEF => self.parse_function_stmt(),
-            TokenKind::KW_LET => self.parse_var_decl_stmt(),
-            TokenKind::T_IDENTIFIER => self.assign_stmt_or_func_call(),
             TokenKind::KW_IF => self.parse_if_stmt(),
             TokenKind::KW_WHILE => self.parse_while_stmt(),
             TokenKind::KW_FOR => self.parse_for_stmt(),
             TokenKind::T_LBRACE => self.parse_compound_stmt(),
-            TokenKind::KW_RETURN => self.parse_return_stmt(),
             TokenKind::KW_LOOP => self.parse_loop_stmt(),
-            TokenKind::KW_BREAK => self.parse_break_stmt(),
             TokenKind::KW_IMPORT => self.parse_import_stmt(),
             TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
             _ => {
-                let diag = Diagnostic::from_single_token(
-                    &self.current_token, 
-                    self.current_file, 
-                    "unexpected token", 
-                    Severity::Error
-                );
-                Err(Box::new(diag))
-            }
-        };
-
-        if result.is_ok() {
-            match curr_tok_kind {
-                TokenKind::KW_LET
-                | TokenKind::KW_RETURN
-                | TokenKind::KW_BREAK
-                | TokenKind::T_IDENTIFIER => {
-                    _ = self.token_match(TokenKind::T_SEMICOLON)?;
-                },
-                _ => ()
+                Err(Box::new(
+                    Diagnostic::from_single_token(
+                        &self.current_token, 
+                        self.current_file, 
+                        "unexpected token", 
+                        Severity::Error
+                    )
+                ))
             }
         }
-        result
+    }
+
+    fn expect_semicolon(&mut self) {
+        _ = self.consume(TokenKind::T_SEMICOLON, "expected a ';'");
     }
 
     // parse compound statement(statement starting with '{' and ending with '}')
     fn parse_compound_stmt(&mut self) -> ParseResult {
-        _ = self.token_match(TokenKind::T_LBRACE)?;
+        _ = self.consume(TokenKind::T_LBRACE, "expected {")?;
         let mut left: Option<AST> = None;
         let mut stmt_count: i32 = 0;
         loop {
             if self.current_token.kind == TokenKind::T_RBRACE {
-                _ = self.token_match(TokenKind::T_RBRACE)?; // match and ignore '}'
+                _ = self.consume(TokenKind::T_RBRACE, "expected }")?; // match and ignore '}'
                 break;
             }
             let tree_result: ParseResult = self.parse_single_stmt();
@@ -231,9 +254,9 @@ impl Parser {
     }
 
     fn parse_import_stmt(&mut self) -> ParseResult {
-        let start_tok = self.token_match(TokenKind::KW_IMPORT)?.pos; // match 'import' keyword
-        let module_path_tok: Token = self.token_match(TokenKind::T_STRING)?.clone();
-        let end_tok = self.token_match(TokenKind::T_SEMICOLON)?.pos; // match ';'
+        let start_tok = self.consume(TokenKind::KW_IMPORT, "expected 'import'")?.pos; // match 'import' keyword
+        let module_path_tok: Token = self.consume(TokenKind::T_STRING, "expected a string")?.clone();
+        let end_tok = self.consume(TokenKind::T_SEMICOLON, "expected ';'")?.pos; // match ';'
 
         let meta = NodeMeta::new(
             Span::new(
@@ -266,17 +289,17 @@ impl Parser {
     }
 
     fn parse_record_decl_stmt(&mut self) -> ParseResult {
-        let start_tok = self.token_match(TokenKind::KW_RECORD)?.pos; // match 'record' keyword
+        let start_tok = self.consume(TokenKind::KW_RECORD, "expected keyword 'record'")?.pos; // match 'record' keyword
         // expect name of the record
-        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-        _ = self.token_match(TokenKind::T_LBRACE); // match '{'
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        _ = self.consume(TokenKind::T_LBRACE, "expected '{'"); // match '{'
         let mut rec_fields = vec![];
 
         while self.current_token.kind != TokenKind::T_RBRACE {
             rec_fields.push(self.parse_record_field_decl_stmt()?);
         }
         
-        let end_tok = self.token_match(TokenKind::T_RBRACE)?.pos; // match '}'
+        let end_tok = self.consume(TokenKind::T_RBRACE, "expected '}'")?.pos; // match '}'
         let meta = NodeMeta::new(
             Span::new(
                 self.current_file.0,
@@ -317,8 +340,8 @@ impl Parser {
     }
 
     fn parse_record_field_decl_stmt(&mut self) -> Result<RecordField, Box<Diagnostic>> {
-        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-        _ = self.token_match(TokenKind::T_COLON); // match ':'
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        _ = self.consume(TokenKind::T_COLON, "expected a ':'"); // match ':'
 
         let id_type = self.parse_id_type()?;
         if id_type == LitTypeVariant::Null {
@@ -338,7 +361,7 @@ impl Parser {
             todo!("Default value is not supported right now in record field!");
         }
 
-        _ = self.token_match(TokenKind::T_SEMICOLON); // match ';'
+        _ = self.consume(TokenKind::T_SEMICOLON, "expected ';'"); // match ';'
 
         Ok(
             RecordField { 
@@ -358,7 +381,7 @@ impl Parser {
             .enter_new_scope(ScopeType::Function);
 
         // match and ignore function declaration keyword 'def'
-        _ = self.token_match(TokenKind::KW_DEF)?;
+        _ = self.consume(TokenKind::KW_DEF, "expected keyword 'def'")?;
 
         /* Storage class of the function that is being parsed.
           * By default, it is set to 'GLOBAL'.
@@ -368,11 +391,11 @@ impl Parser {
         // 'def' keyword could be followed by the 'extern' keyword, 
         // symbolizing the external definition of the function's body.
         if self.current_token.kind == TokenKind::KW_EXTERN {
-            _ = self.token_match(TokenKind::KW_EXTERN)?;
+            _ = self.consume(TokenKind::KW_EXTERN, "expected keyword 'extern'")?;
             func_storage_class = StorageClass::EXTERN;
         }
 
-        let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        let id_token: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
         let func_name_start_pos = SourcePos {
             column: id_token.pos.column,
             line: id_token.pos.line
@@ -381,7 +404,7 @@ impl Parser {
             column: id_token.pos.column + id_token.lexeme.len(),
             line: id_token.pos.line
         };
-        _ = self.token_match(TokenKind::T_LPAREN)?;
+        _ = self.consume(TokenKind::T_LPAREN, "expected '('")?;
 
         let mut func_param_types: Vec<LitTypeVariant> = vec![];
         let mut func_locals = vec![];
@@ -427,13 +450,13 @@ impl Parser {
                     break;
                 } 
                 else {
-                    self.token_match(TokenKind::T_COMMA)?;
+                    self.consume(TokenKind::T_COMMA, "expected ','")?;
                 }
             } 
         }
 
         // function's return type
-        self.token_match(TokenKind::T_RPAREN)?;
+        self.consume(TokenKind::T_RPAREN, "expected ')'")?;
         let func_return_type: LitTypeVariant = self.parse_fn_ret_type()?;
         self.skip_to_next_token();
 
@@ -442,7 +465,7 @@ impl Parser {
         // prevents the parser from entering the "local" state prematurely 
         // if the function signature is invalid.
         if func_storage_class != StorageClass::EXTERN {
-            _ = self.token_match_no_advance(TokenKind::T_LBRACE)?;
+            _ = self.consume_no_advance(TokenKind::T_LBRACE)?;
         }
 
         // And of course the function name as well :)
@@ -455,7 +478,7 @@ impl Parser {
             function_body = Some(function_body_res);
         } 
         else {
-            _ = self.token_match(TokenKind::T_SEMICOLON)?;
+            _ = self.consume(TokenKind::T_SEMICOLON, "expected ';'")?;
         }
 
         let temp_func_id: usize = self.current_function_id;
@@ -493,7 +516,7 @@ impl Parser {
 
     // parse function's return type
     fn parse_fn_ret_type(&mut self) -> Result<LitTypeVariant, Box<Diagnostic>> {
-        _ = self.token_match(TokenKind::T_ARROW)?;
+        _ = self.consume(TokenKind::T_ARROW, "expected '->'")?;
         let func_ret_type: LitTypeVariant = self.parse_id_type()?;
 
         if func_ret_type == LitTypeVariant::Null {
@@ -510,8 +533,8 @@ impl Parser {
     }
 
     fn parse_parameter(&mut self) -> Result<FuncParam, Box<Diagnostic>> {
-        let param_name: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-        let _ = self.token_match(TokenKind::T_COLON)?;
+        let param_name: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        let _ = self.consume(TokenKind::T_COLON, "expected ':'")?;
         let param_type: LitTypeVariant = self.parse_id_type()?;
         let param_loc_off: i32 = self.gen_next_local_offset() as i32;
         self.skip_to_next_token();
@@ -541,7 +564,7 @@ impl Parser {
             return Err(Box::new(diag));
         }
 
-        let ret_tok = self.token_match(TokenKind::KW_RETURN)?;
+        let ret_tok = self.consume(TokenKind::KW_RETURN, "expected keyword 'return'")?;
         let pos = SourcePos {
             line: ret_tok.pos.line,
             column: ret_tok.pos.column
@@ -615,7 +638,7 @@ impl Parser {
     }
 
     fn parse_loop_stmt(&mut self) -> ParseResult {
-        _ = self.token_match(TokenKind::KW_LOOP)?; // match and ignore 'loop'
+        _ = self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?; // match and ignore 'loop'
         let loop_body: AST = self.parse_compound_stmt()?;
         Ok(AST::new(
             ASTKind::StmtAST(Stmt::Loop),
@@ -627,7 +650,7 @@ impl Parser {
     }
 
     fn parse_break_stmt(&mut self) -> ParseResult {
-        _ = self.token_match(TokenKind::KW_BREAK)?; // match and ignore 'break'
+        _ = self.consume(TokenKind::KW_BREAK, "expected the keyword 'break'")?; // match and ignore 'break'
         Ok(
             AST::new(
                 ASTKind::StmtAST(Stmt::Break),
@@ -640,10 +663,9 @@ impl Parser {
     }
 
     fn parse_for_stmt(&mut self) -> ParseResult {
-        _ = self.token_match(TokenKind::KW_FOR)?; // match and ignore the keyword 'for'
-        _ = self.token_match(TokenKind::T_LPAREN)?; // match and ignore '('
-        let pre_stmt: AST = self.parse_single_stmt()?; // initialization statement
-                                                       // _ = self.token_match(TokenKind::T_SEMICOLON);
+        _ = self.consume(TokenKind::KW_FOR, "expected the keyword 'for'")?;
+        _ = self.consume(TokenKind::T_LPAREN, "expected '('")?;
+        let pre_stmt: AST = self.parse_single_stmt()?; 
         let cond_ast = self.parse_equality(); // conditional section of for loop
         if let Ok(_icast) = &cond_ast {
             if (_icast.operation < ASTOperation::AST_EQEQ)
@@ -653,10 +675,10 @@ impl Parser {
                 panic!("Please provide conditional expression for 'for'");
             }
         }
-        _ = self.token_match(TokenKind::T_SEMICOLON)?; // expect semicolon
+        _ = self.consume(TokenKind::T_SEMICOLON, "expected a ';'")?;
         let incr_ast = self.parse_single_stmt();
 
-        _ = self.token_match(TokenKind::T_RPAREN)?; // match and ignore ')'
+        _ = self.consume(TokenKind::T_RPAREN, "expected a '')")?;
         let for_body = self.parse_single_stmt();
 
         let mut tree: AST = AST::new(
@@ -726,8 +748,8 @@ impl Parser {
 
     // parses tokens that are in the form '(expression [< | > | >= | <= | == | !=] expression)'
     fn parse_conditional_stmt(&mut self, kind: TokenKind) -> ParseResult {
-        _ = self.token_match(kind)?;
-        _ = self.token_match(TokenKind::T_LPAREN)?; // match and ignore '('
+        _ = self.consume(kind, &format!("expected the keyword '{k}'", k = kind.as_str()))?;
+        _ = self.consume(TokenKind::T_LPAREN, "expected a '('")?; // match and ignore '('
 
         let cond_ast = self.parse_equality();
 
@@ -738,7 +760,7 @@ impl Parser {
             }
         }
 
-        _ = self.token_match(TokenKind::T_RPAREN)?; // match and ignore ')'
+        _ = self.consume(TokenKind::T_RPAREN, "expected a ')'")?; // match and ignore ')'
         cond_ast
     }
 
@@ -754,7 +776,7 @@ impl Parser {
     /// or a `ParseError` if the parsing fails.
     fn parse_var_decl_stmt(&mut self) -> ParseResult {
         // consume 'let'
-        _ = self.token_match(TokenKind::KW_LET)?;
+        _ = self.consume(TokenKind::KW_LET, "expected the keyword 'let'")?;
 
         // Being "inside" a function means that we are currently parsing a function's body.
         let inside_func: bool = self.sess.scope.borrow().live_scope_id() != 0;
@@ -776,7 +798,7 @@ impl Parser {
         let mut sym_type = SymbolType::Variable;
 
         // Name of the variable.
-        let id_token: Token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        let id_token: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
 
         // self.var_offsets.insert(id_token.lexeme.clone(), self.local_offset as usize);
 
@@ -784,7 +806,7 @@ impl Parser {
         // This means the type of this variable has been defined
         // by the user.
         if self.current_token.kind == TokenKind::T_COLON {
-            _ = self.token_match(TokenKind::T_COLON)?;
+            _ = self.consume(TokenKind::T_COLON, "expected a ':'")?;
             var_type = self.parse_id_type()?;
 
             // if the declared variable is a record
@@ -803,7 +825,7 @@ impl Parser {
         // If identifier name is followed by an equal sign, then it is assigned 
         // at the time of declaration.
         if self.current_token.kind == TokenKind::T_EQUAL {
-            _ = self.token_match(TokenKind::T_EQUAL)?; // match and ignore '=' sign
+            _ = self.consume(TokenKind::T_EQUAL, "expected a '='")?; // match and ignore '=' sign
             assignment_parse_res = Some(self.parse_record_or_expr(Some(&id_token.lexeme)));
         }
 
@@ -899,7 +921,7 @@ impl Parser {
 
     // TODO: Write comments
     fn assign_stmt_or_func_call(&mut self) -> ParseResult {
-        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
         let tok_kind_after_id_tok: TokenKind = self.current_token.kind;
         if tok_kind_after_id_tok != TokenKind::T_LPAREN {
             self.parse_assignment_stmt(id_token)
@@ -909,11 +931,11 @@ impl Parser {
     }
 
     fn parse_assignment_stmt(&mut self, id_token: Token) -> ParseResult {
-        _ = self.token_match(TokenKind::T_EQUAL)?;
+        _ = self.consume(TokenKind::T_EQUAL, "expected an '='")?;
 
         let bin_expr_ast_node: AST = self.parse_record_or_expr(None)?;
 
-        // _ = self.token_match(TokenKind::T_SEMICOLON)?;
+        // _ = self.consume(TokenKind::T_SEMICOLON)?;
 
         let lvalueid: AST = AST::create_leaf(
             ASTKind::StmtAST(
@@ -942,16 +964,12 @@ impl Parser {
     }
 
     fn parse_record_or_expr(&mut self, rec_alias: Option<&str>) -> ParseResult {
-        if self.current_token.kind == TokenKind::T_IDENTIFIER {
-            if let Some(next) = self.tokens.get(self.current + 1) {
-                if next.kind == TokenKind::T_LBRACE {
-                    if let Some(ra) = rec_alias {
-                        return self.parse_record_creation(ra);
-                    }
-                    else {
-                        panic!("Fatal Error: Record's alias not provided! Aborting...")
-                    }
-                }
+        // peek ahead to see if this is a Record initialization: Identifier { ...
+        if self.check(TokenKind::T_IDENTIFIER) && self.look_ahead(1).kind == TokenKind::T_LBRACE {
+            if let Some(ra) = rec_alias {
+                return self.parse_record_creation(ra);
+            } else {
+                unreachable!();
             }
         }
         self.parse_equality()
@@ -960,8 +978,8 @@ impl Parser {
     fn parse_record_creation(&mut self, rec_alias: &str) -> ParseResult {
         let span_start = self.current_token.pos;
 
-        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-        _ = self.token_match(TokenKind::T_LBRACE)?;
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        _ = self.consume(TokenKind::T_LBRACE, "expected '{")?;
 
         let mut fields = vec![];
 
@@ -971,10 +989,10 @@ impl Parser {
         
             match self.current_token.kind {
                 TokenKind::T_COMMA => {
-                    self.token_match(TokenKind::T_COMMA)?; // match ','
+                    self.consume(TokenKind::T_COMMA, "expected a ','")?; // match ','
                 }
                 TokenKind::T_RBRACE => {
-                    self.token_match(TokenKind::T_RBRACE)?; // match '}'
+                    self.consume(TokenKind::T_RBRACE, "expected a '}'")?; // match '}'
                     break;
                 }
                 _ => {
@@ -1028,8 +1046,8 @@ impl Parser {
     }
 
     fn parse_record_field_assignment(&mut self, field_off: usize) -> Result<RecordFieldAssignExpr, Box<Diagnostic>> {
-        let id_token = self.token_match(TokenKind::T_IDENTIFIER)?.clone();
-        _ = self.token_match(TokenKind::T_EQUAL); // parse '='
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        _ = self.consume(TokenKind::T_EQUAL, "expected an '='"); // parse '='
         let field_val = self.parse_record_or_expr(None)?;
 
         if let ASTKind::ExprAST(expr) = field_val.kind {
@@ -1232,7 +1250,7 @@ impl Parser {
                 // group expression: e.g: (a * (b + c)))
                 let group_expr = self.parse_record_or_expr(None)?;
                 // Group expression terminates with ')'. Match and ignore ')'.
-                let _ = self.token_match(TokenKind::T_RPAREN)?;
+                let _ = self.consume(TokenKind::T_RPAREN, "expected a ')'")?;
                 Ok(group_expr)
             },
 
@@ -1283,8 +1301,8 @@ impl Parser {
         };
 
         while self.current_token.kind == TokenKind::T_DOT {
-            _ = self.token_match(TokenKind::T_DOT); // match '.'
-            let access = self.token_match(TokenKind::T_IDENTIFIER)?;
+            _ = self.consume(TokenKind::T_DOT, "expected a '.'"); // match '.'
+            let access = self.consume(TokenKind::T_IDENTIFIER, "expected an identifer")?;
             end_pos.line = access.pos.line;
             end_pos.column = access.pos.column;
             field_chain.push(access.lexeme.clone());
@@ -1323,7 +1341,7 @@ impl Parser {
     }
 
     fn parse_func_call_expr(&mut self, called_symbol: &str, start_token: &Token) -> ParseResult {
-        _ = self.token_match(TokenKind::T_LPAREN)?;
+        _ = self.consume(TokenKind::T_LPAREN, "expected a '('")?;
 
         let curr_token_kind: TokenKind = self.current_token.kind;
         let mut func_args: Vec<FuncArg> = vec![];
@@ -1351,13 +1369,13 @@ impl Parser {
                     break;
                 } 
                 else {
-                    _ = self.token_match(TokenKind::T_COMMA)?;
+                    _ = self.consume(TokenKind::T_COMMA, "expected a ','")?;
                 }
                 arg_pos += 1;
             }
         }
 
-        let end_token = self.token_match(TokenKind::T_RPAREN)?;
+        let end_token = self.consume(TokenKind::T_RPAREN, "expected a ')'")?;
 
         let start_pos = SourcePos {
             line: start_token.pos.line,
@@ -1407,7 +1425,7 @@ impl Parser {
         self.sess.scope.borrow().live_scope_id() == 0
     }
 
-    fn token_match_no_advance(&mut self, kind: TokenKind) -> TokenMatch {
+    fn consume_no_advance(&mut self, kind: TokenKind) -> TokenMatch {
         if kind != self.current_token.kind {
             let diag = Diagnostic::from_single_token(
                 &self.current_token, 
@@ -1417,21 +1435,6 @@ impl Parser {
             );
             return Err(Box::new(diag));
         }
-        Ok(&self.tokens[self.current - 1])
-    }
-
-    fn token_match(&mut self, kind: TokenKind) -> TokenMatch {
-        if kind != self.current_token.kind {
-            let diag = Diagnostic::from_single_token(
-                &self.current_token, 
-                self.current_file, 
-                "unexpected token",
-                Severity::Error
-            );
-            return Err(Box::new(diag));
-        }
-
-        self.skip_to_next_token();
         Ok(&self.tokens[self.current - 1])
     }
 
@@ -1451,5 +1454,36 @@ impl Parser {
             return;
         }
         self.current_token = self.tokens[self.current].clone();
+    }
+
+    /// Look at the current token without consuming it.
+    fn peek(&self) -> &Token {
+        self.tokens.get(self.current).unwrap_or_else(|| self.tokens.last().unwrap())
+    }
+
+    /// Look ahead N tokens
+    fn look_ahead(&self, distance: usize) -> &Token {
+        self.tokens.get(self.current + distance).unwrap_or_else(|| self.tokens.last().unwrap())
+    }
+
+    /// Check if the current token matches a kind
+    fn check(&self, kind: TokenKind) -> bool {
+        self.peek().kind == kind
+    }
+
+    fn consume(&mut self, kind: TokenKind, msg: &str) -> Result<&Token, Box<Diagnostic>> {
+        if self.check(kind) {
+            Ok(self.advance())
+        } else {
+            let diag = Diagnostic::from_single_token(self.peek(), self.current_file, msg, Severity::Error);
+            Err(Box::new(diag))
+        }
+    }
+
+    fn advance(&mut self) -> &Token {
+        if self.current < self.tokens.len() {
+            self.current += 1;
+        }
+        &self.tokens[self.current - 1]
     }
 }
