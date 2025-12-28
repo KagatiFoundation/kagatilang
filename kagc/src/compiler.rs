@@ -114,24 +114,22 @@ impl CompilerPipeline {
         }
 
         let file = ImportResolver::resolve(file_path)?;
-        let parser_session = ParserSession::from_source_file(
+        let mut parser_session = ParserSession::from_source_file(
             file.clone(), 
             self.ctx.borrow().scope.clone(),
             self.ctx.borrow().source_map.clone()
         );
         let soruce_file_id = parser_session.file_id;
         let mut parser = ParserBuilder::new()
-            .session(parser_session)
+            .session(&mut parser_session)
             .lexer(Tokenizer::new())
             .build();
 
-        let tokens = parser.tokenize_input_stream();
-        
+        let asts = parser.parse();
         let mut unit = CompilationUnit::from_source(file, soruce_file_id.0);
-        unit.tokens = Some(tokens.clone());
+        unit.tokens = Some(parser.tokens());
         unit.next_stage();
 
-        let asts = parser.parse();
         let mut ctx = self.ctx.borrow_mut();
         if parser.diagnostics().has_errors() {
             ctx.diagnostics.extend(parser.diagnostics().clone());

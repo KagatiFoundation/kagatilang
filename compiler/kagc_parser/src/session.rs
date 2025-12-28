@@ -57,6 +57,14 @@ impl ParserSession {
             scope
         }
     }
+
+    pub(crate) fn dump_diagnostics(&self) {
+        self.diagnostics.report_all(&self.files.borrow());
+    }
+
+    pub(crate) fn has_errors(&self) -> bool {
+        self.diagnostics.has_errors()
+    }
 }
 
 #[cfg(test)]

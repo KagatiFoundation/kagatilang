@@ -14,7 +14,8 @@ use kagc_lexer::Tokenizer;
 use kagc_scope::scope::ScopeType;
 use kagc_span::span::SourcePos;
 use kagc_span::span::Span;
-use kagc_symbol::{function::*, *};
+use kagc_symbol::function::*;
+use kagc_symbol::*;
 use kagc_token::*;
 use kagc_types::record::RecordFieldType;
 use kagc_types::LitType;
@@ -36,8 +37,8 @@ pub type StringLabel = usize;
 
 /// Represents a parser for converting tokens into an
 /// abstract syntax tree (AST).
-#[derive(Debug, Clone)]
-pub struct Parser {
+#[derive(Debug)]
+pub struct Parser<'p> {
     /// Tokens that are going to be parsed.
     tokens: Rc<Vec<Token>>,
 
@@ -58,23 +59,21 @@ pub struct Parser {
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
-    // shared_pctx: Rc<RefCell<SharedParserCtx>>,
-
     /// Label generator that is going to be used by string literals only.
     _str_label_: usize,
 
     current_file: FileId,
 
-    sess: ParserSession,
+    sess: &'p mut ParserSession,
 
     lexer: Tokenizer
 }
 
-impl Parser {
+impl<'p> Parser<'p> {
     /// Internal parser constructor.
     /// Use `ParserBuilder` instead.
-    pub fn new(sess: ParserSession, lexer: Tokenizer) -> Self {
-        Self {
+    pub fn new(sess: &'p mut ParserSession, lexer: Tokenizer) -> Self {
+        let mut p = Self {
             tokens: Rc::new(vec![]),
             current: 0,
             current_token: Token::none(),
@@ -85,27 +84,32 @@ impl Parser {
             current_file: sess.file_id,
             sess,
             lexer
-        }
+        };
+        p.tokenize_input_stream();
+        p
     }
 
-    pub fn tokenize_input_stream(&mut self) -> Rc<Vec<Token>> {
+    pub(crate) fn tokenize_input_stream(&mut self) {
         let current_file_id = self.sess.file_id;
         let files = self.sess.files.borrow();
         if let Some(source_file) = files.get(current_file_id) {
-            let tokens = self.lexer.tokenize(source_file.content.clone());
-            self.tokens = Rc::new(tokens);
-            let first_token = self.tokens[0].clone();
-            self.current_token = first_token;
+            self.tokens = Rc::new(self.lexer.tokenize(source_file.content.clone()));
+            if !self.tokens.is_empty() {
+                self.current_token = self.tokens[0].clone();
+            }
             self.current_function_id = current_file_id.0;
-            self.tokens.clone()
         }
         else {
-            panic!()
+            panic!("couldn't tokenize")
         }
     }
 
     pub fn diagnostics(&self) -> &DiagnosticBag {
         &self.sess.diagnostics
+    }
+
+    pub fn tokens(&self) -> Rc<Vec<Token>> {
+        self.tokens.clone()
     }
 
     pub(crate) fn parse_expression(&mut self) -> Option<Expr> {
@@ -170,7 +174,7 @@ impl Parser {
     /// - Returns a `ParseResult` representing the parsed statement or an error
     ///   if parsing fails.
     pub(crate) fn parse_single_stmt(&mut self) -> ParseResult {
-        let curr_tok_kind: TokenKind = self.current_token.kind;
+        let curr_tok_kind = self.peek().kind;
         match curr_tok_kind {
             TokenKind::KW_LET => {
                 let ast = self.parse_var_decl_stmt()?;
@@ -205,7 +209,7 @@ impl Parser {
                     Diagnostic::from_single_token(
                         &self.current_token, 
                         self.current_file, 
-                        "unexpected token", 
+                        &format!("unexpected token {:#?}", curr_tok_kind),
                         Severity::Error
                     )
                 ))
@@ -219,12 +223,13 @@ impl Parser {
 
     // parse compound statement(statement starting with '{' and ending with '}')
     fn parse_compound_stmt(&mut self) -> ParseResult {
-        _ = self.consume(TokenKind::T_LBRACE, "expected {")?;
+        _ = self.consume(TokenKind::T_LBRACE, "'{' expected")?;
+
         let mut left: Option<AST> = None;
         let mut stmt_count: i32 = 0;
         loop {
             if self.current_token.kind == TokenKind::T_RBRACE {
-                _ = self.consume(TokenKind::T_RBRACE, "expected }")?; // match and ignore '}'
+                _ = self.consume(TokenKind::T_RBRACE, "'}' expected")?;
                 break;
             }
             let tree_result: ParseResult = self.parse_single_stmt();
@@ -254,9 +259,9 @@ impl Parser {
     }
 
     fn parse_import_stmt(&mut self) -> ParseResult {
-        let start_tok = self.consume(TokenKind::KW_IMPORT, "expected 'import'")?.pos; // match 'import' keyword
+        let start_tok = self.consume(TokenKind::KW_IMPORT, "'import' expected")?.pos; // match 'import' keyword
         let module_path_tok: Token = self.consume(TokenKind::T_STRING, "expected a string")?.clone();
-        let end_tok = self.consume(TokenKind::T_SEMICOLON, "expected ';'")?.pos; // match ';'
+        let end_tok = self.consume(TokenKind::T_SEMICOLON, "';' expected")?.pos; // match ';'
 
         let meta = NodeMeta::new(
             Span::new(
@@ -663,43 +668,19 @@ impl Parser {
     }
 
     fn parse_for_stmt(&mut self) -> ParseResult {
-        _ = self.consume(TokenKind::KW_FOR, "expected the keyword 'for'")?;
-        _ = self.consume(TokenKind::T_LPAREN, "expected '('")?;
-        let pre_stmt: AST = self.parse_single_stmt()?; 
-        let cond_ast = self.parse_equality(); // conditional section of for loop
-        if let Ok(_icast) = &cond_ast {
-            if (_icast.operation < ASTOperation::AST_EQEQ)
-                || (_icast.operation > ASTOperation::AST_LTHAN)
-            {
-                // if operation kind is not "relational operation"
-                panic!("Please provide conditional expression for 'for'");
-            }
-        }
-        _ = self.consume(TokenKind::T_SEMICOLON, "expected a ';'")?;
-        let incr_ast = self.parse_single_stmt();
+        self.consume(TokenKind::KW_FOR, "'for' expected")?;
+        let id_ast = self.parse_identifier()?;
 
-        _ = self.consume(TokenKind::T_RPAREN, "expected a '')")?;
-        let for_body = self.parse_single_stmt();
+        self.consume(TokenKind::KW_IN, "'in' expected")?;
 
-        let mut tree: AST = AST::new(
+        let expr_ast = self.parse_record_or_expr(None)?;
+        let body_ast = self.parse_compound_stmt()?;
+        Ok(AST::with_mid(
             ASTKind::StmtAST(Stmt::Glue),
             ASTOperation::AST_GLUE,
-            for_body.ok(),
-            incr_ast.ok(),
-            LitTypeVariant::None,
-        );
-        tree = AST::new(
-            ASTKind::StmtAST(Stmt::While),
-            ASTOperation::AST_WHILE,
-            cond_ast.ok(),
-            Some(tree),
-            LitTypeVariant::None,
-        );
-        Ok(AST::new(
-            ASTKind::StmtAST(Stmt::Glue),
-            ASTOperation::AST_GLUE,
-            Some(pre_stmt),
-            Some(tree),
+            Some(id_ast),
+            Some(expr_ast),
+            Some(body_ast),
             LitTypeVariant::None,
         ))
     }
@@ -1092,8 +1073,7 @@ impl Parser {
     }
 
     fn try_parsing_binary(&mut self, left: AST, tokens: Vec<TokenKind>) -> ParseResult {
-        let current_token_kind = self.current_token.kind;
-
+        let current_token_kind = self.peek().kind;
         if !tokens.contains(&current_token_kind) {
             return Ok(left);
         }
@@ -1138,7 +1118,8 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> ParseResult {
-        let current_token = self.current_token.clone();
+        let file_id = self.current_file.0;
+        let current_token = self.advance().clone();
 
         let start_pos = SourcePos {
             line: current_token.pos.line,
@@ -1146,7 +1127,7 @@ impl Parser {
         };
         let single_token_meta = NodeMeta::new(
             Span::new(
-                self.current_file.0,
+                file_id,
                 start_pos,
                 SourcePos { 
                     line: start_pos.line, 
@@ -1155,9 +1136,6 @@ impl Parser {
             ),
             vec![]
         );
-
-        // go ahead
-        self.skip_to_next_token();
 
         match current_token.kind {
             TokenKind::T_INT_NUM => {
@@ -1215,7 +1193,7 @@ impl Parser {
                 // Identifiers in a global variable declaration expression are not allowed.
                 if self.is_scope_global() {
                     let diag = Diagnostic::from_single_token(
-                        &self.current_token, 
+                        self.peek(), 
                         self.current_file, 
                         "initializer not a constant",
                         Severity::Error
@@ -1256,25 +1234,56 @@ impl Parser {
 
             // null type
             TokenKind::KW_NULL => {
-                Ok(
-                    AST::create_leaf(
-                        ASTKind::ExprAST(Expr::Null), 
-                        ASTOperation::AST_NULL, 
-                        LitTypeVariant::Null, 
-                        single_token_meta
-                    )
-                )
+                Ok(AST::create_leaf(
+                    ASTKind::ExprAST(Expr::Null), 
+                    ASTOperation::AST_NULL, 
+                    LitTypeVariant::Null, 
+                    single_token_meta
+                ))
             },
             _ => {
-                let diag = Diagnostic::from_single_token(
-                    &self.tokens[self.current - 1], 
-                    self.current_file, 
-                    "unexpected token",
-                    Severity::Error
-                );
-                Err(Box::new(diag))
+                Err(Box::new(
+                    Diagnostic::from_single_token(
+                        &self.current_token, 
+                        self.current_file, 
+                        "unexpected token",
+                        Severity::Error
+                    )
+                ))
             }
         }
+    }
+
+    fn parse_identifier(&mut self) -> ParseResult {
+        let file_id = self.current_file.0;
+        let id = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
+        let meta = NodeMeta::new(
+            Span::new(
+                file_id,
+                SourcePos { 
+                    line: id.pos.line, 
+                    column: id.pos.column
+                }, 
+                SourcePos {
+                    line: id.pos.line,
+                    column: id.pos.column
+                }
+            ), 
+            Vec::with_capacity(0)
+        );
+        Ok(AST::create_leaf(
+            ASTKind::ExprAST(
+                Expr::Ident(
+                    IdentExpr { 
+                        sym_name: id.lexeme.clone(), 
+                        result_type: LitTypeVariant::None 
+                    }
+                )
+            ),
+            ASTOperation::AST_IDENT,
+            LitTypeVariant::None,
+            meta
+        ))
     }
 
     fn create_expr_ast(value: LitType, operation: ASTOperation, meta: NodeMeta) -> AST {
@@ -1300,7 +1309,7 @@ impl Parser {
             column: start_token.pos.column
         };
 
-        while self.current_token.kind == TokenKind::T_DOT {
+        while self.peek().kind == TokenKind::T_DOT {
             _ = self.consume(TokenKind::T_DOT, "expected a '.'"); // match '.'
             let access = self.consume(TokenKind::T_IDENTIFIER, "expected an identifer")?;
             end_pos.line = access.pos.line;
@@ -1343,7 +1352,7 @@ impl Parser {
     fn parse_func_call_expr(&mut self, called_symbol: &str, start_token: &Token) -> ParseResult {
         _ = self.consume(TokenKind::T_LPAREN, "expected a '('")?;
 
-        let curr_token_kind: TokenKind = self.current_token.kind;
+        let curr_token_kind: TokenKind = self.peek().kind;
         let mut func_args: Vec<FuncArg> = vec![];
 
         if curr_token_kind != TokenKind::T_RPAREN {
@@ -1353,12 +1362,12 @@ impl Parser {
                 let argu: AST = self.parse_record_or_expr(None)?;
                 func_args.push((arg_pos, argu.kind.expr().unwrap()));
 
-                let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
-                let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
+                let is_tok_comma: bool = self.peek().kind == TokenKind::T_COMMA;
+                let is_tok_rparen: bool = self.peek().kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
                     let diag = Diagnostic::from_single_token(
-                        &self.current_token, 
+                        self.peek(), 
                         self.current_file, 
                         "unexpected token",
                         Severity::Error
@@ -1426,9 +1435,9 @@ impl Parser {
     }
 
     fn consume_no_advance(&mut self, kind: TokenKind) -> TokenMatch {
-        if kind != self.current_token.kind {
+        if kind != self.peek().kind {
             let diag = Diagnostic::from_single_token(
-                &self.current_token, 
+                self.peek(), 
                 self.current_file, 
                 "unexpected token",
                 Severity::Error
@@ -1436,16 +1445,6 @@ impl Parser {
             return Err(Box::new(diag));
         }
         Ok(&self.tokens[self.current - 1])
-    }
-
-    fn _skip_past(&mut self, kind: TokenKind) {
-        loop {
-            if self.current_token.kind == kind || self.current_token.kind == TokenKind::T_EOF {
-                break;
-            }
-            self.skip_to_next_token();
-        }
-        self.skip_to_next_token();
     }
 
     fn skip_to_next_token(&mut self) {
@@ -1472,18 +1471,64 @@ impl Parser {
     }
 
     fn consume(&mut self, kind: TokenKind, msg: &str) -> Result<&Token, Box<Diagnostic>> {
-        if self.check(kind) {
+        let tok = self.peek();
+        if tok.kind == kind {
+            if kind == TokenKind::T_EOF && self.current != self.tokens.len() - 1 {
+                unreachable!("EOF not at end of token stream");
+            }
             Ok(self.advance())
         } else {
-            let diag = Diagnostic::from_single_token(self.peek(), self.current_file, msg, Severity::Error);
-            Err(Box::new(diag))
+            Err(Box::new(Diagnostic::from_single_token(
+                tok,
+                self.current_file,
+                msg,
+                Severity::Error,
+            )))
         }
     }
 
     fn advance(&mut self) -> &Token {
         if self.current < self.tokens.len() {
+            let tok = &self.tokens[self.current];
             self.current += 1;
+            tok
+        } else {
+            self.tokens.last().unwrap()
         }
-        &self.tokens[self.current - 1]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kagc_lexer::Tokenizer;
+    use kagc_token::TokenKind;
+
+    use crate::{Parser, session::ParserSession};
+
+    #[test]
+    fn test_token_advance_logic_holds_correct() {
+        let mut session = ParserSession::from_string("let a = 12 + 12;");
+        let lexer = Tokenizer::new();
+        let mut parser = Parser::new(&mut session, lexer);
+        assert!(parser.advance().kind == TokenKind::KW_LET);
+        assert!(parser.advance().kind == TokenKind::T_IDENTIFIER);
+        assert!(parser.advance().kind == TokenKind::T_EQUAL);
+        assert!(parser.advance().kind == TokenKind::T_CHAR);
+        assert!(parser.advance().kind == TokenKind::T_PLUS);
+        assert!(parser.advance().kind == TokenKind::T_CHAR);
+        assert!(parser.advance().kind == TokenKind::T_SEMICOLON);
+        assert!(parser.advance().kind == TokenKind::T_EOF);
+    }
+
+    #[test]
+    fn test_advance_is_idempotent_after_eof() {
+        let mut session = ParserSession::from_string("let a = 12 + 12;");
+        let lexer = Tokenizer::new();
+        let mut parser = Parser::new(&mut session, lexer);
+
+        while parser.advance().kind != TokenKind::T_EOF {}
+
+        assert_eq!(parser.advance().kind, TokenKind::T_EOF);
+        assert_eq!(parser.advance().kind, TokenKind::T_EOF);
     }
 }

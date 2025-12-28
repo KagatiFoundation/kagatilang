@@ -18,48 +18,52 @@ pub struct ParseOutput<T> {
 }
 
 pub fn parse_single_statement(source: &str) -> ParseResult {
-    let session = ParserSession::from_string(source);
+    let mut session = ParserSession::from_string(source);
     let lexer = Tokenizer::new();
-    let mut parser = Parser::new(session, lexer);
+    let mut parser = Parser::new(&mut session, lexer);
     parser.parse_single_stmt()
 }
 
 pub fn parse_expression(source: &str) -> Option<Expr> {
-    let session = ParserSession::from_string(source);
+    let mut session = ParserSession::from_string(source);
     let lexer = Tokenizer::new();
-    let mut parser = Parser::new(session, lexer);
+    let mut parser = Parser::new(&mut session, lexer);
     parser.parse_expression()
 }
 
 pub fn parse_statement(source: &str) -> Option<Stmt> {
-    let session = ParserSession::from_string(source);
+    let mut session = ParserSession::from_string(source);
     let lexer = Tokenizer::new();
-    let mut parser = Parser::new(session, lexer);
-    parser.parse_statement()
+    let mut parser = Parser::new(&mut session, lexer);
+    let stmt = parser.parse_statement();
+    if session.has_errors() {
+        session.dump_diagnostics();
+    }
+    stmt
 }
 
-pub(crate) fn as_expr(ast: &AST) -> &Expr {
+fn as_expr(ast: &AST) -> &Expr {
     match &ast.kind {
         kagc_ast::ASTKind::ExprAST(expr) => expr,
         _ => panic!("expected expr")
     }
 }
 
-pub(crate) fn as_stmt(ast: &AST) -> &Stmt {
+fn as_stmt(ast: &AST) -> &Stmt {
     match &ast.kind {
         kagc_ast::ASTKind::StmtAST(stmt) => stmt,
         _ => panic!("expected stmt")
     }
 }
 
-pub(crate) fn as_binary(expr: &Expr) -> &BinExpr {
+fn as_binary(expr: &Expr) -> &BinExpr {
     match expr {
         Expr::Binary(bin) => bin,
         _ => panic!("expected bin expr")
     }
 }
 
-pub(crate) fn assert_binary(ast: &Expr) {
+fn assert_binary(ast: &Expr) {
     matches!(ast, Expr::Binary(_));
 }
 
@@ -68,18 +72,21 @@ mod parser_prelude_tests {
     use kagc_ast::{Expr, LitValExpr};
     use kagc_types::LitType;
 
-    use crate::prelude::{as_binary, assert_binary, parse_expression};
-
-    fn assert_lit_u8(expr: &Expr, v: u8) {
-        match expr {
-            Expr::LitVal(LitValExpr { value: LitType::U8(x), .. }) => assert_eq!(*x, v),
-            _ => panic!("expected u8 literal"),
-        }
-    }
+    use crate::prelude::{as_binary, assert_binary, parse_expression, parse_statement};
 
     #[test]
     fn test_parse_empty_input() {
         let empty_ast = parse_expression("");
+        assert!(empty_ast.is_none());
+        let empty_ast = parse_expression("    ");
+        assert!(empty_ast.is_none());
+        let empty_ast = parse_expression("\n\t");
+        assert!(empty_ast.is_none());
+        let empty_ast = parse_expression("\t\n");
+        assert!(empty_ast.is_none());
+        let empty_ast = parse_expression("\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
+        assert!(empty_ast.is_none());
+        let empty_ast = parse_expression("\n\n\n\n\n\n\n\n");
         assert!(empty_ast.is_none());
     }
 
@@ -98,5 +105,11 @@ mod parser_prelude_tests {
             },
             _ => unreachable!()
         }
+    }
+
+    #[test]
+    fn test_parse_for_loop_statement() {
+        let ast = parse_statement("for a in 12 {  }");
+        assert!(ast.is_some());
     }
 }

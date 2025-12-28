@@ -2,7 +2,6 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_comp_unit::source_map::{FileId, SourceMap};
-use kagc_comp_unit::CompilationUnit;
 use kagc_span::span::{SourcePos, Span};
 use kagc_token::Token;
 
@@ -51,12 +50,12 @@ impl Diagnostic {
         }
     }
 
-    pub fn report(&self, source_map: &SourceMap, unit: &CompilationUnit) {
+    pub fn report(&self, source_map: &SourceMap) {
         let source_file = source_map.get(FileId(self.primary_span.file_id))
             .expect("File not found in pool");
 
         // split the file content into lines
-        let source_lines: Vec<&str> = unit.source.content.lines().collect();
+        let source_lines: Vec<&str> = source_file.content.lines().collect();
         let line_num = self.primary_span.start.line;   // 1-based
         let col_num = self.primary_span.start.column;  // 0-based
         let span_len = self.primary_span.end.column - col_num; // length of the token
@@ -76,7 +75,7 @@ impl Diagnostic {
 
         // print caret repeated to match token length
         let caret_line = " ".repeat(col_num) + &"^".repeat(span_len.max(1));
-        eprintln!("     | {}", caret_line);
+        eprintln!("     |{}", caret_line);
     }
 }
 
@@ -98,9 +97,9 @@ impl DiagnosticBag {
         self.diagnostics.iter().any(|d| matches!(d.severity, Severity::Error))
     }
 
-    pub fn report_all(&self, source_map: &SourceMap, unit: &CompilationUnit) {
+    pub fn report_all(&self, source_map: &SourceMap) {
         for diag in &self.diagnostics {
-            diag.report(source_map, unit);
+            diag.report(source_map);
         }
     }
 

@@ -6,12 +6,12 @@ use kagc_lexer::Tokenizer;
 use crate::{Parser, session::ParserSession};
 
 #[derive(Default, Debug)]
-pub struct ParserBuilder {
-    session: Option<ParserSession>,
+pub struct ParserBuilder<'pb> {
+    session: Option<&'pb mut ParserSession>,
     lexer: Option<Tokenizer>
 }
 
-impl ParserBuilder {
+impl<'pb> ParserBuilder<'pb> {
     pub fn new() -> Self {
         Self {
             session: None,
@@ -19,7 +19,7 @@ impl ParserBuilder {
         }
     }
 
-    pub fn session(mut self, sess: ParserSession) -> Self {
+    pub fn session(mut self, sess: &'pb mut ParserSession) -> Self {
         self.session = Some(sess);
         self
     }
@@ -29,7 +29,7 @@ impl ParserBuilder {
         self
     }
 
-    pub fn build(self) -> Parser {
+    pub fn build(self) -> Parser<'pb> {
         if self.lexer.is_none() {
             panic!("Lexer is required to build a parser!");
         }
