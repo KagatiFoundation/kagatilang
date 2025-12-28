@@ -42,6 +42,9 @@ impl SemanticAnalyzer {
     }
 
     fn analyze_node(&mut self, node: &mut AST) -> SAResult {
+        let ASTKind::StmtAST(_) = &mut node.kind else {
+            panic!("{:#?} is not a supported type, yet!", node);
+        };
         match node.operation {
             ASTOperation::AST_VAR_DECL => self.analyze_var_decl_stmt(node),
             ASTOperation::AST_FUNCTION => self.analyze_func_decl_stmt(node),
@@ -51,6 +54,7 @@ impl SemanticAnalyzer {
             ASTOperation::AST_IF => self.analyze_if_stmt(node),
             ASTOperation::AST_IMPORT => Ok(LitTypeVariant::Void),
             ASTOperation::AST_RECORD_DECL => self.analyze_record_decl_stmt(node),
+            ASTOperation::AST_BLOCK => self.analyze_block_stmt(node),
             ASTOperation::AST_GLUE => {
                 if let Some(left) = &mut node.left {
                     self.analyze_node(left)?;
@@ -64,6 +68,14 @@ impl SemanticAnalyzer {
             | ASTOperation::AST_BREAK => Ok(LitTypeVariant::None),
             _ => panic!("'{:?}' is not supported ASTOperation for 'analyze_node' yet!", node.operation)
         }
+    }
+
+    fn analyze_block_stmt(&mut self, node: &mut AST) -> SAResult {
+        let block_stmt = node.expect_block_stmt_mut();
+        for s in &mut block_stmt.statements {
+            self.analyze_node(s)?;
+        }
+        Ok(LitTypeVariant::None)
     }
 
     fn analyze_fn_call(&mut self, func_call: &mut AST) -> SAResult {

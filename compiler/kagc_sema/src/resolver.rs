@@ -70,6 +70,16 @@ impl Resolver {
                 }
                 Ok(0xFFFFFFFF)
             }
+            ASTOperation::AST_BLOCK => {
+                if let Some(stmt) = node.as_stmt_mut() {
+                    if let Some(block) = stmt.as_block_mut() {
+                        for s in &mut block.statements {
+                            let _ = self.declare_symbol(s)?;
+                        }
+                    }
+                }
+                Ok(0)
+            }
             ASTOperation::AST_GLUE => {
                 if let Some(left) = node.left.as_mut() {
                     let _ = self.declare_symbol(left)?;

@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use core::panic;
+use std::fs::OpenOptions;
 use std::rc::Rc;
 
 use kagc_ast::record::*;
@@ -184,34 +185,28 @@ impl<'p> Parser<'p> {
     // parse compound statement(statement starting with '{' and ending with '}')
     fn parse_compound_stmt(&mut self) -> ParseOutput {
         self.consume(TokenKind::T_LBRACE, "'{' expected")?;
-
-        let mut left: Option<AST> = None;
-        let mut stmt_count: i32 = 0;
+        let mut statements = vec![];
         loop {
             if self.peek().kind == TokenKind::T_RBRACE {
                 self.consume(TokenKind::T_RBRACE, "'}' expected")?;
                 break;
             }
-            if let Some(parse_res) = self.parse_single_stmt() {
-                if left.is_none() {
-                    left = Some(parse_res);
-                } else {
-                    left = Some(AST::new(
-                        ASTKind::StmtAST(Stmt::Glue),
-                        ASTOperation::AST_GLUE,
-                        left.clone(),
-                        Some(parse_res),
-                        LitTypeVariant::None,
-                    ));
-                }
+            if let Some(statement) = self.parse_single_stmt() {
+                statements.push(statement);
             }
-            // increment the statement count only when we succesffully parse a statement
-            stmt_count += 1;
         }
-        if stmt_count == 0 {
+        if statements.is_empty() {
             return Some(AST::empty());
-        } 
-        Some(left.unwrap())
+        }
+        let block_stmt_ast = Stmt::Block(BlockStmt { statements });
+        Some(
+            AST::create_leaf(
+                ASTKind::StmtAST(block_stmt_ast),
+                ASTOperation::AST_BLOCK,
+                LitTypeVariant::None,
+                NodeMeta::none()
+            )
+        )
     }
 
     fn parse_import_stmt(&mut self) -> ParseOutput {
@@ -620,14 +615,13 @@ impl<'p> Parser<'p> {
         self.consume(TokenKind::KW_FOR, "'for' expected")?;
 
         let id_ast = self.parse_identifier()?;
-
         self.consume(TokenKind::KW_IN, "'in' expected")?;
 
         let expr_ast = self.parse_record_or_expr(None)?;
         let body_ast = self.parse_compound_stmt()?;
         Some(AST::with_mid(
-            ASTKind::StmtAST(Stmt::Glue),
-            ASTOperation::AST_GLUE,
+            ASTKind::StmtAST(Stmt::For),
+            ASTOperation::AST_FOR,
             Some(id_ast),
             Some(expr_ast),
             Some(body_ast),

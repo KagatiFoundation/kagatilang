@@ -4,25 +4,31 @@
 use kagc_symbol::{StorageClass, SymbolType};
 use kagc_types::{record::RecordFieldType, LitType, LitTypeVariant};
 
-use crate::{AST, pattern::Pattern};
+use crate::AST;
 
 use super::Expr;
 
 #[derive(Clone, Debug)]
 pub struct FuncDeclStmt {
-    /// Function ID
+    /// Function's ID
     pub func_id: usize,
 
+    /// Function's name
     pub name: String,
 
+    /// Function's scope ID
     pub scope_id: usize,
 
+    /// Function's return type
     pub return_type: LitTypeVariant,
 
+    /// Function storage class
     pub storage_class: StorageClass,
 
+    /// Function defined local variables
     pub locals: Vec<usize>,
 
+    /// Function's parameter types
     pub func_param_types: Vec<LitTypeVariant>
 }
 
@@ -118,15 +124,8 @@ pub struct RecordFieldStmt {
 }
 
 #[derive(Debug, Clone)]
-pub struct ForLoopStmt {
-    pub binding: Box<AST>,
-    pub iterable: Box<AST>,
-    pub body: BlockStmt
-}
-
-#[derive(Debug, Clone)]
 pub struct BlockStmt {
-    pub statements: Vec<Stmt>
+    pub statements: Vec<AST>
 }
 
 #[derive(Clone, Debug)]
@@ -134,7 +133,6 @@ pub enum Stmt {
     Glue,
     If(IfStmt),
     For,
-    ForLoop(ForLoopStmt),
     While,
     Loop,
     Break,
@@ -151,5 +149,24 @@ pub enum Stmt {
     Import(ImportStmt),
     Record(RecordDeclStmt),
     RecordField(RecordFieldStmt),
-    Scoping(ScopingStmt)
+    Scoping(ScopingStmt),
+
+    /// Block statement
+    Block(BlockStmt)
+}
+
+impl Stmt {
+    pub fn as_block(&self) -> Option<&BlockStmt> {
+        match self {
+            Stmt::Block(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+    pub fn as_block_mut(&mut self) -> Option<&mut BlockStmt> {
+        match self {
+            Stmt::Block(stmt) => Some(stmt),
+            _ => None
+        }
+    }
 }

@@ -1,29 +1,7 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 #![allow(non_camel_case_types)]
-
 use kagc_span::span::{HasSpan, SourcePos, Span};
 use kagc_token::{
     FromTokenKind, 
@@ -34,6 +12,8 @@ use kagc_types::{
     LitTypeVariant, 
     TypeSized
 };
+
+use crate::{BlockStmt, Expr, Stmt};
 
 use super::ASTKind;
 
@@ -71,6 +51,8 @@ pub enum ASTOperation {
     AST_RECORD_FIELD_ACCESS,
 
     AST_WHILE,
+    AST_FOR,
+    AST_BLOCK,
     AST_LOOP,
     AST_BREAK,
     AST_FUNCTION,
@@ -275,6 +257,39 @@ impl AST {
     fn children(&self) -> impl Iterator<Item = &Option<Box<AST>>> {
         [&self.left, &self.mid, &self.right].into_iter()
     }
+
+    pub fn as_expr(&self) -> Option<&Expr> {
+        match &self.kind {
+            ASTKind::ExprAST(expr) => Some(expr),
+            _ => None,
+        }
+    }
+
+    pub fn as_stmt(&self) -> Option<&Stmt> {
+        match &self.kind {
+            ASTKind::StmtAST(stmt) => Some(stmt),
+            _ => None,
+        }
+    }
+
+    pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt> {
+        match &mut self.kind {
+            ASTKind::StmtAST(stmt) => Some(stmt),
+            _ => None,
+        }
+    }
+
+    pub fn as_expr_mut(&mut self) -> Option<&mut Expr> {
+        match &mut self.kind {
+            ASTKind::ExprAST(expr) => Some(expr),
+            _ => None,
+        }
+    }
+
+    pub fn expect_block_stmt_mut(&mut self) -> &mut BlockStmt {
+        let stmt = self.as_stmt_mut().expect("expected stmt");
+        stmt.as_block_mut().expect("expected block stmt")
+    }
 }
 
 #[macro_export]
@@ -302,47 +317,6 @@ impl BTypeComparable for AST {
 impl TypeSized for AST {
     fn type_size(&self) -> usize {
         self.result_type.size()
-    }
-}
-
-pub fn are_compatible_for_operation<T: BTypeComparable + TypeSized>(
-    left: &T, 
-    right: &T, 
-    op: ASTOperation
-) -> (bool, LitTypeVariant) {
-    let ltype: LitTypeVariant = left.variant().clone();
-    let rtype: LitTypeVariant = right.variant().clone();
-    if ltype == rtype {
-        return (true, ltype);
-    }
-    let mut larger_type: LitTypeVariant = ltype.clone();
-    let lsize: usize = left.type_size();
-    let rsize: usize = right.type_size();
-    if rsize > lsize {
-        larger_type = rtype.clone();
-    }
-    match (ltype, rtype) {
-        (LitTypeVariant::I32, LitTypeVariant::U8) |
-        (LitTypeVariant::U8, LitTypeVariant::I32) | 
-        (LitTypeVariant::I64, LitTypeVariant::I32) |
-        (LitTypeVariant::I64, LitTypeVariant::U8) | 
-        (LitTypeVariant::I32, LitTypeVariant::I64) | 
-        (LitTypeVariant::U8, LitTypeVariant::I64) => {
-            if matches!(
-                op, 
-                ASTOperation::AST_ADD 
-                | ASTOperation::AST_SUBTRACT 
-                | ASTOperation::AST_MULTIPLY 
-                | ASTOperation::AST_DIVIDE 
-                | ASTOperation::AST_LTHAN
-                | ASTOperation::AST_GTHAN
-            ) {
-                (true, larger_type)
-            } else {
-                (false, larger_type)
-            }
-        },
-        _ => (false, larger_type)
     }
 }
 

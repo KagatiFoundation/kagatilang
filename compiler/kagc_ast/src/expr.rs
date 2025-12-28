@@ -154,10 +154,17 @@ impl Expr {
         }
     }
 
-    pub fn as_lit_val_expr(&self) -> Option<&LitValExpr> {
+    pub fn as_litval(&self) -> Option<&LitValExpr> {
         match self {
             Expr::LitVal(lit_val_expr) => Some(lit_val_expr),
-            _ => unimplemented!() 
+            _ => None
+        }
+    }
+
+    pub fn as_binary(&self) -> Option<&BinExpr> {
+        match self {
+            Expr::Binary(bin) => Some(bin),
+            _ => None
         }
     }
 }
