@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_ast::{AST, BinExpr, Expr, Stmt};
-use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag};
+use kagc_errors::diagnostic::Diagnostic;
 use kagc_lexer::Tokenizer;
 
 use crate::{Parser, session::ParserSession};
@@ -12,10 +12,7 @@ use crate::{Parser, session::ParserSession};
 /// parsing failure.
 pub type ParseResult = Result<AST, Box<Diagnostic>>;
 
-pub struct ParseOutput<T> {
-    pub result: Option<T>,
-    pub diagnostics: DiagnosticBag
-}
+pub type ParseOutput = Option<AST>;
 
 pub fn parse_expression(source: &str) -> Option<Expr> {
     let mut session = ParserSession::from_string(source);

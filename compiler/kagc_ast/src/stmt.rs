@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_symbol::*;
+use kagc_symbol::{StorageClass, SymbolType};
 use kagc_types::{record::RecordFieldType, LitType, LitTypeVariant};
+
+use crate::{AST, pattern::Pattern};
 
 use super::Expr;
 
@@ -115,11 +117,24 @@ pub struct RecordFieldStmt {
     pub typ: LitTypeVariant
 }
 
+#[derive(Debug, Clone)]
+pub struct ForLoopStmt {
+    pub binding: Box<AST>,
+    pub iterable: Box<AST>,
+    pub body: BlockStmt
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockStmt {
+    pub statements: Vec<Stmt>
+}
+
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Glue,
     If(IfStmt),
     For,
+    ForLoop(ForLoopStmt),
     While,
     Loop,
     Break,
