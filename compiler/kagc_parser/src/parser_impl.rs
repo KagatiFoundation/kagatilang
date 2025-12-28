@@ -45,9 +45,6 @@ pub struct Parser<'p> {
     /// Counter which points to the current token index.
     current: usize,
 
-    /// Current token being parsed. (```current_token = self.tokens[self.current]```)
-    current_token: Token,
-
     /// ID of a function that is presently being parsed. This field's
     /// value is ```INVALID_FUNC_ID``` if the parser is not inside a
     /// function.
@@ -76,7 +73,6 @@ impl<'p> Parser<'p> {
         let mut p = Self {
             tokens: Rc::new(vec![]),
             current: 0,
-            current_token: Token::none(),
             current_function_id: INVALID_FUNC_ID,
             current_function_name: None,
             next_local_sym_pos: 0,
@@ -94,9 +90,6 @@ impl<'p> Parser<'p> {
         let files = self.sess.files.borrow();
         if let Some(source_file) = files.get(current_file_id) {
             self.tokens = Rc::new(self.lexer.tokenize(source_file.content.clone()));
-            if !self.tokens.is_empty() {
-                self.current_token = self.tokens[0].clone();
-            }
             self.current_function_id = current_file_id.0;
         }
         else {
@@ -145,7 +138,7 @@ impl<'p> Parser<'p> {
 
         let mut nodes: Vec<AST> = vec![];
         loop {
-            if self.current_token.kind == TokenKind::T_EOF {
+            if self.peek().kind == TokenKind::T_EOF {
                 break;
             }
             match self.parse_single_stmt() {
@@ -207,7 +200,7 @@ impl<'p> Parser<'p> {
             _ => {
                 Err(Box::new(
                     Diagnostic::from_single_token(
-                        &self.current_token, 
+                        self.peek(), 
                         self.current_file, 
                         &format!("unexpected token {:#?}", curr_tok_kind),
                         Severity::Error
@@ -228,7 +221,7 @@ impl<'p> Parser<'p> {
         let mut left: Option<AST> = None;
         let mut stmt_count: i32 = 0;
         loop {
-            if self.current_token.kind == TokenKind::T_RBRACE {
+            if self.peek().kind == TokenKind::T_RBRACE {
                 _ = self.consume(TokenKind::T_RBRACE, "'}' expected")?;
                 break;
             }
@@ -300,7 +293,7 @@ impl<'p> Parser<'p> {
         _ = self.consume(TokenKind::T_LBRACE, "expected '{'"); // match '{'
         let mut rec_fields = vec![];
 
-        while self.current_token.kind != TokenKind::T_RBRACE {
+        while self.peek().kind != TokenKind::T_RBRACE {
             rec_fields.push(self.parse_record_field_decl_stmt()?);
         }
         
@@ -351,7 +344,7 @@ impl<'p> Parser<'p> {
         let id_type = self.parse_id_type()?;
         if id_type == LitTypeVariant::Null {
             let diag = Diagnostic::from_single_token(
-                &self.current_token, 
+                self.peek(), 
                 self.current_file, 
                 "invalid type for record field", 
                 Severity::Error
@@ -362,7 +355,7 @@ impl<'p> Parser<'p> {
         self.skip_to_next_token(); // skip id type
 
         // check if default value has been assigned
-        if self.current_token.kind == TokenKind::T_EQUAL {
+        if self.peek().kind == TokenKind::T_EQUAL {
             todo!("Default value is not supported right now in record field!");
         }
 
@@ -395,7 +388,7 @@ impl<'p> Parser<'p> {
 
         // 'def' keyword could be followed by the 'extern' keyword, 
         // symbolizing the external definition of the function's body.
-        if self.current_token.kind == TokenKind::KW_EXTERN {
+        if self.peek().kind == TokenKind::KW_EXTERN {
             _ = self.consume(TokenKind::KW_EXTERN, "expected keyword 'extern'")?;
             func_storage_class = StorageClass::EXTERN;
         }
@@ -414,7 +407,7 @@ impl<'p> Parser<'p> {
         let mut func_param_types: Vec<LitTypeVariant> = vec![];
         let mut func_locals = vec![];
 
-        if self.current_token.kind != TokenKind::T_RPAREN {
+        if self.peek().kind != TokenKind::T_RPAREN {
             loop {
                 if let Ok(param) = self.parse_parameter() {
                     let mut sym: Symbol = Symbol::create(
@@ -439,12 +432,12 @@ impl<'p> Parser<'p> {
                     func_locals.push(local_pos);
                 }
 
-                let is_tok_comma: bool = self.current_token.kind == TokenKind::T_COMMA;
-                let is_tok_rparen: bool = self.current_token.kind == TokenKind::T_RPAREN;
+                let is_tok_comma: bool = self.peek().kind == TokenKind::T_COMMA;
+                let is_tok_rparen: bool = self.peek().kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
                     let diag = Diagnostic::from_single_token(
-                        &self.current_token, 
+                        self.peek(), 
                         self.current_file, 
                         "unexpected token", 
                         Severity::Error
@@ -526,7 +519,7 @@ impl<'p> Parser<'p> {
 
         if func_ret_type == LitTypeVariant::Null {
             let diag = Diagnostic::from_single_token(
-                &self.current_token, 
+                self.peek(), 
                 self.current_file, 
                 "invalid return type", 
                 Severity::Error
@@ -561,7 +554,7 @@ impl<'p> Parser<'p> {
         let inside_func = self.sess.scope.borrow().inside_function();
         if !inside_func {
             let diag = Diagnostic::from_single_token(
-                &self.current_token, 
+                self.peek(), 
                 self.current_file, 
                 "unexpected token", 
                 Severity::Error
@@ -575,7 +568,7 @@ impl<'p> Parser<'p> {
             column: ret_tok.pos.column
         };
 
-        if self.current_token.kind == TokenKind::T_SEMICOLON {
+        if self.peek().kind == TokenKind::T_SEMICOLON {
             let meta = NodeMeta::new(
                 Span::new(
                     self.current_file.0,
@@ -668,6 +661,7 @@ impl<'p> Parser<'p> {
     }
 
     fn parse_for_stmt(&mut self) -> ParseResult {
+        assert!(self.peek().kind == TokenKind::KW_FOR, "cannot parse a for statement");
         self.consume(TokenKind::KW_FOR, "'for' expected")?;
         let id_ast = self.parse_identifier()?;
 
@@ -697,7 +691,7 @@ impl<'p> Parser<'p> {
         self.sess.scope.borrow_mut().exit_scope(); // exit
 
         let mut if_false_ast = None;
-        if self.current_token.kind == TokenKind::KW_ELSE {
+        if self.peek().kind == TokenKind::KW_ELSE {
             let else_scope = self.sess
                 .scope
                 .borrow_mut()
@@ -786,7 +780,7 @@ impl<'p> Parser<'p> {
         // Parser may encounter a colon after the identifier name.
         // This means the type of this variable has been defined
         // by the user.
-        if self.current_token.kind == TokenKind::T_COLON {
+        if self.peek().kind == TokenKind::T_COLON {
             _ = self.consume(TokenKind::T_COLON, "expected a ':'")?;
             var_type = self.parse_id_type()?;
 
@@ -805,7 +799,7 @@ impl<'p> Parser<'p> {
         // Checking whether variable is assigned at the time of its declaration.
         // If identifier name is followed by an equal sign, then it is assigned 
         // at the time of declaration.
-        if self.current_token.kind == TokenKind::T_EQUAL {
+        if self.peek().kind == TokenKind::T_EQUAL {
             _ = self.consume(TokenKind::T_EQUAL, "expected a '='")?; // match and ignore '=' sign
             assignment_parse_res = Some(self.parse_record_or_expr(Some(&id_token.lexeme)));
         }
@@ -875,7 +869,7 @@ impl<'p> Parser<'p> {
     ///
     /// Returns an error if the token does not represent a valid data type keyword.
     fn parse_id_type(&mut self) -> Result<LitTypeVariant, Box<Diagnostic>> {
-        let current_tok: TokenKind = self.current_token.kind;
+        let current_tok: TokenKind = self.peek().kind;
         match current_tok {
             TokenKind::KW_INT => Ok(LitTypeVariant::I32),
             TokenKind::KW_CHAR => Ok(LitTypeVariant::U8),
@@ -885,12 +879,12 @@ impl<'p> Parser<'p> {
             TokenKind::KW_NULL => Ok(LitTypeVariant::Null),
             TokenKind::T_IDENTIFIER => Ok(
                 LitTypeVariant::Record{ 
-                    name: self.current_token.lexeme.to_string() 
+                    name: self.peek().lexeme.to_string() 
                 }
             ),
             _ => {
                 let diag = Diagnostic::from_single_token(
-                    &self.current_token, 
+                    self.peek(), 
                     self.current_file, 
                     "unexpected token", 
                     Severity::Error
@@ -903,7 +897,7 @@ impl<'p> Parser<'p> {
     // TODO: Write comments
     fn assign_stmt_or_func_call(&mut self) -> ParseResult {
         let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
-        let tok_kind_after_id_tok: TokenKind = self.current_token.kind;
+        let tok_kind_after_id_tok: TokenKind = self.peek().kind;
         if tok_kind_after_id_tok != TokenKind::T_LPAREN {
             self.parse_assignment_stmt(id_token)
         } else {
@@ -957,7 +951,7 @@ impl<'p> Parser<'p> {
     }
 
     fn parse_record_creation(&mut self, rec_alias: &str) -> ParseResult {
-        let span_start = self.current_token.pos;
+        let span_start = self.peek().pos;
 
         let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
         _ = self.consume(TokenKind::T_LBRACE, "expected '{")?;
@@ -965,10 +959,10 @@ impl<'p> Parser<'p> {
         let mut fields = vec![];
 
         let mut field_off = 0;
-        while self.current_token.kind != TokenKind::T_RBRACE {
+        while self.peek().kind != TokenKind::T_RBRACE {
             fields.push(self.parse_record_field_assignment(field_off)?);
         
-            match self.current_token.kind {
+            match self.peek().kind {
                 TokenKind::T_COMMA => {
                     self.consume(TokenKind::T_COMMA, "expected a ','")?; // match ','
                 }
@@ -978,7 +972,7 @@ impl<'p> Parser<'p> {
                 }
                 _ => {
                     let diag = Diagnostic::from_single_token(
-                        &self.current_token, 
+                        self.peek(), 
                         self.current_file, 
                         "unexpected token", 
                         Severity::Error
@@ -1202,7 +1196,7 @@ impl<'p> Parser<'p> {
                 }
                 
                 let symbol_name: String = current_token.lexeme.clone();
-                let curr_tok_kind: TokenKind = self.current_token.kind;
+                let curr_tok_kind: TokenKind = self.peek().kind;
 
                 if curr_tok_kind == TokenKind::T_LPAREN {
                     self.parse_func_call_expr(&symbol_name, &current_token)
@@ -1244,7 +1238,7 @@ impl<'p> Parser<'p> {
             _ => {
                 Err(Box::new(
                     Diagnostic::from_single_token(
-                        &self.current_token, 
+                        self.peek(), 
                         self.current_file, 
                         "unexpected token",
                         Severity::Error
@@ -1449,10 +1443,6 @@ impl<'p> Parser<'p> {
 
     fn skip_to_next_token(&mut self) {
         self.current += 1;
-        if self.current >= self.tokens.len() {
-            return;
-        }
-        self.current_token = self.tokens[self.current].clone();
     }
 
     /// Look at the current token without consuming it.

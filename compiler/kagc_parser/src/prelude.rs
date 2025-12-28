@@ -17,13 +17,6 @@ pub struct ParseOutput<T> {
     pub diagnostics: DiagnosticBag
 }
 
-pub fn parse_single_statement(source: &str) -> ParseResult {
-    let mut session = ParserSession::from_string(source);
-    let lexer = Tokenizer::new();
-    let mut parser = Parser::new(&mut session, lexer);
-    parser.parse_single_stmt()
-}
-
 pub fn parse_expression(source: &str) -> Option<Expr> {
     let mut session = ParserSession::from_string(source);
     let lexer = Tokenizer::new();
@@ -69,7 +62,7 @@ fn assert_binary(ast: &Expr) {
 
 #[cfg(test)]
 mod parser_prelude_tests {
-    use kagc_ast::{Expr, LitValExpr};
+    use kagc_ast::{Expr, LitValExpr, Stmt};
     use kagc_types::LitType;
 
     use crate::prelude::{as_binary, assert_binary, parse_expression, parse_statement};
@@ -108,8 +101,10 @@ mod parser_prelude_tests {
     }
 
     #[test]
-    fn test_parse_for_loop_statement() {
-        let ast = parse_statement("for a in 12 {  }");
+    fn test_parse_empty_for_loop_statement() {
+        let ast = parse_statement("for a in 12 { }");
         assert!(ast.is_some());
+        let for_stmt = ast.unwrap();
+        matches!(for_stmt, Stmt::For);
     }
 }
