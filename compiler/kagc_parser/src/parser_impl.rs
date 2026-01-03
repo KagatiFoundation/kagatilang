@@ -75,7 +75,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         }
     }
 
-    pub fn parse_expression(&mut self) -> Option<Expr> {
+    pub fn parse_expression(&mut self) -> Option<Expr<'tcx>> {
         if self.tokens.is_empty() {
             return None;
         }
@@ -85,7 +85,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         }
     }
 
-    pub fn parse_statement(&mut self) -> Option<Stmt> {
+    pub fn parse_statement(&mut self) -> Option<Stmt<'tcx>> {
         if self.tokens.is_empty() {
             return None;
         }
@@ -1313,7 +1313,8 @@ mod tests {
             &diag_bag,
             &str_intern
         );
-        let mut parser = mk_parser(lexer.tokenize("let a = 12 + 12;"), &diag_bag);
+        let tokens = lexer.tokenize("let a = 12 + 12;");
+        let mut parser = mk_parser(tokens, &diag_bag);
         
         assert!(parser.advance().kind == TokenKind::KW_LET);
         assert!(parser.advance().kind == TokenKind::T_IDENTIFIER);
@@ -1334,7 +1335,8 @@ mod tests {
             &diag_bag,
             &str_intern
         );
-        let mut parser = mk_parser(lexer.tokenize("12 + 12"), &diag_bag);
+        let tokens = lexer.tokenize("let a = 12 + 12;");
+        let mut parser = mk_parser(tokens, &diag_bag);
 
         while parser.advance().kind != TokenKind::T_EOF {}
 
