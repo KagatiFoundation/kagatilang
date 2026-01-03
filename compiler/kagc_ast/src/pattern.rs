@@ -2,6 +2,6 @@
 // Copyright (c) 2023 Kagati Foundation
 
 #[derive(Debug, Clone)]
-pub struct Import<'tcx> {
-    pub path: &'tcx str
+pub enum Pattern {
+    Ident
 }

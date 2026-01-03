@@ -1,26 +1,28 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_symbol::{StorageClass, SymbolType};
-use kagc_types::{record::RecordFieldType, LitType, LitTypeVariant};
+use kagc_symbol::{StorageClass, SymTy};
+use kagc_types::record::RecordFieldType;
+use kagc_types::TyKind;
 
 use crate::AST;
 
 use super::Expr;
 
 #[derive(Clone, Debug)]
-pub struct FuncDeclStmt {
+pub struct FuncDeclStmt<'tcx> {
     /// Function's ID
     pub func_id: usize,
 
     /// Function's name
-    pub name: String,
+    pub name: &'tcx str,
 
     /// Function's scope ID
+    #[deprecated]
     pub scope_id: usize,
 
     /// Function's return type
-    pub return_type: LitTypeVariant,
+    pub ty: TyKind<'tcx>,
 
     /// Function storage class
     pub storage_class: StorageClass,
@@ -29,7 +31,7 @@ pub struct FuncDeclStmt {
     pub locals: Vec<usize>,
 
     /// Function's parameter types
-    pub func_param_types: Vec<LitTypeVariant>
+    pub func_param_types: Vec<TyKind<'tcx>>
 }
 
 #[derive(Clone, Debug)]
@@ -39,36 +41,34 @@ pub struct ReturnStmt {
 }
 
 #[derive(Clone, Debug)]
-pub struct VarDeclStmt {
+pub struct VarDeclStmt<'tcx> {
     /// Position of the symbol in the symbol table.
     pub symtbl_pos: usize, 
 
     /// Name of the symbol.
-    pub sym_name: String,
+    pub sym_name: &'tcx str,
 
     /// Storage class of the symbol.
     pub class: StorageClass,
 
-    pub value_type: LitTypeVariant,
+    pub ty: TyKind<'tcx>,
 
     pub local_offset: usize,
 
     pub func_id: usize,
 
-    pub symbol_type: SymbolType,
-
-    pub default_value: Option<LitType>,
+    pub symbol_type: SymTy<'tcx>
 }
 
 #[derive(Clone, Debug)]
-pub struct ArrVarDeclStmt {
+pub struct ArrVarDeclStmt<'tcx> {
     pub symtbl_pos: usize,
 
     /// Name of the symbol
     pub sym_name: String,
 
     pub class: StorageClass,
-    pub vals: Vec<Expr>
+    pub vals: Vec<Expr<'tcx>>
 }
 
 #[derive(Clone, Debug)]
@@ -78,15 +78,12 @@ pub struct AssignStmt {
 }
 
 #[derive(Clone, Debug)]
-pub struct FuncCallStmt {
+pub struct FuncCallStmt<'tcx> {
     #[deprecated]
     pub symtbl_pos: usize,
-
     pub symbol_name: String,
-
-    pub args: Vec<Expr>,
-
-    pub result_type: LitTypeVariant
+    pub args: Vec<Expr<'tcx>>,
+    pub ty: TyKind<'tcx>
 }
 
 /// Represents an `if` statement and its associated lexical scope.
@@ -104,58 +101,58 @@ pub struct ScopingStmt {
 
 /// Represents a top-level `import` statement in a source file.
 #[derive(Debug, Clone)]
-pub struct ImportStmt {
+pub struct ImportStmt<'tcx> {
     /// Path to the module being imported.
-    pub path: String
+    pub path: &'tcx str
 }
 
 #[derive(Debug, Clone)]
-pub struct RecordDeclStmt {
-    pub name: String,
+pub struct RecordDeclStmt<'tcx> {
+    pub name: &'tcx str,
     pub size: usize,
     pub alignment: usize,
-    pub fields: Vec<RecordFieldType>
+    pub fields: Vec<RecordFieldType<'tcx>>
 }
 
 #[derive(Debug, Clone)]
-pub struct RecordFieldStmt {
+pub struct RecordFieldStmt<'tcx> {
     pub name: String,
-    pub typ: LitTypeVariant
+    pub ty: TyKind<'tcx>
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockStmt {
-    pub statements: Vec<AST>
+pub struct BlockStmt<'tcx> {
+    pub statements: Vec<AST<'tcx>>
 }
 
 #[derive(Clone, Debug)]
-pub enum Stmt {
+pub enum Stmt<'tcx> {
     Glue,
     If(IfStmt),
     For,
     While,
     Loop,
     Break,
-    ArrVarDecl(ArrVarDeclStmt),
-    FuncDecl(FuncDeclStmt),
+    ArrVarDecl(ArrVarDeclStmt<'tcx>),
+    FuncDecl(FuncDeclStmt<'tcx>),
     Return(ReturnStmt),
     Assignment(AssignStmt),
-    VarDecl(VarDeclStmt),
+    VarDecl(VarDeclStmt<'tcx>),
     LValue(usize), // usize for symbol table position of this left value
     LValue2 {
         name: String
     },
-    FuncCall(FuncCallStmt),
-    Import(ImportStmt),
-    Record(RecordDeclStmt),
-    RecordField(RecordFieldStmt),
+    FuncCall(FuncCallStmt<'tcx>),
+    Import(ImportStmt<'tcx>),
+    Record(RecordDeclStmt<'tcx>),
+    RecordField(RecordFieldStmt<'tcx>),
     Scoping(ScopingStmt),
 
     /// Block statement
-    Block(BlockStmt)
+    Block(BlockStmt<'tcx>)
 }
 
-impl Stmt {
+impl<'tcx> Stmt<'tcx> {
     pub fn as_block(&self) -> Option<&BlockStmt> {
         match self {
             Stmt::Block(stmt) => Some(stmt),
@@ -163,9 +160,23 @@ impl Stmt {
         }
     }
 
-    pub fn as_block_mut(&mut self) -> Option<&mut BlockStmt> {
+    pub fn as_block_mut(&mut self) -> Option<&mut BlockStmt<'tcx>> {
         match self {
             Stmt::Block(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+    pub fn as_if(&self) -> Option<&IfStmt> {
+        match self {
+            Stmt::If(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+    pub fn as_if_mut(&mut self) -> Option<&mut IfStmt> {
+        match self {
+            Stmt::If(stmt) => Some(stmt),
             _ => None
         }
     }

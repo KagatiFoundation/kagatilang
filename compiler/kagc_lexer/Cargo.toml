@@ -6,7 +6,9 @@ edition = "2021"
 [dependencies]
 itertools = "0.13.0"
 lazy_static = "1.4.0"
+typed-arena = "2.0.2"
 
 kagc_errors = { path = "../kagc_errors" }
 kagc_types = { path = "../kagc_types" }
 kagc_token = { path = "../kagc_token" }
+kagc_span = { path = "../kagc_span" }

@@ -2,8 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use core::panic;
-use std::fs::OpenOptions;
-use std::rc::Rc;
+use std::cell::Cell;
 
 use kagc_ast::record::*;
 use kagc_ast::*;
@@ -11,19 +10,17 @@ use kagc_comp_unit::source_map::FileId;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
-use kagc_lexer::Tokenizer;
-use kagc_scope::scope::ScopeType;
 use kagc_span::span::SourcePos;
 use kagc_span::span::Span;
 use kagc_symbol::function::*;
 use kagc_symbol::*;
 use kagc_token::*;
+use kagc_types::TyKind;
 use kagc_types::record::RecordFieldType;
-use kagc_types::LitType;
-use kagc_types::LitTypeVariant;
+use kagc_types::LitValue;
 
+use crate::options::ParserOptions;
 use crate::prelude::ParseOutput;
-use crate::session::ParserSession;
 
 /// Represents an invalid function ID.
 ///
@@ -34,12 +31,10 @@ const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
 
 pub type StringLabel = usize;
 
-/// Represents a parser for converting tokens into an
-/// abstract syntax tree (AST).
-#[derive(Debug)]
-pub struct Parser<'p> {
+/// Represents a parser for converting tokens into abstract syntax trees (ASTs).
+pub struct Parser<'p, 'tcx> where 'tcx: 'p {
     /// Tokens that are going to be parsed.
-    tokens: Rc<Vec<Token>>,
+    tokens: Vec<Token<'tcx>>,
 
     /// Counter which points to the current token index.
     current: usize,
@@ -49,9 +44,6 @@ pub struct Parser<'p> {
     /// function.
     current_function_id: usize,
 
-    /// Name of the function that is currently being parsed.
-    current_function_name: Option<String>,
-
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
@@ -60,53 +52,31 @@ pub struct Parser<'p> {
 
     current_file: FileId,
 
-    sess: &'p mut ParserSession,
-
-    lexer: Tokenizer
+    pub diagnostics: &'p DiagnosticBag,
+    pub options: ParserOptions,
 }
 
-impl<'p> Parser<'p> {
-    /// Internal parser constructor.
-    /// Use `ParserBuilder` instead.
-    pub fn new(sess: &'p mut ParserSession, lexer: Tokenizer) -> Self {
-        let mut p = Self {
-            tokens: Rc::new(vec![]),
+impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
+    pub fn new(
+        options: ParserOptions,
+        diags: &'p DiagnosticBag,
+        tokens: Vec<Token<'tcx>>
+    ) -> Self {
+        Self {
+            tokens,
             current: 0,
             current_function_id: INVALID_FUNC_ID,
-            current_function_name: None,
             next_local_sym_pos: 0,
             _str_label_: 0,
-            current_file: sess.file_id,
-            sess,
-            lexer
-        };
-        p.tokenize_input_stream();
-        p
-    }
-
-    pub(crate) fn tokenize_input_stream(&mut self) {
-        let current_file_id = self.sess.file_id;
-        let files = self.sess.files.borrow();
-        if let Some(source_file) = files.get(current_file_id) {
-            self.tokens = Rc::new(self.lexer.tokenize(source_file.content.clone()));
-            self.current_function_id = current_file_id.0;
-        }
-        else {
-            panic!("couldn't tokenize")
+            current_file: FileId(0),
+            options,
+            diagnostics: diags,
         }
     }
 
-    pub fn diagnostics(&self) -> &DiagnosticBag {
-        &self.sess.diagnostics
-    }
-
-    pub fn tokens(&self) -> Rc<Vec<Token>> {
-        self.tokens.clone()
-    }
-
-    pub(crate) fn parse_expression(&mut self) -> Option<Expr> {
-        if self.tokens.is_empty() { // lazily tokenize the input
-            self.tokenize_input_stream();
+    pub fn parse_expression(&mut self) -> Option<Expr> {
+        if self.tokens.is_empty() {
+            return None;
         }
         match self.parse_record_or_expr(None) {
             Some(ast) => ast.kind.expr(),
@@ -114,9 +84,9 @@ impl<'p> Parser<'p> {
         }
     }
 
-    pub(crate) fn parse_statement(&mut self) -> Option<Stmt> {
-        if self.tokens.is_empty() { // lazily tokenize the input
-            self.tokenize_input_stream();
+    pub fn parse_statement(&mut self) -> Option<Stmt> {
+        if self.tokens.is_empty() {
+            return None;
         }
         match self.parse_single_stmt() {
             Some(ast) => ast.kind.stmt(),
@@ -124,14 +94,15 @@ impl<'p> Parser<'p> {
         }
     }
 
-    pub fn parse(&mut self) -> Vec<AST> {
-        if self.tokens.is_empty() { // lazily tokenize the input
-            self.tokenize_input_stream();
+    pub fn parse(&mut self) -> Vec<AST<'tcx>> {
+        if self.tokens.is_empty() {
+            return Vec::with_capacity(0);
         }
 
         let mut nodes: Vec<AST> = vec![];
         loop {
-            if self.peek().kind == TokenKind::T_EOF {
+            let peek_kind = self.peek().kind;
+            if peek_kind == TokenKind::T_EOF {
                 break;
             }
             match self.parse_single_stmt() {
@@ -156,7 +127,7 @@ impl<'p> Parser<'p> {
     ///
     /// - Returns a `ParseResult` representing the parsed statement or an error
     ///   if parsing fails.
-    pub(crate) fn parse_single_stmt(&mut self) -> ParseOutput {
+    pub(crate) fn parse_single_stmt(&mut self) -> ParseOutput<'tcx> {
         let curr_tok_kind = self.peek().kind;
         match curr_tok_kind {
             TokenKind::KW_LET => self.parse_var_decl_stmt(),
@@ -183,7 +154,7 @@ impl<'p> Parser<'p> {
     }
 
     // parse compound statement(statement starting with '{' and ending with '}')
-    fn parse_compound_stmt(&mut self) -> ParseOutput {
+    fn parse_compound_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::T_LBRACE, "'{' expected")?;
         let mut statements = vec![];
         loop {
@@ -203,16 +174,16 @@ impl<'p> Parser<'p> {
             AST::create_leaf(
                 ASTKind::StmtAST(block_stmt_ast),
                 ASTOperation::AST_BLOCK,
-                LitTypeVariant::None,
+                None,
                 NodeMeta::none()
             )
         )
     }
 
-    fn parse_import_stmt(&mut self) -> ParseOutput {
-        let start_tok = self.consume(TokenKind::KW_IMPORT, "'import' expected")?.pos; // match 'import' keyword
-        let module_path_tok: Token = self.consume(TokenKind::T_STRING, "expected a string")?.clone();
-        let end_tok = self.consume(TokenKind::T_SEMICOLON, "';' expected")?.pos; // match ';'
+    fn parse_import_stmt(&mut self) -> ParseOutput<'tcx> {
+        let start_tok = self.consume(TokenKind::KW_IMPORT, "'import' expected")?.pos;
+        let module_path_tok: Token = self.consume(TokenKind::T_STRING, "expected a string")?;
+        let end_tok = self.consume(TokenKind::T_SEMICOLON, "';' expected")?.pos;
 
         let meta = NodeMeta::new(
             Span::new(
@@ -232,20 +203,20 @@ impl<'p> Parser<'p> {
             AST::create_leaf(
                 ASTKind::StmtAST(
                     Stmt::Import(
-                        ImportStmt { path: module_path_tok.lexeme.clone() }
+                        ImportStmt { path: module_path_tok.lexeme }
                     )
                 ), 
                 ASTOperation::AST_IMPORT,
-                LitTypeVariant::None,
+                None,
                 meta
             )
         )
     }
 
-    fn parse_record_decl_stmt(&mut self) -> ParseOutput {
+    fn parse_record_decl_stmt(&mut self) -> ParseOutput<'tcx> {
         let start_tok = self.consume(TokenKind::KW_RECORD, "'record' expected")?.pos;
         // expect name of the record
-        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         _ = self.consume(TokenKind::T_LBRACE, "'{' expected");
         let mut rec_fields = vec![];
 
@@ -273,13 +244,13 @@ impl<'p> Parser<'p> {
                 ASTKind::StmtAST(
                     Stmt::Record(
                         RecordDeclStmt { 
-                            name: id_token.lexeme.clone(),
+                            name: id_token.lexeme,
                             size: 0,
                             alignment: 0,
                             fields: rec_fields.into_iter().enumerate().map(|(idx, field)| {
                                 RecordFieldType {
-                                    name: field.name.clone(),
-                                    typ: field.typ,
+                                    name: field.name,
+                                    ty: field.typ,
                                     rel_stack_off: idx
                                 }
                             }).collect::<Vec<RecordFieldType>>() 
@@ -287,21 +258,22 @@ impl<'p> Parser<'p> {
                     )
                 ), 
                 ASTOperation::AST_RECORD_DECL,
-                LitTypeVariant::Record { name: id_token.lexeme.clone() },
+                None,
+                // LitTypeVariant::Record { name: id_token.lexeme },
                 meta
             )
         )
     }
 
-    fn parse_record_field_decl_stmt(&mut self) -> Option<RecordField> {
-        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
-        _ = self.consume(TokenKind::T_COLON, "expected a ':'"); // match ':'
+    fn parse_record_field_decl_stmt(&mut self) -> Option<RecordField<'tcx>> {
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.lexeme;
+        _ = self.consume(TokenKind::T_COLON, "':' expected");
 
         let id_type = self.parse_id_type()?;
-        if id_type == LitTypeVariant::Null {
-            self.sess.diagnostics.push(
+        if id_type == TyKind::Null{
+            self.diagnostics.push(
                 Diagnostic::from_single_token(
-                    self.peek(), 
+                    &self.peek(), 
                     self.current_file, 
                     "invalid type for record field", 
                     Severity::Error
@@ -310,18 +282,12 @@ impl<'p> Parser<'p> {
             return None;
         }
 
-        self.skip_to_next_token();
-
-        // check if default value has been assigned
-        if self.peek().kind == TokenKind::T_EQUAL {
-            todo!("Default value is not supported right now in record field!");
-        }
-
+        self.advance();
         _ = self.consume(TokenKind::T_SEMICOLON, "';' expected");
         Some(
             RecordField { 
                 typ: id_type, 
-                name: id_token.lexeme.clone(), 
+                name: id_token, 
                 default_value: None 
             }
         )
@@ -329,12 +295,7 @@ impl<'p> Parser<'p> {
 
     // parsing a function declaration and definition
     // supports multiple parameters
-    fn parse_function_stmt(&mut self) -> ParseOutput {
-        let func_scope_id: usize = self.sess
-            .scope
-            .borrow_mut()
-            .enter_new_scope(ScopeType::Function);
-
+    fn parse_function_stmt(&mut self) -> ParseOutput<'tcx> {
         // match and ignore function declaration keyword 'def'
         _ = self.consume(TokenKind::KW_DEF, "'def' expected")?;
 
@@ -350,7 +311,7 @@ impl<'p> Parser<'p> {
             func_storage_class = StorageClass::EXTERN;
         }
 
-        let id_token: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        let id_token: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         let func_name_start_pos = SourcePos {
             column: id_token.pos.column,
             line: id_token.pos.line
@@ -361,31 +322,25 @@ impl<'p> Parser<'p> {
         };
         _ = self.consume(TokenKind::T_LPAREN, "'(' expected")?;
 
-        let mut func_param_types: Vec<LitTypeVariant> = vec![];
+        let mut func_param_types = vec![];
         let mut func_locals = vec![];
 
         if self.peek().kind != TokenKind::T_RPAREN {
             loop {
                 if let Some(param) = self.parse_parameter() {
-                    let mut sym: Symbol = Symbol::create(
-                        param.name.clone(), 
-                        param.lit_type.clone(), 
-                        SymbolType::Variable, 
-                        param.lit_type.size(), 
+                    let mut sym = Sym::new(
+                        param.name, 
+                        param.ty, 
+                        SymTy::Variable, 
                         StorageClass::PARAM, 
-                        param.offset,
-                        None,
-                        self.current_function_id,
+                        self.current_function_id
                     );
-
-                    if let LitTypeVariant::Record{ name } = &sym.lit_type {
-                        sym.sym_type = SymbolType::Record { 
-                            name: name.clone()
-                        };
+                    if let TyKind::Record{ name } = sym.ty.get() {
+                        sym.sym_ty = Cell::new(SymTy::Record { name });
                     }
 
-                    func_param_types.push(sym.lit_type.clone());
-                    let local_pos = self.add_symbol_local(sym);
+                    func_param_types.push(sym.ty.get());
+                    let local_pos = 0; // self.add_symbol_local(sym);
                     func_locals.push(local_pos);
                 }
 
@@ -407,19 +362,9 @@ impl<'p> Parser<'p> {
 
         // function's return type
         self.consume(TokenKind::T_RPAREN, "')' expected")?;
-        let func_return_type: LitTypeVariant = self.parse_fn_ret_type()?;
-        self.skip_to_next_token();
+        let func_return_type = self.parse_fn_ret_type()?;
+        self.advance();
 
-        // If this is not an extern function, ensure that the next token 
-        // is a left brace ('{') before starting the function body. This 
-        // prevents the parser from entering the "local" state prematurely 
-        // if the function signature is invalid.
-        if func_storage_class != StorageClass::EXTERN {
-            _ = self.consume_no_advance(TokenKind::T_LBRACE)?;
-        }
-
-        // And of course the function name as well :)
-        self.current_function_name = Some(id_token.lexeme.clone());
         let mut function_body: Option<AST> = None;
 
         // create function body
@@ -431,19 +376,16 @@ impl<'p> Parser<'p> {
             _ = self.consume(TokenKind::T_SEMICOLON, "';' expected")?;
         }
 
-        let temp_func_id: usize = self.current_function_id;
+        let temp_func_id = self.current_function_id;
         self.current_function_id = INVALID_FUNC_ID; 
-
-        // create a new FunctionInfo
-        self.sess.scope.borrow_mut().exit_scope();
 
         // Return AST for function declaration
         Some(AST::with_meta(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 func_id: temp_func_id,
-                name: id_token.lexeme.clone(),
-                scope_id: func_scope_id,
-                return_type: func_return_type.clone(),
+                name: id_token.lexeme,
+                scope_id: 0,
+                ty: func_return_type,
                 storage_class: func_storage_class,
                 locals: func_locals,
                 func_param_types
@@ -452,7 +394,7 @@ impl<'p> Parser<'p> {
             function_body,
             None,
             None,
-            func_return_type,
+            Some(func_return_type),
             NodeMeta::new(
                 Span::new(
                     self.current_file.0, 
@@ -465,14 +407,14 @@ impl<'p> Parser<'p> {
     }
 
     // parse function's return type
-    fn parse_fn_ret_type(&mut self) -> Option<LitTypeVariant> {
+    fn parse_fn_ret_type(&mut self) -> Option<TyKind<'tcx>> {
         _ = self.consume(TokenKind::T_ARROW, "'->' expected")?;
-        let func_ret_type: LitTypeVariant = self.parse_id_type()?;
+        let func_ret_type = self.parse_id_type()?;
 
-        if func_ret_type == LitTypeVariant::Null {
-            self.sess.diagnostics.push(
+        if func_ret_type == TyKind::Null {
+            self.diagnostics.push(
                 Diagnostic::from_single_token(
-                    self.peek(), 
+                    &self.peek(), 
                     self.current_file, 
                     "invalid return type", 
                     Severity::Error
@@ -483,15 +425,15 @@ impl<'p> Parser<'p> {
         Some(func_ret_type)
     }
 
-    fn parse_parameter(&mut self) -> Option<FuncParam> {
-        let param_name: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+    fn parse_parameter(&mut self) -> Option<FuncParam<'tcx>> {
+        let param_name = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         let _ = self.consume(TokenKind::T_COLON, "':' expected")?;
-        let param_type: LitTypeVariant = self.parse_id_type()?;
+        let param_type = self.parse_id_type()?;
         let param_loc_off: i32 = self.gen_next_local_offset() as i32;
-        self.skip_to_next_token();
+        _ = self.advance();
         Some(
             FuncParam {
-                lit_type: param_type,
+                ty: param_type,
                 name: param_name.lexeme,
                 offset: param_loc_off
             }
@@ -504,9 +446,9 @@ impl<'p> Parser<'p> {
         idx
     }
 
-    fn parse_return_stmt(&mut self) -> ParseOutput {
+    fn parse_return_stmt(&mut self) -> ParseOutput<'tcx> {
         // check whether parser's parsing a function or not
-        let inside_func = self.sess.scope.borrow().inside_function();
+        let inside_func = false;
         if !inside_func {
             self.report_unexpected_token();
             return None;
@@ -537,13 +479,13 @@ impl<'p> Parser<'p> {
                         )
                     ),
                     ASTOperation::AST_RETURN,
-                    LitTypeVariant::None,
+                    None,
                     meta
                 )
             )
         }
         else {
-            let return_expr: AST = self.parse_record_or_expr(None)?;
+            let return_expr = self.parse_record_or_expr(None)?;
             let meta = NodeMeta::new(
                 Span::new(
                     self.current_file.0,
@@ -564,14 +506,14 @@ impl<'p> Parser<'p> {
                 right: None,
                 mid: None,
                 operation: ASTOperation::AST_RETURN,
-                result_type: LitTypeVariant::None,
+                ty: None,
                 meta
             };
             Some(return_ast)
         }
     }
 
-    fn parse_while_stmt(&mut self) -> ParseOutput {
+    fn parse_while_stmt(&mut self) -> ParseOutput<'tcx> {
         let cond_ast = self.parse_conditional_stmt(TokenKind::KW_WHILE)?;
         let while_body = self.parse_single_stmt()?;
         Some(
@@ -580,12 +522,12 @@ impl<'p> Parser<'p> {
                 ASTOperation::AST_WHILE,
                 Some(cond_ast),
                 Some(while_body),
-                LitTypeVariant::None,
+                None
             )
         )
     }
 
-    fn parse_loop_stmt(&mut self) -> ParseOutput {
+    fn parse_loop_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?;
         let loop_body: AST = self.parse_compound_stmt()?;
         Some(AST::new(
@@ -593,11 +535,11 @@ impl<'p> Parser<'p> {
             ASTOperation::AST_LOOP,
             Some(loop_body),
             None,
-            LitTypeVariant::None,
+            None,
         ))
     }
 
-    fn parse_break_stmt(&mut self) -> ParseOutput {
+    fn parse_break_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_BREAK, "expected the keyword 'break'")?;
         Some(
             AST::new(
@@ -605,12 +547,12 @@ impl<'p> Parser<'p> {
                 ASTOperation::AST_BREAK,
                 None,
                 None,
-                LitTypeVariant::None
+                None
             )
         )
     }
 
-    fn parse_for_stmt(&mut self) -> ParseOutput {
+    fn parse_for_stmt(&mut self) -> ParseOutput<'tcx> {
         assert!(self.peek().kind == TokenKind::KW_FOR, "cannot parse a for statement");
         self.consume(TokenKind::KW_FOR, "'for' expected")?;
 
@@ -625,54 +567,47 @@ impl<'p> Parser<'p> {
             Some(id_ast),
             Some(expr_ast),
             Some(body_ast),
-            LitTypeVariant::None,
+            None
         ))
     }
 
-    fn parse_if_stmt(&mut self) -> ParseOutput {
+    fn parse_if_stmt(&mut self) -> ParseOutput<'tcx> {
         let cond_ast = self.parse_conditional_stmt(TokenKind::KW_IF)?;
-
-        let if_scope = self.sess
-            .scope
-            .borrow_mut()
-            .enter_new_scope(ScopeType::If); // enter if's scope
+        // let if_scope = self.scope.enter_new_scope(ScopeType::If); // enter if's scope
 
         let if_true_ast = self.parse_single_stmt()?;
-        self.sess.scope.borrow_mut().exit_scope(); // exit
+        // self.scope.exit_scope(); // exit
 
         let mut if_false_ast = None;
         if self.peek().kind == TokenKind::KW_ELSE {
-            let else_scope = self.sess
-                .scope
-                .borrow_mut()
-                .enter_new_scope(ScopeType::If);
+            // let else_scope = self.scope.enter_new_scope(ScopeType::If);
 
-            self.skip_to_next_token(); // skip 'else'
+            self.advance(); // skip 'else'
 
             let else_block = self.parse_single_stmt()?;
             if_false_ast = Some(
                 AST::new(
-                    ASTKind::StmtAST(Stmt::Scoping(ScopingStmt { scope_id: else_scope })),
+                    ASTKind::StmtAST(Stmt::Scoping(ScopingStmt { scope_id: 0 })),
                     ASTOperation::AST_ELSE,
                     Some(else_block),
                     None,
-                    LitTypeVariant::None
+                    None
                 )
             );          
-            self.sess.scope.borrow_mut().exit_scope();
+            // self.scope.exit_scope();
         }
         Some(AST::with_mid(
-            ASTKind::StmtAST(Stmt::If(IfStmt { scope_id: if_scope })),
+            ASTKind::StmtAST(Stmt::If(IfStmt { scope_id: 0 })),
             ASTOperation::AST_IF,
             Some(cond_ast),
             Some(if_true_ast),
             if_false_ast,
-            LitTypeVariant::None,
+            None,
         ))
     }
 
     // parses tokens that are in the form '(expression [< | > | >= | <= | == | !=] expression)'
-    fn parse_conditional_stmt(&mut self, kind: TokenKind) -> ParseOutput {
+    fn parse_conditional_stmt(&mut self, kind: TokenKind) -> ParseOutput<'tcx> {
         _ = self.consume(kind, &format!("'{k}' expected ", k = kind.as_str()))?;
         _ = self.consume(TokenKind::T_LPAREN, "'(' expected")?; // match and ignore '('
 
@@ -698,11 +633,11 @@ impl<'p> Parser<'p> {
     ///
     /// A `ParseResult` containing either the AST node for the variable declaration statement
     /// or a `ParseError` if the parsing fails.
-    fn parse_var_decl_stmt(&mut self) -> ParseOutput {
+    fn parse_var_decl_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_LET, "'let' expected'")?;
 
         // Being "inside" a function means that we are currently parsing a function's body.
-        let inside_func: bool = self.sess.scope.borrow().live_scope_id() != 0;
+        let inside_func: bool = true; // self.scope.live_scope_id().0 != 0;
 
         // Track the storage class for this variable.
         let mut var_class: StorageClass = StorageClass::GLOBAL;
@@ -715,13 +650,13 @@ impl<'p> Parser<'p> {
         //
         // The variable might not have any initial value.
         // Thus it is 'null' (or none) by default.
-        let mut var_type: LitTypeVariant = LitTypeVariant::None;
+        let mut var_type = TyKind::None;
 
         // symbol's type
-        let mut sym_type = SymbolType::Variable;
+        let mut sym_type = SymTy::Variable;
 
         // Name of the variable.
-        let id_token: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
 
         // self.var_offsets.insert(id_token.lexeme.clone(), self.local_offset as usize);
 
@@ -733,11 +668,11 @@ impl<'p> Parser<'p> {
             var_type = self.parse_id_type()?;
 
             // if the declared variable is a record
-            if let LitTypeVariant::Record { name: rec_name } = &var_type {
-                sym_type = SymbolType::Record { name: rec_name.clone() };
+            if let TyKind::Record { name: rec_name } = &var_type {
+                sym_type = SymTy::Record { name: rec_name }; //SymbolType::Record { name: rec_name };
             }
             else {
-                self.skip_to_next_token();
+                self.advance();
             }
         }
 
@@ -749,11 +684,8 @@ impl<'p> Parser<'p> {
         // at the time of declaration.
         if self.peek().kind == TokenKind::T_EQUAL {
             _ = self.consume(TokenKind::T_EQUAL, "'=' expected")?; // match and ignore '=' sign
-            assignment_parse_res = Some(self.parse_record_or_expr(Some(&id_token.lexeme)));
+            assignment_parse_res = Some(self.parse_record_or_expr(Some(id_token.lexeme)));
         }
-
-        // Default value contains compile-time evaluated expression's result.
-        let mut default_value: Option<LitType> = None;
 
         // if there is some error during expression parsing
         if let Some(None) = assignment_parse_res {
@@ -761,18 +693,15 @@ impl<'p> Parser<'p> {
         } 
         else if let Some(Some(expr_ast)) = &assignment_parse_res {
             if let ASTKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.kind {
-                sym_type = SymbolType::Record { 
-                    name: record_create.name.clone() 
-                };
-            }
-
-            if var_type == LitTypeVariant::Str {
-                default_value = Some(LitType::I32(self.next_str_label() as i32));
+                // sym_type = SymbolType::Record { 
+                //     name: record_create.name.clone() 
+                // };
+                sym_type = SymTy::Record { name: record_create.name }
             }
         }
 
         let local_off = if inside_func {
-            if let SymbolType::Record { .. } = sym_type {
+            if let SymTy::Record { .. } = sym_type {
                 0
             } 
             else {
@@ -790,16 +719,15 @@ impl<'p> Parser<'p> {
                     symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
                     symbol_type: sym_type,
                     class: var_class,
-                    sym_name: id_token.lexeme.clone(),
-                    value_type: var_type.clone(),
+                    sym_name: id_token.lexeme,
+                    ty: var_type,
                     local_offset: local_off,
                     func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
-                    default_value
                 })),
                 ASTOperation::AST_VAR_DECL,
                 Some(assign_ast_node_res?),
                 None,
-                var_type,
+                Some(var_type),
             ))
         } 
         else {
@@ -807,7 +735,7 @@ impl<'p> Parser<'p> {
         }
     }
 
-    fn next_str_label(&mut self) -> usize {
+    fn _next_str_label(&mut self) -> usize {
         let l = self._str_label_;
         self._str_label_ += 1;
         l
@@ -817,16 +745,16 @@ impl<'p> Parser<'p> {
     /// corresponding `LitTypeVariant`.
     ///
     /// Returns an error if the token does not represent a valid data type keyword.
-    fn parse_id_type(&mut self) -> Option<LitTypeVariant> {
+    fn parse_id_type(&mut self) -> Option<TyKind<'tcx>> {
         let current_tok: TokenKind = self.peek().kind;
         match current_tok {
-            TokenKind::KW_INT => Some(LitTypeVariant::I32),
-            TokenKind::KW_CHAR => Some(LitTypeVariant::U8),
-            TokenKind::KW_STR => Some(LitTypeVariant::RawStr),
-            TokenKind::KW_LONG => Some(LitTypeVariant::I64),
-            TokenKind::KW_VOID => Some(LitTypeVariant::Void),
-            TokenKind::KW_NULL => Some(LitTypeVariant::Null),
-            TokenKind::T_IDENTIFIER => Some(LitTypeVariant::Record{ name: self.peek().lexeme.to_string() }),
+            TokenKind::KW_LONG |
+            TokenKind::KW_INT => Some(TyKind::I64),
+            TokenKind::KW_CHAR => Some(TyKind::U8),
+            TokenKind::KW_STR => Some(TyKind::Str),
+            TokenKind::KW_VOID => Some(TyKind::Void),
+            TokenKind::KW_NULL => Some(TyKind::Null),
+            TokenKind::T_IDENTIFIER => Some(TyKind::Record{ name: self.peek().lexeme }),
             _ => {
                 self.report_unexpected_token();
                 None
@@ -835,50 +763,17 @@ impl<'p> Parser<'p> {
     }
 
     // TODO: Write comments
-    fn assign_stmt_or_func_call(&mut self) -> ParseOutput {
-        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+    fn assign_stmt_or_func_call(&mut self) -> ParseOutput<'tcx> {
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         let tok_kind_after_id_tok: TokenKind = self.peek().kind;
         if tok_kind_after_id_tok != TokenKind::T_LPAREN {
-            self.parse_assignment_stmt(id_token)
+            panic!("Cannot parse an assignment statement right now!");
         } else {
-            self.parse_func_call_expr(&id_token.lexeme, &id_token)
+            self.parse_func_call_expr(id_token.lexeme, &id_token)
         }
     }
 
-    fn parse_assignment_stmt(&mut self, id_token: Token) -> ParseOutput {
-        _ = self.consume(TokenKind::T_EQUAL, "expected an '='")?;
-
-        let bin_expr_ast_node: AST = self.parse_record_or_expr(None)?;
-
-        // _ = self.consume(TokenKind::T_SEMICOLON)?;
-
-        let lvalueid: AST = AST::create_leaf(
-            ASTKind::StmtAST(
-                Stmt::LValue2 { 
-                    name: id_token.lexeme.clone() 
-                }
-            ),
-            ASTOperation::AST_LVIDENT,
-            LitTypeVariant::None,
-            NodeMeta::none()
-        );
-
-        Some(AST::new(
-            ASTKind::StmtAST(
-                Stmt::Assignment(
-                    AssignStmt {
-                        sym_name: id_token.lexeme.clone()
-                    }
-                )
-            ),
-            ASTOperation::AST_ASSIGN,
-            Some(lvalueid),
-            Some(bin_expr_ast_node),
-            LitTypeVariant::Void,
-        ))
-    }
-
-    fn parse_record_or_expr(&mut self, rec_alias: Option<&str>) -> ParseOutput {
+    fn parse_record_or_expr(&mut self, rec_alias: Option<&'tcx str>) -> ParseOutput<'tcx> {
         // peek ahead to see if this is a Record initialization: Identifier { ...
         if self.check(TokenKind::T_IDENTIFIER) && self.look_ahead(1).kind == TokenKind::T_LBRACE {
             if let Some(ra) = rec_alias {
@@ -890,10 +785,10 @@ impl<'p> Parser<'p> {
         self.parse_equality()
     }
 
-    fn parse_record_creation(&mut self, rec_alias: &str) -> ParseOutput {
+    fn parse_record_creation(&mut self, rec_alias: &'tcx str) -> ParseOutput<'tcx> {
         let span_start = self.peek().pos;
 
-        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         _ = self.consume(TokenKind::T_LBRACE, "expected '{")?;
 
         let mut fields = vec![];
@@ -941,29 +836,29 @@ impl<'p> Parser<'p> {
                 ASTKind::ExprAST(
                     Expr::RecordCreation(
                         RecordCreationExpr { 
-                            name: id_token.lexeme.clone(), 
+                            name: id_token.lexeme, 
                             fields,
                             pool_idx: 0xFFFFFFFF, // this value will be set by the Resolver
-                            rec_alias: rec_alias.to_string()
+                            rec_alias,
                         }
                     )
                 ),
                 ASTOperation::AST_RECORD_CREATE, 
-                LitTypeVariant::Record { name: id_token.lexeme.clone() }, 
+                None,
                 meta
             )
         )
     }
 
-    fn parse_record_field_assignment(&mut self, field_off: usize) -> Option<RecordFieldAssignExpr> {
-        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?.clone();
+    fn parse_record_field_assignment(&mut self, field_off: usize) -> Option<RecordFieldAssignExpr<'tcx>> {
+        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         _ = self.consume(TokenKind::T_EQUAL, "'=' expected"); // parse '='
         let field_val = self.parse_record_or_expr(None)?;
 
         if let ASTKind::ExprAST(expr) = field_val.kind {
             return Some(
                 RecordFieldAssignExpr { 
-                    name: id_token.lexeme.clone(), 
+                    name: id_token.lexeme, 
                     value: Box::new(expr),
                     offset: field_off
                 }
@@ -972,12 +867,12 @@ impl<'p> Parser<'p> {
         panic!()
     }
 
-    fn parse_equality(&mut self) -> ParseOutput {
+    fn parse_equality(&mut self) -> ParseOutput<'tcx> {
         let left = self.parse_comparision()?;
         self.try_parsing_binary(left, vec![TokenKind::T_EQEQ, TokenKind::T_NEQ])
     }
 
-    fn parse_comparision(&mut self) -> ParseOutput {
+    fn parse_comparision(&mut self) -> ParseOutput<'tcx> {
         let left = self.parse_addition()?;
         self.try_parsing_binary(
             left,
@@ -990,17 +885,17 @@ impl<'p> Parser<'p> {
         )
     }
 
-    fn parse_addition(&mut self) -> ParseOutput {
+    fn parse_addition(&mut self) -> ParseOutput<'tcx> {
         let left = self.parse_factor()?;
         self.try_parsing_binary(left, vec![TokenKind::T_PLUS, TokenKind::T_MINUS])
     }
 
-    fn parse_factor(&mut self) -> ParseOutput {
+    fn parse_factor(&mut self) -> ParseOutput<'tcx> {
         let left = self.parse_primary()?;
         self.try_parsing_binary(left, vec![TokenKind::T_SLASH, TokenKind::T_STAR])
     }
 
-    fn try_parsing_binary(&mut self, left: AST, tokens: Vec<TokenKind>) -> ParseOutput {
+    fn try_parsing_binary(&mut self, left: AST<'tcx>, tokens: Vec<TokenKind>) -> ParseOutput<'tcx> {
         let current_token_kind = self.peek().kind;
         if !tokens.contains(&current_token_kind) {
             return Some(left);
@@ -1009,7 +904,7 @@ impl<'p> Parser<'p> {
         // start of the expression             
         let span_start = left.meta.span;
 
-        self.skip_to_next_token(); // skip the operator
+        _ = self.advance(); // skip the operator
 
         let ast_op = ASTOperation::from_token_kind(current_token_kind).unwrap(); // DANGEROUS unwrap CALL
         let right = self.parse_equality()?;
@@ -1032,11 +927,11 @@ impl<'p> Parser<'p> {
                         operation: ast_op,
                         left: Box::new(left_expr),
                         right: Box::new(right_expr),
-                        result_type: LitTypeVariant::None,
+                        ty: TyKind::None,
                     })
                 ),
                 ast_op,
-                LitTypeVariant::None,
+                None,
                 NodeMeta::new(
                     combined_span,
                     vec![]
@@ -1045,9 +940,9 @@ impl<'p> Parser<'p> {
         )
     }
 
-    fn parse_primary(&mut self) -> ParseOutput {
+    fn parse_primary(&mut self) -> ParseOutput<'tcx> {
         let file_id = self.current_file.0;
-        let current_token = self.advance().clone();
+        let current_token = self.advance();
 
         let start_pos = SourcePos {
             line: current_token.pos.line,
@@ -1069,7 +964,7 @@ impl<'p> Parser<'p> {
             TokenKind::T_INT_NUM => {
                 Some(
                     Parser::create_expr_ast(
-                        LitType::I32(current_token.lexeme.parse::<i32>().unwrap()),
+                        LitValue::I32(current_token.lexeme.parse::<i32>().unwrap()),
                         ASTOperation::AST_INTLIT,
                         single_token_meta
                     )
@@ -1078,7 +973,7 @@ impl<'p> Parser<'p> {
             TokenKind::T_CHAR => {
                 Some(
                     Parser::create_expr_ast(
-                        LitType::U8(current_token.lexeme.parse::<u8>().unwrap()),
+                        LitValue::U8(current_token.lexeme.parse::<u8>().unwrap()),
                         ASTOperation::AST_INTLIT,
                         single_token_meta
                     )
@@ -1087,7 +982,7 @@ impl<'p> Parser<'p> {
             TokenKind::T_LONG_NUM => {
                 Some(
                     Parser::create_expr_ast(
-                        LitType::I64(current_token.lexeme.parse::<i64>().unwrap()),
+                        LitValue::I64(current_token.lexeme.parse::<i64>().unwrap()),
                         ASTOperation::AST_INTLIT,
                         single_token_meta
                     )
@@ -1096,7 +991,7 @@ impl<'p> Parser<'p> {
             TokenKind::T_FLOAT_NUM | TokenKind::T_DOUBLE_NUM => {
                Some(
                     Parser::create_expr_ast(
-                        LitType::F64(current_token.lexeme.parse::<f64>().unwrap()),
+                        LitValue::F64(current_token.lexeme.parse::<f64>().unwrap()),
                         ASTOperation::AST_INTLIT,
                         single_token_meta
                     )
@@ -1107,21 +1002,21 @@ impl<'p> Parser<'p> {
                     ASTKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
-                                value: LitType::RawStr(current_token.lexeme.clone()),
-                                result_type: LitTypeVariant::RawStr,
+                                value: LitValue::RawStr(current_token.lexeme),
+                                ty: TyKind::Str,
                             }
                         )
                     ),
                     ASTOperation::AST_STRLIT,
-                    LitTypeVariant::RawStr,
+                    Some(TyKind::Str),
                     single_token_meta
                 ))
             }
             TokenKind::T_IDENTIFIER => {
                 // Identifiers in a global variable declaration expression are not allowed.
-                if self.is_scope_global() {
-                    self.sess.diagnostics.push(Diagnostic::from_single_token(
-                        self.peek(), 
+                if current_token.kind == TokenKind::T_NONE {
+                    self.diagnostics.push(Diagnostic::from_single_token(
+                        &self.peek(), 
                         self.current_file, 
                         "initializer not a constant",
                         Severity::Error
@@ -1129,25 +1024,25 @@ impl<'p> Parser<'p> {
                     return None;
                 }
                 
-                let symbol_name: String = current_token.lexeme.clone();
+                let symbol_name = current_token.lexeme;
                 let curr_tok_kind: TokenKind = self.peek().kind;
 
                 if curr_tok_kind == TokenKind::T_LPAREN {
-                    self.parse_func_call_expr(&symbol_name, &current_token)
+                    self.parse_func_call_expr(symbol_name, &current_token)
                 } 
                 else if curr_tok_kind == TokenKind::T_DOT {
-                    self.parse_record_field_access_expr(&symbol_name, &current_token)
+                    self.parse_record_field_access_expr(symbol_name, &current_token)
                 }
                 else {
                     Some(AST::create_leaf(
                         ASTKind::ExprAST(
                             Expr::Ident(IdentExpr {
-                                result_type: LitTypeVariant::None, // We don't care about the type of this symbol, yet!
-                                sym_name: symbol_name
+                                ty: TyKind::None, // We don't care about the type of this symbol, yet!
+                                sym_name: current_token.lexeme
                             }
                         )),
                         ASTOperation::AST_IDENT,
-                        LitTypeVariant::None, // type will be identified at the semantic analysis phases if the symbol is defined
+                        None, // type will be identified at the semantic analysis phases if the symbol is defined
                         single_token_meta
                     ))
                 }
@@ -1165,7 +1060,7 @@ impl<'p> Parser<'p> {
                 Some(AST::create_leaf(
                     ASTKind::ExprAST(Expr::Null), 
                     ASTOperation::AST_NULL, 
-                    LitTypeVariant::Null, 
+                    Some(TyKind::Null), 
                     single_token_meta
                 ))
             },
@@ -1176,7 +1071,7 @@ impl<'p> Parser<'p> {
         }
     }
 
-    fn parse_identifier(&mut self) -> ParseOutput {
+    fn parse_identifier(&mut self) -> ParseOutput<'tcx> {
         let file_id = self.current_file.0;
         let id = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         let meta = NodeMeta::new(
@@ -1197,34 +1092,34 @@ impl<'p> Parser<'p> {
             ASTKind::ExprAST(
                 Expr::Ident(
                     IdentExpr { 
-                        sym_name: id.lexeme.clone(), 
-                        result_type: LitTypeVariant::None 
+                        sym_name: id.lexeme, 
+                        ty: TyKind::None 
                     }
                 )
             ),
             ASTOperation::AST_IDENT,
-            LitTypeVariant::None,
+            None,
             meta
         ))
     }
 
-    fn create_expr_ast(value: LitType, operation: ASTOperation, meta: NodeMeta) -> AST {
+    fn create_expr_ast(value: LitValue<'tcx>, operation: ASTOperation, meta: NodeMeta) -> AST<'tcx> {
         AST::create_leaf(
             ASTKind::ExprAST(
                 Expr::LitVal(
                     LitValExpr {
                         value: value.clone(),
-                        result_type: value.variant(),
+                        ty: TyKind::None, // SHOULD NOT BE NONE
                     }
                 )
             ),
             operation,
-            value.variant(),
+            None,
             meta
         )
     }
 
-    fn parse_record_field_access_expr(&mut self, rec_alias: &str, start_token: &Token) -> ParseOutput {
+    fn parse_record_field_access_expr(&mut self, rec_alias: &'tcx str, start_token: &Token) -> ParseOutput<'tcx> {
         let mut field_chain = vec![];
         let mut end_pos = SourcePos {
             line: start_token.pos.line,
@@ -1232,11 +1127,11 @@ impl<'p> Parser<'p> {
         };
 
         while self.peek().kind == TokenKind::T_DOT {
-            _ = self.consume(TokenKind::T_DOT, "expected a '.'"); // match '.'
+            _ = self.consume(TokenKind::T_DOT, "'.' expected");
             let access = self.consume(TokenKind::T_IDENTIFIER, "expected an identifer")?;
             end_pos.line = access.pos.line;
             end_pos.column = access.pos.column;
-            field_chain.push(access.lexeme.clone());
+            field_chain.push(access.lexeme);
         }
 
         let meta = NodeMeta::new(
@@ -1256,23 +1151,23 @@ impl<'p> Parser<'p> {
                 ASTKind::ExprAST(
                     Expr::RecordFieldAccess(
                         RecordFieldAccessExpr { 
-                            rec_name: "".to_string(), // name will be set by the semantic analyser
-                            rec_alias: rec_alias.to_string(), 
+                            rec_name: "", // name will be set by the semantic analyser
+                            rec_alias, 
                             field_chain,
                             rel_stack_off: 0xFFFFFFFF, // resolver resolves this
-                            result_type: LitTypeVariant::None // will be determined by the semantic analyzer
+                            ty: TyKind::None // will be determined by the semantic analyzer
                         }
                     )
                 ),
                 ASTOperation::AST_RECORD_FIELD_ACCESS, 
-                LitTypeVariant::None, 
+                None, 
                 meta
             )
         )
     }
 
-    fn parse_func_call_expr(&mut self, called_symbol: &str, start_token: &Token) -> ParseOutput {
-        _ = self.consume(TokenKind::T_LPAREN, "expected a '('")?;
+    fn parse_func_call_expr(&mut self, called_symbol: &'tcx str, start_token: &Token) -> ParseOutput<'tcx> {
+        _ = self.consume(TokenKind::T_LPAREN, "'(' expected")?;
 
         let curr_token_kind: TokenKind = self.peek().kind;
         let mut func_args: Vec<FuncArg> = vec![];
@@ -1281,7 +1176,7 @@ impl<'p> Parser<'p> {
             let mut arg_pos: usize = 0;
 
             loop {
-                let argu: AST = self.parse_record_or_expr(None)?;
+                let argu = self.parse_record_or_expr(None)?;
                 func_args.push((arg_pos, argu.kind.expr().unwrap()));
 
                 let is_tok_comma: bool = self.peek().kind == TokenKind::T_COMMA;
@@ -1295,13 +1190,13 @@ impl<'p> Parser<'p> {
                     break;
                 } 
                 else {
-                    _ = self.consume(TokenKind::T_COMMA, "expected a ','")?;
+                    _ = self.consume(TokenKind::T_COMMA, "',' expected")?;
                 }
                 arg_pos += 1;
             }
         }
 
-        let end_token = self.consume(TokenKind::T_RPAREN, "expected a ')'")?;
+        let end_token = self.consume(TokenKind::T_RPAREN, "')' expected")?;
 
         let start_pos = SourcePos {
             line: start_token.pos.line,
@@ -1316,15 +1211,15 @@ impl<'p> Parser<'p> {
             ASTKind::ExprAST(
                 Expr::FuncCall(
                     FuncCallExpr {
-                        result_type: LitTypeVariant::None,
-                        symbol_name: called_symbol.to_string(),
+                        ty: TyKind::None,
+                        symbol_name: called_symbol,
                         args: func_args,
                         id: 0xFFFFFFFF // resolver sets this value
                     }
                 )
             ),
             ASTOperation::AST_FUNC_CALL,
-            LitTypeVariant::None,
+            None,
             NodeMeta::new(
                 Span::new(
                     self.current_file.0,
@@ -1336,33 +1231,10 @@ impl<'p> Parser<'p> {
         ))
     }
 
-    /// Adds the symbol to the current scope.
-    fn add_symbol_local(&mut self, sym: Symbol) -> usize {
-        if let Some(insert_pos) = self.sess.scope.borrow_mut().declare(sym.clone()) {
-            self.next_local_sym_pos += 1;
-            insert_pos
-        }
-        else {
-            panic!("Symbol addition failed!");
-        }
-    }
-
-    fn is_scope_global(&self) -> bool {
-        self.sess.scope.borrow().live_scope_id() == 0
-    }
-
-    fn consume_no_advance(&mut self, kind: TokenKind) -> Option<&Token> {
-        if kind != self.peek().kind {
-            self.report_unexpected_token();
-            return None;
-        }
-        Some(&self.tokens[self.current - 1])
-    }
-
     fn report_unexpected_token(&mut self) {
-        self.sess.diagnostics.push(
+        self.diagnostics.push(
             Diagnostic::from_single_token(
-                self.peek(), 
+                &self.peek(), 
                 self.current_file, 
                 "unexpected token",
                 Severity::Error
@@ -1370,18 +1242,14 @@ impl<'p> Parser<'p> {
         );
     }
 
-    fn skip_to_next_token(&mut self) {
-        self.current += 1;
-    }
-
     /// Look at the current token without consuming it.
-    fn peek(&self) -> &Token {
-        self.tokens.get(self.current).unwrap_or_else(|| self.tokens.last().unwrap())
+    fn peek(&self) -> Token<'tcx> {
+        *self.tokens.get(self.current).unwrap_or(self.tokens.last().unwrap())
     }
 
     /// Look ahead N tokens
-    fn look_ahead(&self, distance: usize) -> &Token {
-        self.tokens.get(self.current + distance).unwrap_or_else(|| self.tokens.last().unwrap())
+    fn look_ahead(&self, distance: usize) -> Token<'tcx> {
+        *self.tokens.get(self.current + distance).unwrap_or_else(|| self.tokens.last().unwrap())
     }
 
     /// Check if the current token matches a kind
@@ -1389,7 +1257,7 @@ impl<'p> Parser<'p> {
         self.peek().kind == kind
     }
 
-    fn consume(&mut self, kind: TokenKind, msg: &str) -> Option<&Token> {
+    fn consume(&mut self, kind: TokenKind, msg: &str) -> Option<Token<'tcx>> {
         let tok = self.peek();
         if tok.kind == kind {
             if kind == TokenKind::T_EOF && self.current != self.tokens.len() - 1 {
@@ -1397,8 +1265,8 @@ impl<'p> Parser<'p> {
             }
             Some(self.advance())
         } else {
-            self.sess.diagnostics.push(Diagnostic::from_single_token(
-                tok,
+            self.diagnostics.push(Diagnostic::from_single_token(
+                &tok,
                 self.current_file,
                 msg,
                 Severity::Error,
@@ -1407,17 +1275,18 @@ impl<'p> Parser<'p> {
         }
     }
 
-    fn advance(&mut self) -> &Token {
+    fn advance(&mut self) -> Token<'tcx> {
         if self.current < self.tokens.len() {
-            let tok = &self.tokens[self.current];
+            let tok = self.tokens[self.current];
             self.current += 1;
             tok
         } else {
-            self.tokens.last().unwrap()
+            *self.tokens.last().unwrap()
         }
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use kagc_lexer::Tokenizer;
@@ -1452,3 +1321,4 @@ mod tests {
         assert_eq!(parser.advance().kind, TokenKind::T_EOF);
     }
 }
+*/

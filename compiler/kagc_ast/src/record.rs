@@ -1,10 +1,13 @@
-use kagc_types::LitTypeVariant;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
+use kagc_types::TyKind;
 
 use crate::Expr;
 
 #[derive(Debug, Clone)]
-pub struct RecordField {
-    pub typ: LitTypeVariant,
-    pub name: String,
-    pub default_value: Option<Expr>
+pub struct RecordField<'tcx> {
+    pub typ: TyKind<'tcx>,
+    pub name: &'tcx str,
+    pub default_value: Option<Expr<'tcx>>
 }

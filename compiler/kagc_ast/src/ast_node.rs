@@ -7,13 +7,9 @@ use kagc_token::{
     FromTokenKind, 
     TokenKind
 };
-use kagc_types::{
-    BTypeComparable, 
-    LitTypeVariant, 
-    TypeSized
-};
+use kagc_types::TyKind;
 
-use crate::{BlockStmt, Expr, Stmt};
+use crate::{BlockStmt, Expr, FuncCallExpr, IfStmt, Stmt};
 
 use super::ASTKind;
 
@@ -110,17 +106,17 @@ impl FromTokenKind<ASTOperation> for ASTOperation {
 /// * `result_type` - The variant of literal type representing the result type of 
 ///   the AST node (`LitTypeVariant`).
 #[derive(Clone, Debug)]
-pub struct AST {
-    pub kind: ASTKind,
+pub struct AST<'tcx> {
+    pub kind: ASTKind<'tcx>,
     pub operation: ASTOperation,
-    pub left: Option<Box<AST>>,
-    pub mid: Option<Box<AST>>,
-    pub right: Option<Box<AST>>,
-    pub result_type: LitTypeVariant,
+    pub left: Option<Box<AST<'tcx>>>,
+    pub mid: Option<Box<AST<'tcx>>>,
+    pub right: Option<Box<AST<'tcx>>>,
+    pub ty: Option<TyKind<'tcx>>,
     pub meta: NodeMeta,
 }
 
-impl AST {
+impl<'tcx> AST<'tcx> {
     pub fn empty() -> Self {
         Self {
             kind: ASTKind::Empty,
@@ -128,17 +124,17 @@ impl AST {
             left: None,
             right: None,
             mid: None,
-            result_type: LitTypeVariant::None,
+            ty: None,
             meta: NodeMeta::none()
         }
     }
 
     pub fn new(
-        kind: ASTKind, 
+        kind: ASTKind<'tcx>, 
         operation: ASTOperation, 
-        left: Option<AST>, 
-        right: Option<AST>, 
-        result_type: LitTypeVariant,
+        left: Option<AST<'tcx>>, 
+        right: Option<AST<'tcx>>, 
+        ty: Option<TyKind<'tcx>>,
     ) -> Self {
         Self {
             kind,
@@ -146,15 +142,15 @@ impl AST {
             left: left.map(Box::new),
             mid: None,
             right: right.map(Box::new),
-            result_type,
+            ty,
             meta: NodeMeta::none()
         }
     }
 
     pub fn create_leaf(
-        kind: ASTKind, 
+        kind: ASTKind<'tcx>, 
         operation: ASTOperation, 
-        result_type: LitTypeVariant,
+        ty: Option<TyKind<'tcx>>,
         meta: NodeMeta
     ) -> Self {
         Self {
@@ -163,18 +159,18 @@ impl AST {
             left: None,
             mid: None,
             right: None,
-            result_type,
+            ty,
             meta
         }
     }
     
     pub fn with_mid(
-        kind: ASTKind, 
+        kind: ASTKind<'tcx>, 
         op: ASTOperation, 
-        left: Option<AST>, 
-        mid: Option<AST>, 
-        right: Option<AST>, 
-        result_type: LitTypeVariant
+        left: Option<AST<'tcx>>, 
+        mid: Option<AST<'tcx>>, 
+        right: Option<AST<'tcx>>, 
+        ty: Option<TyKind<'tcx>>
     ) -> Self {
         Self {
             kind,
@@ -182,18 +178,18 @@ impl AST {
             left: left.map(Box::new),
             mid: mid.map(Box::new),
             right: right.map(Box::new),
-            result_type,
+            ty,
             meta: NodeMeta::none()
         }
     }
 
     pub fn with_meta(
-        kind: ASTKind,
+        kind: ASTKind<'tcx>,
         op: ASTOperation,
-        left: Option<AST>,
-        mid: Option<AST>,
-        right: Option<AST>,
-        result_type: LitTypeVariant,
+        left: Option<AST<'tcx>>,
+        mid: Option<AST<'tcx>>,
+        right: Option<AST<'tcx>>,
+        ty: Option<TyKind<'tcx>>,
         meta: NodeMeta
     ) -> Self {
         Self {
@@ -202,12 +198,12 @@ impl AST {
             left: left.map(Box::new),
             mid: mid.map(Box::new),
             right: right.map(Box::new),
-            result_type,
+            ty,
             meta
         }
     }
 
-    pub fn linearize(&self) -> Vec<&AST> {
+    pub fn linearize(&self) -> Vec<&AST<'tcx>> {
         let mut output: Vec<&AST> = vec![];
         if self.operation == ASTOperation::AST_GLUE {
             if let Some(left) = &self.left {
@@ -223,7 +219,7 @@ impl AST {
         output
     }
 
-    pub fn linearize_mut(&mut self) -> Vec<&mut AST> {
+    pub fn linearize_mut(&mut self) -> Vec<&mut AST<'tcx>> {
         let mut output: Vec<&mut AST> = vec![];
         if self.operation == ASTOperation::AST_GLUE {
             if let Some(left) = &mut self.left {
@@ -258,37 +254,52 @@ impl AST {
         [&self.left, &self.mid, &self.right].into_iter()
     }
 
-    pub fn as_expr(&self) -> Option<&Expr> {
+    pub fn as_expr(&self) -> Option<&Expr<'tcx>> {
         match &self.kind {
             ASTKind::ExprAST(expr) => Some(expr),
             _ => None,
         }
     }
 
-    pub fn as_stmt(&self) -> Option<&Stmt> {
-        match &self.kind {
-            ASTKind::StmtAST(stmt) => Some(stmt),
-            _ => None,
-        }
-    }
-
-    pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt> {
-        match &mut self.kind {
-            ASTKind::StmtAST(stmt) => Some(stmt),
-            _ => None,
-        }
-    }
-
-    pub fn as_expr_mut(&mut self) -> Option<&mut Expr> {
+    pub fn as_expr_mut(&mut self) -> Option<&mut Expr<'tcx>> {
         match &mut self.kind {
             ASTKind::ExprAST(expr) => Some(expr),
             _ => None,
         }
     }
 
-    pub fn expect_block_stmt_mut(&mut self) -> &mut BlockStmt {
+    pub fn as_stmt(&'tcx self) -> Option<&'tcx Stmt<'tcx>> {
+        match &self.kind {
+            ASTKind::StmtAST(stmt) => Some(stmt),
+            _ => None,
+        }
+    }
+
+    pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt<'tcx>> {
+        match &mut self.kind {
+            ASTKind::StmtAST(stmt) => Some(stmt),
+            _ => None,
+        }
+    }
+
+    pub fn expect_block_stmt_mut(&mut self) -> &mut BlockStmt<'tcx> {
         let stmt = self.as_stmt_mut().expect("expected stmt");
         stmt.as_block_mut().expect("expected block stmt")
+    }
+
+    pub fn expect_if_stmt(&mut self) -> &IfStmt {
+        let stmt = self.as_stmt().expect("expected stmt");
+        stmt.as_if().expect("expected if stmt")
+    }
+
+    pub fn expect_if_stmt_mut(&mut self) -> &mut IfStmt {
+        let stmt = self.as_stmt_mut().expect("expected stmt");
+        stmt.as_if_mut().expect("expected if stmt")
+    }
+
+    pub fn expect_function_call_expr_mut(&mut self) -> &mut FuncCallExpr<'tcx> {
+        let expr = self.as_expr_mut().expect("expected expression");
+        expr.as_func_call_mut().expect("expected function call")
     }
 }
 
@@ -304,24 +315,8 @@ macro_rules! contains_ops {
     }};
 }
 
-impl BTypeComparable for AST {
-    fn cmp(&self, other: &AST) -> bool {
-        self.result_type == other.result_type
-    }
-    
-    fn variant(&self) -> LitTypeVariant {
-        self.result_type.clone()
-    }
-}
-
-impl TypeSized for AST {
-    fn type_size(&self) -> usize {
-        self.result_type.size()
-    }
-}
-
 /// `HasSpan` implemented for AST node.
-impl HasSpan for AST {
+impl HasSpan for AST<'_> {
     fn span(&self) -> &Span {
         &self.meta.span
     }

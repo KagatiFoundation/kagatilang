@@ -2,47 +2,48 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_symbol::function::FunctionId;
-use kagc_types::*;
+use kagc_types::LitValue;
+use kagc_types::TyKind;
 
 use super::{ASTOperation, AST};
 
 /// A binary expression AST node.
 #[derive(Clone, Debug)]
-pub struct BinExpr {
+pub struct BinExpr<'tcx> {
     pub operation: ASTOperation,
-    pub left: Box<Expr>,
-    pub right: Box<Expr>,
-    pub result_type: LitTypeVariant,
+    pub left: Box<Expr<'tcx>>,
+    pub right: Box<Expr<'tcx>>,
+    pub ty: TyKind<'tcx>,
 }
 
 /// A widen expression AST node.
 #[derive(Clone, Debug)]
-pub struct WidenExpr {
-    pub from: Box<AST>,
-    pub result_type: LitTypeVariant
+pub struct WidenExpr<'tcx> {
+    pub from: Box<AST<'tcx>>,
+    pub ty: TyKind<'tcx>
 }
 
 /// A identifier expression AST node.
 #[derive(Clone, Debug)]
-pub struct IdentExpr {
+pub struct IdentExpr<'tcx> {
     /// Name of the symbol
-    pub sym_name: String,
+    pub sym_name: &'tcx str,
 
     /// Result type of the symbol
-    pub result_type: LitTypeVariant
+    pub ty: TyKind<'tcx>
 }
 
 #[derive(Clone, Debug)]
-pub struct LitValExpr {
-    pub value: LitType,
-    pub result_type: LitTypeVariant,
+pub struct LitValExpr<'tcx> {
+    pub value: LitValue<'tcx>,
+    pub ty: TyKind<'tcx>
 }
 
 #[derive(Clone, Debug)]
-pub struct SubscriptExpr {
-    pub index: Box<Expr>, // subscript index expression
+pub struct SubscriptExpr<'tcx> {
+    pub index: Box<Expr<'tcx>>, // subscript index expression
     pub symtbl_pos: usize, // position of the symbol inside symbol table that is being subscripted
-    pub result_type: LitTypeVariant
+    pub ty: TyKind<'tcx>
 }
 
 /// Represents the original index of a function argument in the source code.
@@ -52,43 +53,42 @@ pub type ArgIdx = usize;
 /// Represents a function argument, storing both:
 /// - The original argument index (`ArgIdx`) to preserve order.
 /// - The actual expression (`Expr`) representing the argument.
-pub type FuncArg = (ArgIdx, Expr);
-
+pub type FuncArg<'tcx> = (ArgIdx, Expr<'tcx>);
 
 #[derive(Clone, Debug)]
-pub struct FuncCallExpr {
+pub struct FuncCallExpr<'tcx> {
     /// Name of the called function
-    pub symbol_name: String,
+    pub symbol_name: &'tcx str,
 
     pub id: FunctionId,
 
-    pub result_type: LitTypeVariant, // function return type
+    pub ty: TyKind<'tcx>,
     // args
-    pub args: Vec<FuncArg>
+    pub args: Vec<FuncArg<'tcx>>
 }
 
 #[derive(Clone, Debug)]
-pub struct RecordFieldAssignExpr {
-    pub name: String,
-    pub value: Box<Expr>,
+pub struct RecordFieldAssignExpr<'tcx> {
+    pub name: &'tcx str,
+    pub value: Box<Expr<'tcx>>,
     pub offset: usize
 }
 
 #[derive(Clone, Debug)]
-pub struct RecordCreationExpr {
-    pub name: String,
-    pub rec_alias: String,
-    pub fields: Vec<RecordFieldAssignExpr>,
-    pub pool_idx: usize
+pub struct RecordCreationExpr<'tcx> {
+    pub name: &'tcx str,
+    pub rec_alias: &'tcx str,
+    pub fields: Vec<RecordFieldAssignExpr<'tcx>>,
+    pub pool_idx: usize,
 }
 
 #[derive(Debug, Clone)]
-pub struct RecordFieldAccessExpr {
-    pub rec_name: String,
-    pub rec_alias: String,
+pub struct RecordFieldAccessExpr<'tcx> {
+    pub rec_name: &'tcx str,
+    pub rec_alias: &'tcx str,
     // pub field_name: String,
 
-    pub field_chain: Vec<String>,
+    pub field_chain: Vec<&'tcx str>,
 
     /// Relative stack offset.
     /// 
@@ -96,28 +96,28 @@ pub struct RecordFieldAccessExpr {
     /// This field is assigned the value 0(zero) while initializing.
     pub rel_stack_off: usize,
 
-    pub result_type: LitTypeVariant
+    pub ty: TyKind<'tcx>
 }
 
 #[derive(Clone, Debug)]
-pub enum Expr {
-    Binary(BinExpr),
+pub enum Expr<'tcx> {
+    Binary(BinExpr<'tcx>),
     
-    Widen(WidenExpr),
+    Widen(WidenExpr<'tcx>),
     
-    Ident(IdentExpr),
+    Ident(IdentExpr<'tcx>),
     
-    LitVal(LitValExpr),
+    LitVal(LitValExpr<'tcx>),
     
-    Subscript(SubscriptExpr),
+    Subscript(SubscriptExpr<'tcx>),
     
-    FuncCall(FuncCallExpr),
+    FuncCall(FuncCallExpr<'tcx>),
 
-    RecordCreation(RecordCreationExpr),
+    RecordCreation(RecordCreationExpr<'tcx>),
 
-    RecordFieldAssign(RecordFieldAssignExpr),
+    RecordFieldAssign(RecordFieldAssignExpr<'tcx>),
 
-    RecordFieldAccess(RecordFieldAccessExpr),
+    RecordFieldAccess(RecordFieldAccessExpr<'tcx>),
 
     /// Null expression
     Null
@@ -131,17 +131,17 @@ pub enum ExprKind {
     RecordCreation
 }
 
-impl Expr {
-    pub fn result_type(&self) -> LitTypeVariant {
+impl<'tcx> Expr<'tcx> {
+    pub fn result_type(&self) -> TyKind<'tcx> {
         match self {
-            Expr::Binary(bin_expr) => bin_expr.result_type.clone(),
-            Expr::Widen(widen_expr) => widen_expr.result_type.clone(),
-            Expr::Ident(ident_expr) => ident_expr.result_type.clone(),
-            Expr::LitVal(lit_val_expr) => lit_val_expr.result_type.clone(),
-            Expr::Subscript(subscript_expr) => subscript_expr.result_type.clone(),
-            Expr::FuncCall(func_call_expr) => func_call_expr.result_type.clone(),
-            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.result_type.clone(),
-            Expr::RecordCreation(record_creation_expr) => LitTypeVariant::Record{name: record_creation_expr.name.clone()},
+            Expr::Binary(bin_expr) => bin_expr.ty,
+            Expr::Widen(widen_expr) => widen_expr.ty,
+            Expr::Ident(ident_expr) => ident_expr.ty,
+            Expr::LitVal(lit_val_expr) => lit_val_expr.ty,
+            Expr::Subscript(subscript_expr) => subscript_expr.ty,
+            Expr::FuncCall(func_call_expr) => func_call_expr.ty,
+            Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.ty,
+            Expr::RecordCreation(_rec) => todo!(),
             Expr::RecordFieldAssign(_record_field_assign_expr) => todo!(),
             Expr::Null => todo!(),
         }
@@ -154,16 +154,30 @@ impl Expr {
         }
     }
 
-    pub fn as_litval(&self) -> Option<&LitValExpr> {
+    pub fn as_litval(&self) -> Option<&LitValExpr<'tcx>> {
         match self {
             Expr::LitVal(lit_val_expr) => Some(lit_val_expr),
             _ => None
         }
     }
 
-    pub fn as_binary(&self) -> Option<&BinExpr> {
+    pub fn as_binary(&self) -> Option<&BinExpr<'tcx>> {
         match self {
             Expr::Binary(bin) => Some(bin),
+            _ => None
+        }
+    }
+
+    pub fn as_func_call(&self) -> Option<&FuncCallExpr<'tcx>> {
+        match self {
+            Expr::FuncCall(call) => Some(call),
+            _ => None
+        }
+    }
+
+    pub fn as_func_call_mut(&mut self) -> Option<&mut FuncCallExpr<'tcx>> {
+        match self {
+            Expr::FuncCall(call) => Some(call),
             _ => None
         }
     }

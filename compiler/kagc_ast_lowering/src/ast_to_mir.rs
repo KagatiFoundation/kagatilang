@@ -2,12 +2,12 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use core::panic;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::vec;
 
 use kagc_ast::*;
-use kagc_const::pool::PoolIdx;
+use kagc_const::pool::{ConstPool, PoolIdx};
+use kagc_scope::ctx::ScopeCtx;
+use kagc_scope::scope::ScopeId;
 use kagc_symbol::*;
 use kagc_backend::reg::*;
 use kagc_types::*;
@@ -19,7 +19,6 @@ use kagc_mir::mir_builder::MirBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
 use kagc_mir::builtin::BuiltinFn;
-use kagc_ctx::CompilerCtx;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_symbol::function::FunctionInfo;
 use kagc_utils::bug;
@@ -35,24 +34,26 @@ type StmtLoweringResult = Result<BlockId, Diagnostic>;
 
 /// `AstToMirLowerer` is responsible for transforming the Abstract 
 /// Syntax Tree (AST) into the Mid-Level Intermediate Representation (MIR).
-pub struct AstToMirLowerer {
+pub struct AstToMirLowerer<'a, 'tcx> {
     /// A reference-counted, mutable reference to the global 
     /// compiler context. Holds shared state like symbol tables, 
     /// type info, and other data needed during IR lowering.
-    ctx: Rc<RefCell<CompilerCtx>>,
+    scope: &'tcx ScopeCtx<'tcx>,
+    const_pool: &'a ConstPool,
 
     /// Public MIR builder used to generate MIR instructions, manage
     /// basic blocks, and keep track of the current insertion point.
     pub ir_builder: MirBuilder,
 
     /// Current function that is being parsed
-    current_function: Option<FunctionInfo>,
+    current_function: Option<FunctionInfo<'tcx>>,
 }
 
-impl AstToMirLowerer {
-    pub fn new(ctx: Rc<RefCell<CompilerCtx>>) -> Self {
+impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
+    pub fn new(scope: &'tcx ScopeCtx<'tcx>, const_pool: &'a ConstPool) -> Self {
         Self {
-            ctx,
+            scope,
+            const_pool,
             current_function: None,
             ir_builder: MirBuilder::default()
         }
@@ -106,7 +107,7 @@ impl AstToMirLowerer {
 
     fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
         let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
-            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(func_decl.scope_id);
+            self.scope.enter_scope(ScopeId(func_decl.scope_id));
             (func_decl.func_id, func_decl.scope_id)
         } else {
             bug!("expected FuncStmt but found {:?}", ast);
@@ -114,18 +115,16 @@ impl AstToMirLowerer {
 
         let func_name = self.get_func_name(func_id).expect("Function name error!");
         let mut store_class = StorageClass::GLOBAL;
-        if let Some(finfo) = self.ctx.borrow().scope.borrow().lookup_fn_by_name(func_name.as_str()) {
+        if let Some(finfo) = self.scope.lookup_fn_by_name(func_name.as_str()) {
             self.current_function = Some(finfo.clone());
             store_class = finfo.storage_class;
         }
 
         let mut fn_ctx: FunctionContext = FunctionContext::new();
 
-        let func_ir_params = self.ctx
-            .borrow()
+        let func_ir_params = self
             .scope
-            .borrow()
-            .collect_params(func_scope)
+            .collect_params(ScopeId(func_scope))
             .iter()
             .map(|&sym| {
                 let param_stack_slot = fn_ctx.alloc_local_slot();
@@ -139,7 +138,7 @@ impl AstToMirLowerer {
         let func_anchor = self.ir_builder.create_function(
             func_name.clone(),
             func_ir_params,
-            IRType::from(ast.result_type.clone()),
+            IRType::from(ast.ty.unwrap_or_else(|| bug!("fix this man"))),
             store_class
         );
 
@@ -168,7 +167,7 @@ impl AstToMirLowerer {
 
         self.current_function = None;
         // exit function's scope
-        self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
+        self.scope.exit_scope();
         Ok(current_block_id)
     }
 
@@ -190,7 +189,7 @@ impl AstToMirLowerer {
             fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
             let var_decl_value = self.lower_expression_ast(var_ast.left.as_mut().unwrap(), fn_ctx)?;
 
-            if !var_ast.result_type.is_gc_alloced() {
+            if !var_ast.ty.unwrap().is_gc_alloced() { // unsafe unwrap call
                 let var_stack_off = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
                     IRInstruction::Store { 
@@ -198,13 +197,13 @@ impl AstToMirLowerer {
                         address: IRAddress::StackSlot(var_stack_off) 
                     }
                 );
-                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off.0);
+                fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
             }
             else {
                 let var_stack_off = fn_ctx.alloc_local_slot() - StackSlotId(1);
                 // Subtract 1 from the slot ID because a heap-allocated variable occupies
                 // one stack slot for the object’s base pointer
-                fn_ctx.var_offsets.insert(var_decl.sym_name.clone(), var_stack_off.0);
+                fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
             }
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
@@ -259,7 +258,7 @@ impl AstToMirLowerer {
 
     fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         match expr.value.result_type() {
-            LitTypeVariant::I32 | LitTypeVariant::I64 => {
+            TyKind::I64 => {
                 let call_result_value_id = self.ir_builder.occupy_value_id();
                 let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
                 self.ir_builder.inst(
@@ -278,13 +277,13 @@ impl AstToMirLowerer {
                 );
                 Ok(stack_slot)
             },
-            LitTypeVariant::PoolStr => {
+            TyKind::PoolStr => {
                 let lit_val_expr = expr.value.as_litval().unwrap_or_else(|| {
                     bug!("type was PoolStr but the expression itself is not of type LitValExpr")
                 });
                 self.load_str_from_const_pool(lit_val_expr, fn_ctx)
             },
-            LitTypeVariant::RawStr => {
+            TyKind::Str => {
                 let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
                 let stack_slot = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
@@ -302,7 +301,7 @@ impl AstToMirLowerer {
     fn lower_record_field_access_expr(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let rec_stack_off = *fn_ctx
             .var_offsets
-            .get(&access.rec_alias)
+            .get(access.rec_alias)
             .unwrap_or_else(|| bug!("record's stack offset not found"));
 
         let base_pointer_value = self.ir_builder.create_load(
@@ -327,11 +326,9 @@ impl AstToMirLowerer {
     // returns the id of value and the value's size
     fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         match expr.value {
-            LitType::PoolStr(pool_idx) => {
+            LitValue::PoolStr(pool_idx) => {
                 let const_value = self.ir_builder.occupy_value_id();
                 let const_size = self
-                    .ctx
-                    .borrow()
                     .const_pool
                     .size(pool_idx)
                     .unwrap_or_else(|| bug!("cannot find const entry"));
@@ -366,7 +363,7 @@ impl AstToMirLowerer {
 
     fn load_record_from_const_pool(&mut self, pool_idx: PoolIdx, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         let const_value_id = self.ir_builder.occupy_value_id();
-        let const_size = self.ctx.borrow().const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
+        let const_size = self.const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
         self.ir_builder.inst(
             IRInstruction::LoadConst { 
                 label_id: pool_idx, 
@@ -399,11 +396,11 @@ impl AstToMirLowerer {
             func_call_args.push(arg_value_id);
         }
 
-        if !matches!(func_call_expr.result_type, LitTypeVariant::None | LitTypeVariant::Void) {
+        if !matches!(func_call_expr.ty, TyKind::None | TyKind::Void) {
             let call_result_value = self.ir_builder.occupy_value_id();
             self.ir_builder.inst(
                 IRInstruction::Call { 
-                    func: func_call_expr.symbol_name.clone(), 
+                    func: func_call_expr.symbol_name.to_string(), 
                     args: func_call_args,
                     result: Some(call_result_value)
                 }
@@ -413,7 +410,7 @@ impl AstToMirLowerer {
         else {
             self.ir_builder.inst(
                 IRInstruction::Call { 
-                    func: func_call_expr.symbol_name.clone(), 
+                    func: func_call_expr.symbol_name.to_string(), 
                     args: func_call_args,
                     result: None
                 }
@@ -423,22 +420,18 @@ impl AstToMirLowerer {
     }
 
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        if let LitType::PoolStr(_) = &lit_expr.value {
+        if let LitValue::PoolStr(_) = &lit_expr.value {
             let str_stack_slot = self.load_str_from_const_pool(lit_expr, fn_ctx)?;
             return Ok(self.ir_builder.create_load(
                 IRAddress::StackSlot(str_stack_slot)
             ));
         }
-        match lit_expr.result_type {
-            LitTypeVariant::I32 => {
-                let const_value = *lit_expr.value.unwrap_i32().expect("No i32 value!") as i64;
-                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
-            }
-            LitTypeVariant::I64 => {
+        match lit_expr.ty {
+            TyKind::I64 => {
                 let const_value = *lit_expr.value.unwrap_i64().expect("No i64 value!");
                 Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
-            LitTypeVariant::U8 => {
+            TyKind::U8 => {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
                 Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
@@ -447,13 +440,13 @@ impl AstToMirLowerer {
     }
 
     fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let sym: Symbol = self.get_symbol_local_or_global(&ident_expr.sym_name).unwrap();
+        let sym = self.get_symbol_local_or_global(ident_expr.sym_name).unwrap();
         let sym_off = *fn_ctx
             .var_offsets
-            .get(&ident_expr.sym_name)
+            .get(ident_expr.sym_name)
             .unwrap_or_else(|| bug!("undefined symbol '{name}'", name = ident_expr.sym_name));
 
-        let reg_sz: RegSize = sym.lit_type.to_reg_size();
+        let reg_sz: RegSize = sym.ty.get().to_reg_size();
         assert_ne!(reg_sz, 0);
         let load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(sym_off)));
         Ok(load_value_id)
@@ -485,7 +478,7 @@ impl AstToMirLowerer {
                     .get_return_label()
                     .expect("Function's return block is not set! Aborting...");
 
-                if !curr_fn.return_type.is_void() {
+                if !curr_fn.ty.is_void() {
                     let return_value_id = self.lower_expression_ast(
                         ret_stmt.left.as_mut().unwrap(), 
                         fn_ctx
@@ -540,7 +533,7 @@ impl AstToMirLowerer {
 
     fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
-            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(if_stmt.scope_id);
+            self.scope.enter_scope(ScopeId(if_stmt.scope_id));
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
@@ -583,7 +576,7 @@ impl AstToMirLowerer {
             }
         }
         // exit if-scope
-        self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
+        self.scope.exit_scope();
         
         if let Some(right_tree) = &mut ast.right {
             // dump 'else' block's code
@@ -615,7 +608,7 @@ impl AstToMirLowerer {
 
     fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::Scoping(scope_stmt)) = &ast.kind {
-            self.ctx.borrow_mut().scope.borrow_mut().enter_scope(scope_stmt.scope_id);
+            self.scope.enter_scope(ScopeId(scope_stmt.scope_id));
         }
         else {
             bug!("provided AST tree is not of type 'AST_ELSE'");
@@ -638,7 +631,7 @@ impl AstToMirLowerer {
             }
         }
 
-        self.ctx.borrow_mut().scope.borrow_mut().exit_scope();
+        self.scope.exit_scope();
         Ok(last_block_id)
     }
 
@@ -651,10 +644,11 @@ impl AstToMirLowerer {
     }
 
     fn get_func_name(&mut self, index: usize) -> Option<String> {
-        self.ctx.borrow().scope.borrow().lookup_fn(index).map(|func| func.name.clone())
+        self.scope.lookup_fn(index).map(|func| func.name.to_string())
     }
 
-    fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Symbol> {
-        self.ctx.borrow().scope.borrow().deep_lookup(sym_name).cloned()
+    fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Sym<'tcx>> {
+        // self.scope.deep_lookup(sym_name).cloned()
+        None
     }
 }

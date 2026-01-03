@@ -1,36 +1,37 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
-use std::rc::Rc;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 use kagc_ast::{import::Import, ASTKind, ASTOperation, Stmt, AST};
-use kagc_token::Token;
 
-use crate::source::{
-    ParsingStage, 
-    SourceFile
-};
+use crate::source::SourceFile;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ParsingStageError {
+    FileNotFound,
+    TokenizationError,
+    ParsingError,
+    FileReadingError,
+    None,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ParsingStage {
+    /// Nothing has been done till now. Even the file hasn't
+    /// been loaded into memory.
+    Unprocessed,
+
+    /// File has been loaded into memory.
+    Loaded,
+
+    /// Tokens has been generated for this file.
+    Tokenized,
+
+    Parsed,
+
+    /// Some kind of error has occured during reading this file
+    /// or during token generation.
+    Error(ParsingStageError),
+}
 
 /// Represents a single source file's state throughout the compilation pipeline.
 ///
@@ -57,22 +58,20 @@ use crate::source::{
 /// Multiple `CompilationUnit`s are managed together by the compiler to support
 /// multi-file projects, incremental compilation, and dependency resolution.
 #[derive(Debug, Clone)]
-pub struct CompilationUnit {
-    pub source: SourceFile,
+pub struct CompilationUnit<'tcx> {
+    pub source: SourceFile<'tcx>,
     pub meta_id: usize,
-    pub imports: Vec<Import>,
+    pub imports: Vec<Import<'tcx>>,
     pub stage: ParsingStage,
-    pub tokens: Option<Rc<Vec<Token>>>,
-    pub asts: Vec<AST>
+    pub asts: Vec<AST<'tcx>>
 }
 
-impl CompilationUnit {
-    pub fn from_source(source: SourceFile, meta_id: usize) -> CompilationUnit {
+impl<'tcx> CompilationUnit<'tcx> {
+    pub fn from_source(source: SourceFile<'tcx>, meta_id: usize) -> CompilationUnit<'tcx> {
         Self {
             source,
             meta_id,
             stage: ParsingStage::Unprocessed,
-            tokens: None,
             imports: vec![],
             asts: vec![],
         }
@@ -86,7 +85,7 @@ impl CompilationUnit {
                 ASTOperation::AST_IMPORT => {
                     if let ASTKind::StmtAST(Stmt::Import(import)) = &ast.kind {
                         imports.push(
-                            Import { path: import.path.clone() }
+                            Import { path: import.path }
                         );
                     }
                 },

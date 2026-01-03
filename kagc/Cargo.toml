@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 itertools = "0.13.0"
 lazy_static = "1.4.0"
+typed-arena = "2.0.2"
 
 kagc_backend = { path = "../compiler/kagc_backend" }
 kagc_ast = { path = "../compiler/kagc_ast" }
@@ -27,6 +28,8 @@ kagc_lir = { path = "../compiler/kagc_lir" }
 kagc_comp_unit = { path = "../compiler/kagc_comp_unit" }
 kagc_scope = { path = "../compiler/kagc_scope" }
 kagc_utils = { path = "../compiler/kagc_utils" }
+kagc_errors = { path = "../compiler/kagc_errors" }
+kagc_const = { path = "../compiler/kagc_const" }
 runtime = { path = "../runtime" }
 
 [build-dependencies]

@@ -28,25 +28,24 @@ use kagc_comp_unit::source_map::SourceMap;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_scope::ctx::ScopeCtx;
+use kagc_symbol::Sym;
 
-use crate::builder::CompilerCtxBuilder;
-
-#[derive(Debug)]
-pub struct CompilerCtx {
+pub struct CompilerCtx<'tcx> {
     pub const_pool: ConstPool,
 
     pub diagnostics: DiagnosticBag,
 
-    pub source_map: Rc<RefCell<SourceMap>>,
-    pub scope: Rc<RefCell<ScopeCtx>>
+    pub source_map: Rc<RefCell<SourceMap<'tcx>>>,
+    pub scope: Rc<RefCell<ScopeCtx<'tcx>>>
 }
 
-impl CompilerCtx {
+impl<'tcx> CompilerCtx<'tcx> {
     pub fn new(
-        scope_ctx: Rc<RefCell<ScopeCtx>>, 
-        source_map: Rc<RefCell<SourceMap>>,
+        scope_ctx: Rc<RefCell<ScopeCtx<'tcx>>>, 
+        source_map: Rc<RefCell<SourceMap<'tcx>>>,
         const_pool: ConstPool,
-        diagnostics: DiagnosticBag
+        diagnostics: DiagnosticBag,
+        sym_arena: &'tcx typed_arena::Arena<Sym<'tcx>>
     ) -> Self {
         Self {
             const_pool,
@@ -54,11 +53,5 @@ impl CompilerCtx {
             source_map,
             scope: scope_ctx
         }
-    }
-}
-
-impl Default for CompilerCtx {
-    fn default() -> Self {
-        CompilerCtxBuilder::new(ScopeCtx::default()).build()
     }
 }

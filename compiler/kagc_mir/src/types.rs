@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_types::LitTypeVariant;
+use kagc_types::{LitTypeVariant, TyKind};
 
 pub type Label<'a> = &'a str;
 
@@ -27,6 +27,17 @@ impl From<LitTypeVariant> for IRType {
             LitTypeVariant::Void => IRType::Void,
             LitTypeVariant::RawStr => IRType::RawStr,
             _ => unimplemented!("{value:#?}"),
+        }
+    }
+}
+
+impl From<TyKind<'_>> for IRType {
+    fn from(value: TyKind<'_>) -> Self {
+        match value {
+            TyKind::I64 => IRType::I64,
+            TyKind::Void => IRType::Void,
+            TyKind::Str => IRType::RawStr,
+            _ => unimplemented!("{value:#?}")
         }
     }
 }

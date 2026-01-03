@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::cell::RefCell;
+
 use kagc_comp_unit::source_map::{FileId, SourceMap};
 use kagc_span::span::{SourcePos, Span};
 use kagc_token::Token;
@@ -28,7 +30,7 @@ pub struct Diagnostic {
 impl Diagnostic {
     pub fn from_single_token(tok: &Token, file: FileId, msg: &str, severity: Severity) -> Self {
         let start_pos = tok.pos;
-        let lexeme = tok.lexeme.clone();
+        let lexeme = tok.lexeme;
         let total_span = Span::new(
             file.0, 
             SourcePos {
@@ -64,7 +66,7 @@ impl Diagnostic {
         eprintln!("{ANSI_COLOR_RED}{:?}{ANSI_COLOR_RESET}: {}", self.severity, self.message);
 
         // print file path with line and column
-        eprintln!(" --> {}:{}:{}", source_file.meta.abs_path, line_num, col_num + 1);
+        eprintln!(" --> {}:{}:{}", source_file.meta.abs_path.to_str().unwrap(), line_num, col_num + 1);
 
         // separator
         eprintln!("  |");
@@ -81,29 +83,29 @@ impl Diagnostic {
 
 #[derive(Debug, Default, Clone)]
 pub struct DiagnosticBag {
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: RefCell<Vec<Diagnostic>>,
 }
 
 impl DiagnosticBag {
-    pub fn push(&mut self, diag: Diagnostic) {
-        self.diagnostics.push(diag);
+    pub fn push(&self, diag: Diagnostic) {
+        self.diagnostics.borrow_mut().push(diag);
     }
 
-    pub fn extend(&mut self, other: DiagnosticBag) {
-        self.diagnostics.extend(other.diagnostics);
+    pub fn extend(&self, other: DiagnosticBag) {
+        self.diagnostics.borrow_mut().extend(other.diagnostics.borrow().clone());
     }
 
     pub fn has_errors(&self) -> bool {
-        self.diagnostics.iter().any(|d| matches!(d.severity, Severity::Error))
+        self.diagnostics.borrow().iter().any(|d| matches!(d.severity, Severity::Error))
     }
 
     pub fn report_all(&self, source_map: &SourceMap) {
-        for diag in &self.diagnostics {
+        for diag in self.diagnostics.borrow().iter() {
             diag.report(source_map);
         }
     }
 
-    pub fn clear(&mut self) {
-        self.diagnostics.clear();
+    pub fn clear(&self) {
+        self.diagnostics.borrow_mut().clear();
     }
 }

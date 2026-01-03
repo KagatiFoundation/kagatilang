@@ -1,31 +1,10 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 #![allow(non_camel_case_types)]
 use std::str::FromStr;
 
-use kagc_types::{LitType, LitTypeVariant};
+use kagc_types::{LitValue, LitTypeVariant};
 
 /// Every keyword and token supported by the C standard is listed below.
 #[derive(Copy, Clone, PartialEq, Hash, Eq, Debug)]
@@ -218,15 +197,15 @@ impl FromTokenKind<LitTypeVariant> for LitTypeVariant {
     }
 }
 
-impl FromTokenKind<LitType> for LitType {
-    fn from_token_kind(tk: TokenKind) -> Option<LitType> {
+impl<'tcx> FromTokenKind<LitValue<'tcx>> for LitValue<'tcx> {
+    fn from_token_kind(tk: TokenKind) -> Option<LitValue<'tcx>> {
         match tk {
-            TokenKind::T_INT_NUM => Some(LitType::I32(0)),
-            TokenKind::T_CHAR => Some(LitType::U8(0)),
-            TokenKind::T_DOUBLE_NUM => Some(LitType::F64(0.0)),
-            TokenKind::T_LONG_NUM => Some(LitType::I64(0)),
-            TokenKind::T_STRING => Some(LitType::PoolStr(0)),
-            TokenKind::KW_VOID => Some(LitType::Void),
+            TokenKind::T_INT_NUM => Some(LitValue::I32(0)),
+            TokenKind::T_CHAR => Some(LitValue::U8(0)),
+            TokenKind::T_DOUBLE_NUM => Some(LitValue::F64(0.0)),
+            TokenKind::T_LONG_NUM => Some(LitValue::I64(0)),
+            TokenKind::T_STRING => Some(LitValue::PoolStr(0)),
+            TokenKind::KW_VOID => Some(LitValue::Void),
             _ => None,
         }
     }

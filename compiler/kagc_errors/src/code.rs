@@ -3,6 +3,9 @@ pub enum ErrCode {
     /// Missing semicolon
     SYN1000     = 1000,
 
+    /// Invalid numeric type
+    SYN1001     = 1001,
+
     /// Symbol not found
     SEM2000     = 2000,
 

@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
-use kagc_ctx::CompilerCtx;
 use kagc_mir::block::{IRBasicBlock, Terminator};
 use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::{FunctionSignature, IRFunction};
@@ -21,7 +18,6 @@ use kagc_lir::vreg::VRegMapper;
 #[derive(Debug, Default)]
 pub struct MirToLirLowerer {
     vreg_mapper: VRegMapper,
-    compiler_cx: Rc<RefCell<CompilerCtx>>
 }
 
 impl MirToLirLowerer {

@@ -1,3 +1,3 @@
-mod record_registery;
+mod record_table;
 
-pub use record_registery::*;
+pub use record_table::*;

@@ -3,7 +3,6 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use crate::source::FileMeta;
 
@@ -13,14 +12,14 @@ pub struct SourceFileLoader;
 
 impl SourceFileLoader {
     /// Loads a file from disk and returns a SourceFile.
-    pub fn load(path: &PathBuf) -> std::io::Result<SourceFile> {
+    pub fn load<'tcx>(path: &PathBuf, arena: &'tcx typed_arena::Arena<String>) -> std::io::Result<SourceFile<'tcx>> {
         let content = fs::read_to_string(path)?;
-
+        let alloced_str = arena.alloc(content);
         Ok(SourceFile {
-            content: Rc::new(content),
+            content: alloced_str,
             meta: FileMeta {
                 name: path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-                abs_path: path.to_string_lossy().to_string()
+                abs_path: PathBuf::from(path)
             }
         })
     }

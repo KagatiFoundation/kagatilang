@@ -4,38 +4,26 @@
 use super::{Expr, Stmt};
 
 #[derive(Clone, Debug)]
-pub enum ASTKind {
-    StmtAST(Stmt),
-    ExprAST(Expr),
+pub enum ASTKind<'tcx> {
+    StmtAST(Stmt<'tcx>),
+    ExprAST(Expr<'tcx>),
     Empty
 }
 
-impl AsRef<ASTKind> for ASTKind {
-    fn as_ref(&self) -> &ASTKind {
-        self
-    }
-}
-
-impl AsMut<ASTKind> for ASTKind {
-    fn as_mut(&mut self) -> &mut ASTKind {
-        self
-    }
-}
-
-impl ASTKind {
+impl<'tcx> ASTKind<'tcx> {
     /// Checks if the ASTKind is an expression variant.
     pub fn is_expr(&self) -> bool {
         matches!(self, ASTKind::ExprAST(_))
     }
 
-    pub fn expr(self) -> Option<Expr> {
+    pub fn expr(self) -> Option<Expr<'tcx>> {
         match self {
             Self::ExprAST(expr) => Some(expr),
             _ => None
         }
     }
 
-    pub fn as_expr(&self) -> Option<&Expr> {
+    pub fn as_expr(&self) -> Option<&Expr<'tcx>> {
         if let Self::ExprAST(expr) = self {
             Some(expr)
         } 
@@ -44,7 +32,7 @@ impl ASTKind {
         }
     }
 
-    pub fn as_expr_mut(&mut self) -> Option<&mut Expr> {
+    pub fn as_expr_mut(&mut self) -> Option<&mut Expr<'tcx>> {
         if let Self::ExprAST(expr) = self {
             Some(expr)
         } 
@@ -58,7 +46,7 @@ impl ASTKind {
         matches!(self, ASTKind::StmtAST(_))
     }
 
-    pub fn stmt(self) -> Option<Stmt> {
+    pub fn stmt(self) -> Option<Stmt<'tcx>> {
         match self {
             Self::StmtAST(stmt) => Some(stmt),
             _ => None
@@ -74,36 +62,12 @@ impl ASTKind {
         }
     }
 
-    pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt> {
+    pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt<'tcx>> {
         if let Self::StmtAST(stmt) = self {
             Some(stmt)
         } 
         else {
             None
-        }
-    }
-
-    /// Unwraps the ASTKind, returning the contained statement.
-    ///
-    /// # Panics
-    /// Panics if the ASTKind is not a statement kind.
-    #[deprecated]
-    pub fn unwrap_stmt(self) -> Stmt {
-        match self {
-            Self::StmtAST(stmt) => stmt,
-            _ => panic!("ASTKind is not a statement kind!")
-        }
-    }
-
-    /// Unwraps the ASTKind, returning the contained expression.
-    ///
-    /// # Panics
-    /// Panics if the ASTKind is not an expression kind.
-    #[deprecated]
-    pub fn unwrap_expr(self) -> Expr {
-        match self {
-            Self::ExprAST(expr) => expr,
-            _ => panic!("ASTKind is not an expression kind!")
         }
     }
 }

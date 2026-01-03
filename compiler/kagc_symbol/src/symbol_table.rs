@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::slice::{Iter, IterMut};
-use crate::{sym::SymbolTrait, STableLookupKey};
+use std::{cell::RefCell, collections::HashMap, slice::{Iter, IterMut}};
+use crate::{STableLookupKey, Sym, sym::SymbolTrait};
 
 /// Maximum number of symbols that can be stored in the symbol table.
 pub const NSYMBOLS: usize = 1024;
@@ -110,6 +110,37 @@ impl<T: SymbolTrait + Clone> Symtable<T> {
 
     pub fn count(&self) -> usize {
         self.syms.len()
+    }
+}
+
+pub struct SymTable<'tcx> {
+    arena: &'tcx typed_arena::Arena<Sym<'tcx>>,
+    pub symbols: RefCell<HashMap<&'tcx str, &'tcx Sym<'tcx>>>
+}
+
+impl<'tcx> SymTable<'tcx> {
+    pub fn new(arena: &'tcx typed_arena::Arena<Sym<'tcx>>) -> Self {
+        Self {
+            arena,
+            symbols: RefCell::new(HashMap::new())
+        }
+    }
+
+    pub fn add(&self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+        let mut syms = self.symbols.borrow_mut();
+        if let Some(existing) = syms.get(sym.name) {
+            return Err(*existing);
+        }
+        
+        let alloced = self.arena.alloc(sym);
+        syms.insert(alloced.name, alloced);
+        Ok(alloced)
+    }
+
+    pub fn get(&'tcx self, name: &str) -> Option<&'tcx Sym<'tcx>> {
+        let syms = self.symbols.borrow();
+        let sym = syms.get(name)?;
+        Some(sym)
     }
 }
 

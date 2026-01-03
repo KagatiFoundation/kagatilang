@@ -1,92 +1,111 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
-use kagc_comp_unit::CompilationUnit;
 use kagc_comp_unit::ImportResolver;
-use kagc_comp_unit::source_map::FileId;
-use kagc_ctx::builder::CompilerCtxBuilder;
-use kagc_ctx::CompilerCtx;
+use kagc_comp_unit::source_map::{FileId, SourceMap};
+use kagc_const::pool::ConstPool;
+use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_mir::module::MirModule;
 use kagc_lexer::Tokenizer;
-use kagc_ast_lowering::AstToMirLowerer;
-use kagc_parser::builder::ParserBuilder;
-use kagc_parser::session::ParserSession;
-use kagc_scope::ctx::builder::ScopeCtxBuilder;
-use kagc_scope::manager::ScopeManager;
-use kagc_scope::scope::Scope;
-use kagc_sema::resolver::Resolver;
-use kagc_sema::SemanticAnalyzer;
-use kagc_utils::bug;
+use kagc_parser::Parser;
+use kagc_parser::options::ParserOptions;
+use kagc_scope::ctx::ScopeCtx;
+use kagc_types::str_interner::StringInterner;
 
-#[derive(Debug, Clone)]
-pub struct CompilerPipeline {
-    pub ctx: Rc<RefCell<CompilerCtx>>,
-    units: HashMap<String, CompilationUnit>,
+use crate::comp_unit::CompUnit;
+
+pub struct CompilerPipeline<'tcx> {
+    units: HashMap<String, CompUnit<'tcx>>,
     compiler_order: Vec<String>,
+    
+    diagnostics: &'tcx DiagnosticBag,
+    const_pool: &'tcx ConstPool,
+    scope_ctx: &'tcx ScopeCtx<'tcx>,
+    source_map: &'tcx SourceMap<'tcx>,
+    
+    str_interner: &'tcx StringInterner<'tcx>,
+    str_arena: &'tcx typed_arena::Arena<String>
 }
 
-impl CompilerPipeline {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        let scope_ctx = ScopeCtxBuilder::new()
-            .scope_manager({
-                let mut scope_mgr: ScopeManager = ScopeManager::default();
-                scope_mgr.push((0, Scope::default())); // root scope
-                scope_mgr
-            })
-            .scope_id_counter(1) // since zero(0) is for the root scope
-            .build();
-
-        let ctx = CompilerCtxBuilder::new(scope_ctx).build();
-
+impl<'tcx> CompilerPipeline<'tcx> {
+    pub fn new(
+        scope_ctx: &'tcx ScopeCtx<'tcx>,
+        str_interner: &'tcx StringInterner<'tcx>,
+        diagnostics: &'tcx DiagnosticBag,
+        source_map: &'tcx SourceMap<'tcx>,
+        const_pool: &'tcx ConstPool
+    ) -> Self {
         Self {
-            ctx: Rc::new(RefCell::new(ctx)),
             compiler_order: vec![],
             units: HashMap::new(),
+            diagnostics,
+            const_pool,
+            scope_ctx,
+            source_map,
+            str_interner,
+            str_arena: str_interner.arena
         }
     }
-}
 
-impl CompilerPipeline {
-    pub fn add_unit(&mut self, path: String, unit: CompilationUnit) {
-        self.units.insert(path, unit);
+    fn compile_all(&self) {
+
     }
 
-    pub fn has_unit(&self, path: &str) -> bool {
-        self.units.contains_key(path)
+    fn collect_compilable_files(&self) {
+
+    }
+
+    fn parse_and_register_symbols(&self) {
+
     }
 
     pub fn compile(&mut self, entry_file: &str) -> Result<(), std::io::Error> {
-        let unit = self.compile_unit_recursive(entry_file)?.unwrap();
+        if self.units.contains_key(entry_file) {
+           return Ok(());
+        }
+        
+        let Some(unit) = self.compile_unit_recursive(entry_file) else {
+            panic!("Could not parse file '{entry_file}'");
+        };
+
         self.units.insert(entry_file.to_string(), unit);
         self.compiler_order.push(entry_file.to_string());
 
-        // Semantic analyzer
-        let mut analyzer = SemanticAnalyzer::new(self.ctx.clone());
-        // Symbol resolver
-        let mut resolv = Resolver::new(self.ctx.clone());
-        let mut modules: Vec<MirModule> = vec![];
+        // symbol resolver
+        // let mut resolver = Resolver::new(
+        //     self.scope_ctx, 
+        //     &mut self.const_pool, 
+        //     &self.diagnostics,
+        //     &mut asts
+        // );
+
+        // type checker
+        // let mut analyzer = TypeChecker::new(self.scope_ctx, &self.diagnostics);
+
+        // let mut modules: Vec<MirModule> = vec![];
+        
         for unit_file in &self.compiler_order {
+            // resolver.resolve(&mut asts);
+
+            /*
             if let Some(unit) = self.units.get_mut(unit_file) {
                 // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
                 // know which file is currently being processed
-                self.ctx.borrow_mut().source_map.borrow_mut().current = FileId(unit.meta_id);
+                self.source_map.borrow_mut().current = FileId(unit.meta_id);
                 resolv.resolve(&mut unit.asts);
                 analyzer.start_analysis(&mut unit.asts);
 
-                if self.ctx.borrow().diagnostics.has_errors() {
-                    println!("{:#?}", self.ctx.borrow().diagnostics);
+                if self.diagnostics.has_errors() {
+                    println!("{:#?}", self.diagnostics);
                     // self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().source_map, unit);
                     std::process::exit(1)
                 }
 
                 // AST to IR generator
-                let mut lowerer = AstToMirLowerer::new(self.ctx.clone());
+                let mut lowerer = AstToMirLowerer::new(&self.scope_ctx, &self.const_pool);
                 if lowerer.lower_irs(&mut unit.asts).is_ok() {
                     let mir_module = lowerer.ir_builder.build();
                     modules.push(mir_module);
@@ -95,61 +114,77 @@ impl CompilerPipeline {
                     bug!("cannot lower MIR into LIR");
                 }
             }
+        */
         }
-        self.compile_mir_modules_into_asm(&modules);
+        // self.compile_mir_modules_into_asm(&modules);
         Ok(())
     }
 
-    fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
-        let mut cg = Aarch64CodeGenerator::new(self.ctx.clone());
+    fn compile_unit_recursive(&mut self, file_path: &str) -> Option<CompUnit<'tcx>> {
+        let Ok(file) = ImportResolver::resolve(
+            file_path, 
+            self.str_arena
+        )
+        else {
+            panic!("File not found: '{file_path}'");
+        };
+        let file_id = self.source_map.insert(file);
+        Self::tokenize_and_parse(
+            self.source_map, 
+            self.diagnostics, 
+            self.str_interner, 
+            file_id
+        )
+    }
+
+    fn tokenize_and_parse(
+        source_map: &'tcx SourceMap<'tcx>, 
+        diagnostics: &'tcx DiagnosticBag, 
+        str_interner: &'tcx StringInterner<'tcx>,
+        file_id: FileId,
+    ) -> Option<CompUnit<'tcx>> {
+        let Some(source_file) = source_map.get(file_id) else {
+            panic!("Invalid file id '{file_id:#?}'");
+        };
+
+        let mut lexer = Tokenizer::new(
+            diagnostics, 
+            str_interner
+        );
+        let tokens = lexer.tokenize(source_file.content);
+
+        let mut parser = Parser::new(
+            ParserOptions { }, 
+            diagnostics, 
+            tokens
+        );
+        let asts = parser.parse();
+
+        if diagnostics.has_errors() {
+            diagnostics.extend(parser.diagnostics.clone());
+            // diagnostics.report_all(&self.source_map);
+            println!("{:#?}", diagnostics);
+            std::process::exit(1);
+        }
+
+        let unit = CompUnit { asts };
+        let imports = unit.extract_imports();
+
+        for import in &imports {
+        //     if let Some(im_unit) = self.compile_unit_recursive(import)? {
+        //         self.units.insert(import.path.to_string(), im_unit);
+        //         self.compiler_order.push(import.path.to_string());
+        //     }
+        }
+
+        Some(unit)
+    }
+
+    fn _compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
+        let mut cg = Aarch64CodeGenerator::new(self.const_pool);
         for module in modules.iter() {
             cg.generate_module_code(module);
         }
         cg.dump_globals();
-    }
-
-    fn compile_unit_recursive(&mut self, file_path: &str) -> Result<Option<CompilationUnit>, std::io::Error> {
-        if self.has_unit(file_path) {
-            return Ok(None);
-        }
-
-        let file = ImportResolver::resolve(file_path)?;
-        let mut parser_session = ParserSession::from_source_file(
-            file.clone(), 
-            self.ctx.borrow().scope.clone(),
-            self.ctx.borrow().source_map.clone()
-        );
-        let soruce_file_id = parser_session.file_id;
-        let mut parser = ParserBuilder::new()
-            .session(&mut parser_session)
-            .lexer(Tokenizer::new())
-            .build();
-
-        let asts = parser.parse();
-        let mut unit = CompilationUnit::from_source(file, soruce_file_id.0);
-        unit.tokens = Some(parser.tokens());
-        unit.next_stage();
-
-        let mut ctx = self.ctx.borrow_mut();
-        if parser.diagnostics().has_errors() {
-            ctx.diagnostics.extend(parser.diagnostics().clone());
-            println!("{:#?}", ctx.diagnostics);
-            // ctx.diagnostics.report_all(&ctx.source_map, &unit);
-            std::process::exit(1);
-        }
-        drop(ctx);
-
-        unit.asts.extend(asts);
-        unit.next_stage();
-        let imports = unit.extract_imports();
-
-        for import in &imports {
-            if let Some(im_unit) = self.compile_unit_recursive(&import.path)? {
-                self.units.insert(import.path.clone(), im_unit);
-                self.compiler_order.push(import.path.clone());
-            }
-        }
-        unit.imports = imports;
-        Ok(Some(unit))
     }
 }

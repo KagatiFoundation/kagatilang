@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::cell::Cell;
+
 use kagc_types::*;
+
+use crate::function::FunctionId;
 
 pub type SymbolId = usize;
 
@@ -62,7 +66,7 @@ pub trait SymbolTrait {
 /// Represents a symbol in Bichara, which can be a variable, 
 /// function, or other identifier.
 #[derive(Clone, PartialEq, Debug)]
-pub struct Symbol {
+pub struct Symbol<'tcx> {
     /// The name of the symbol.
     pub name: String,
 
@@ -91,12 +95,12 @@ pub struct Symbol {
 
     /// The default value of the symbol, applicable only for global 
     /// symbols.
-    pub default_value: Option<LitType>,
+    pub default_value: Option<LitValue<'tcx>>,
 
     __use_count: usize, // how many times has this symbol been used
 }
 
-impl SymbolTrait for Symbol {
+impl<'tcx> SymbolTrait for Symbol<'tcx> {
     fn uninit() -> Self {
         Symbol {
             class: StorageClass::GLOBAL,
@@ -120,7 +124,7 @@ impl SymbolTrait for Symbol {
     }
 }
 
-impl Symbol {
+impl<'tcx> Symbol<'tcx> {
     pub fn new(name: String, lit: LitTypeVariant, sym_type: SymbolType, class: StorageClass) -> Self {
         Self {
             name,
@@ -143,7 +147,7 @@ impl Symbol {
         size: usize,
         class: StorageClass,
         local_offset: i32,
-        default_value: Option<LitType>,
+        default_value: Option<LitValue<'tcx>>,
         func_id: usize,
     ) -> Self {
         Self {
@@ -161,5 +165,36 @@ impl Symbol {
 
     pub fn incr_use(&mut self) {
         self.__use_count += 1;
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+pub enum SymTy<'tcx> {
+    Variable,
+    Function,
+    Record { name: &'tcx str }
+}
+
+pub struct Sym<'tcx> {
+    pub name: &'tcx str,
+    pub ty: Cell<TyKind<'tcx>>,
+    pub sym_ty: Cell<SymTy<'tcx>>,
+    pub class: StorageClass,
+    pub function_id: Cell<FunctionId>
+}
+
+impl<'tcx> Sym<'tcx> {
+    pub fn new(
+        name: &'tcx str, ty: TyKind<'tcx>,
+        sym_ty: SymTy<'tcx>, class: StorageClass,
+        func_id: FunctionId
+    ) -> Self {
+        Self {
+            name,
+            ty: Cell::new(ty),
+            sym_ty: Cell::new(sym_ty),
+            class,
+            function_id: Cell::new(func_id)
+        }
     }
 }

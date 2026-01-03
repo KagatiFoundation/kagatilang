@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use kagc_const::pool::{ConstEntry, KagcConst};
+use kagc_const::pool::{ConstEntry, ConstPool, KagcConst};
 use kagc_ctx::CompilerCtx;
 use kagc_lir::block::LirTerminator;
 use kagc_lir::instruction::{LirAddress, LirInstruction};
@@ -45,21 +45,21 @@ lazy_static! {
     };
 }
 
-pub struct Aarch64CodeGenerator {
+pub struct Aarch64CodeGenerator<'cg> {
     allocations: Option<HashMap<VReg, Location>>,
     function_entry_block: Option<BlockId>,
-    compiler_cx: Rc<RefCell<CompilerCtx>>,
+    const_pool: &'cg ConstPool,
     offset_generator: OffsetGenerator,
     current_function_state: Option<CurrentFunctionState>, // none indicates no function is currently being processed
     current_function_code: String
 }
 
-impl Default for Aarch64CodeGenerator {
-    fn default() -> Self {
+impl<'cg> Aarch64CodeGenerator<'cg> {
+    pub fn new(const_pool: &'cg ConstPool) -> Self {
         Self { 
             allocations: None,
             function_entry_block: None,
-            compiler_cx: Rc::new(RefCell::new(CompilerCtx::default())),
+            const_pool,
             current_function_code: String::new(),
             current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
@@ -67,20 +67,7 @@ impl Default for Aarch64CodeGenerator {
     }
 }
 
-impl Aarch64CodeGenerator {
-    pub fn new(ccx: Rc<RefCell<CompilerCtx>>) -> Self {
-        Self { 
-            allocations: None,
-            function_entry_block: None,
-            compiler_cx: ccx,
-            current_function_code: String::new(),
-            current_function_state: None,
-            offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
-        }
-    }
-}
-
-impl CodeGenerator for Aarch64CodeGenerator {
+impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
     fn gen_function(&mut self, lir_func: &LirFunction) {
         // println!("{lir_func:#?}");
         // return;
@@ -183,7 +170,7 @@ impl CodeGenerator for Aarch64CodeGenerator {
     }
 }
 
-impl Aarch64CodeGenerator {
+impl<'cg> Aarch64CodeGenerator<'cg> {
     pub fn generate_module_code(&mut self, module: &MirModule) {
         let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
         let mut mir_lowerer = MirToLirLowerer::default();
@@ -679,11 +666,11 @@ impl Aarch64CodeGenerator {
 
     /// This function is public only for a short period of time.
     pub fn dump_globals(&mut self) {
-        if self.compiler_cx.borrow().const_pool.is_empty() {
+        if self.const_pool.is_empty() {
             return;
         }
         let mut global_vars_code = String::new();
-        for (index, c_item) in self.compiler_cx.borrow().const_pool.iter_enumerated() {
+        for (index, c_item) in self.const_pool.iter_enumerated() {
             global_vars_code.push_str(&self.dump_const(index, c_item, false));
         }
         println!("{global_vars_code}");

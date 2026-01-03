@@ -1,17 +1,20 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
+use std::cell::Cell;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
-use itertools::Itertools;
+use kagc_symbol::Sym;
 use kagc_symbol::function::FunctionInfo;
 use kagc_symbol::function::FunctionInfoTable;
-use kagc_symbol::record::RecordRegistery;
-use kagc_symbol::registery::Registry;
-use kagc_symbol::StorageClass;
+use kagc_symbol::record::RecordTable;
 use kagc_symbol::Symbol;
 use kagc_types::record::RecordType;
 
 use crate::ctx::builder::ScopeCtxBuilder;
 use crate::scope::*;
-use crate::manager::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CurrentScopeMeta {
@@ -19,183 +22,185 @@ pub struct CurrentScopeMeta {
     pub(crate) typ: ScopeType
 }
 
-#[derive(Debug, Clone)]
-pub struct ScopeCtx {
-    pub(crate) functions: FunctionInfoTable,
-    pub(crate) current_function: usize,
-    pub(crate) scope_mgr: ScopeManager,
-    pub(crate) current_scope: CurrentScopeMeta,
-    pub(crate) scope_id_counter: usize,
-    pub(crate) prev_scope: usize,
-    pub records: RecordRegistery,
-    pub(crate) user_types: HashSet<String>,
+pub struct ScopeCtx<'tcx> {
+    pub(crate) functions:           FunctionInfoTable<'tcx>,
+    pub(crate) records:             RecordTable<'tcx>,
+    pub(crate) scopes:              HashMap<ScopeId, _Scope<'tcx>>,
+    pub(crate) user_types:          RefCell<HashSet<String>>,
+    pub(crate) current_function:    Cell<usize>,
+    pub(crate) current_scope:       Cell<CurrentScopeMeta>,
+    pub(crate) scope_id_counter:    Cell<ScopeId>,
+    pub(crate) prev_scope:          Cell<ScopeId>,
+    pub(crate) scope_stack:         RefCell<HashSet<ScopeId>>,
+    pub(crate) sym_arena:           &'tcx typed_arena::Arena<Sym<'tcx>>,
 }
 
-impl Default for ScopeCtx {
-    fn default() -> Self {
+impl<'tcx> ScopeCtx<'tcx> {
+    pub fn new(
+        sym_arena: &'tcx typed_arena::Arena<Sym<'tcx>>,
+        rec_arena: &'tcx typed_arena::Arena<RecordType<'tcx>>
+    ) -> Self {
+        let mut scope_manager = HashMap::new();
+        scope_manager.insert(ScopeId(0), _Scope::new(sym_arena, ScopeType::Root)); // the root scope(id 0)
+
+        let records = RecordTable::new(rec_arena);
+
         ScopeCtxBuilder::new()
-            .scope_manager({
-                let mut scope_mgr: ScopeManager = ScopeManager::default();
-                scope_mgr.push((0, Scope::default())); // root scope
-                scope_mgr
-            })
-            .scope_id_counter(1) // since zero(0) is for the root scope
+            .scope_manager(scope_manager)
+            .records(records)
+            .sym_arena(sym_arena)
+            .scope_id_counter(ScopeId(1)) // since zero(0) is for the root scope
             .build()
     }
-}
 
-impl ScopeCtx {
-    pub fn create_record(&mut self, record_entry: RecordType) -> Option<String> {
-        let rec_name = record_entry.name.clone();
-        if self.records.declare(record_entry).is_some() {
-            self.user_types.insert(rec_name.clone());
+    pub fn create_record(&'tcx self, name: &'tcx str, record_entry: RecordType<'tcx>) -> Option<&'tcx str> {
+        let rec_name = record_entry.name;
+        if self.records.declare(name, record_entry).is_some() {
+            self.user_types.borrow_mut().insert(rec_name.to_string());
             Some(rec_name)
         }
         else { None }
     }
 
-    pub fn lookup_record(&self, rec_name: &str) -> Option<&RecordType> {
-        self.records.lookup(&rec_name)
-    }
-
-    pub fn lookup_record_mut(&mut self, rec_name: &str) -> Option<&mut RecordType> {
-        self.records.lookup_mut(&rec_name)
+    pub fn lookup_record(&self, rec_name: &str) -> Option<&'tcx RecordType<'tcx>> {
+        self.records.lookup(rec_name)
     }
 
     pub fn record_exists(&self, rec_name: &str) -> bool {
-        self.user_types.contains(rec_name)
+        self.user_types.borrow().contains(rec_name)
     }
 
-    pub fn live_scope_id(&self) -> usize {
-        self.current_scope.id
+    pub fn live_scope_id(&self) -> ScopeId {
+        self.current_scope.get().id
     }
 
-    pub fn live_scope(&self) -> Option<&Scope> {
-        if self.scope_mgr.is_empty() {
-            None
-        }
-        else {
-            self.scope_mgr.get(self.current_scope.id)
-        }
+    pub fn root_scope(&self) -> &'tcx _Scope {
+        todo!()
+        // self.scopes.borrow().get(&ScopeId(0)).unwrap() // root scope's ID is 0 and it is always present
     }
 
-    pub fn live_scope_mut(&mut self) -> Option<&mut Scope> {
-        if self.scope_mgr.is_empty() {
-            None
-        }
-        else {
-            self.scope_mgr.get_mut(self.current_scope.id)
-        }
-    }
-
-    pub fn root_scope(&self) -> &Scope {
-        self.scope_mgr.get(0).unwrap() // root scope's ID is 0 and it is always present
-    }
-
-    pub fn root_scope_mut(&mut self) -> &mut Scope {
-        self.scope_mgr.get_mut(0).unwrap() // root scope's ID is 0 and it is always present
-    }
-
-    pub fn enter_scope(&mut self, scope_id: usize) -> Option<usize> {
-        if self.scope_mgr.contains_scope(scope_id) {
-            self.prev_scope = self.current_scope.id;
-            self.current_scope.id = scope_id;
-            Some(self.current_scope.id)
+    pub fn enter_scope(&self, scope_id: ScopeId) -> Option<ScopeId> {
+        let scopes = &self.scopes;
+        if scopes.contains_key(&scope_id) {
+            self.prev_scope.replace(self.current_scope.get().id);
+            let curr_scope = self.current_scope.get();
+            self.current_scope.replace(CurrentScopeMeta { id: scope_id, typ: curr_scope.typ });
+            Some(curr_scope.id)
         }
         else {
             None
         }
     }
 
-    pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> usize {
-        let new_scope_id: usize = self.scope_id_counter;
-        self.scope_mgr.push((new_scope_id, Scope::new(self.current_scope.id, scope_type)));
-        self.scope_id_counter += 1;
+    pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> ScopeId {
+        let new_scope_id = self.scope_id_counter.get();
+        let scopes = &mut self.scopes;
+        // self.scopes.insert(new_scope_id, Scope::new(self.current_scope.get().id, scope_type));
+        scopes.insert(new_scope_id, _Scope::new(self.sym_arena, scope_type));
+        self.scope_id_counter.replace(ScopeId(self.scope_id_counter.get().0 + 1));
 
         // set scope id
-        self.prev_scope = self.current_scope.id;
-        self.current_scope.id = new_scope_id;
-        self.current_scope.id
+        self.prev_scope.replace( self.current_scope.get().id);
+        let curr_scope = self.current_scope.get();
+        self.current_scope.replace(CurrentScopeMeta { id: new_scope_id, typ: curr_scope.typ });
+        curr_scope.id
     }
 
     /// Returns the ID of the exited scope.
-    pub fn exit_scope(&mut self) -> usize {
-        let ret: usize = self.current_scope.id;
-        self.current_scope.id = self.prev_scope;
-        ret
+    pub fn exit_scope(&self) -> ScopeId {
+        let ret = self.current_scope.get();
+        self.current_scope.replace(CurrentScopeMeta { id: self.prev_scope.get(), typ: ret.typ });
+        ret.id
     }
 
-    pub fn deep_lookup(&self, name: &str) -> Option<&Symbol> {
-        self.scope_mgr.deep_lookup(self.current_scope.id, name)
-    }
-
-    pub fn deep_lookup_mut(&mut self, name: &str) -> Option<&mut Symbol> {
-        self.scope_mgr.deep_lookup_mut(self.current_scope.id, name)
-    }
-
-    pub fn declare(&mut self, sym: Symbol) -> Option<usize> {
-        if let Some(curr) = self.scope_mgr.get_mut(self.current_scope.id) {
-            curr.declare(sym)
+    pub fn deep_lookup(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym> {
+        if let Some(scope) = self.scopes.get(&scope_id.unwrap_or(self.current_scope.get().id)) {
+            if let Some(sym) = scope.get_sym(name) {
+                return Some(sym);
+            }
+            else if let Some(parent_scope) = scope.parent_scope {
+                return self.deep_lookup(Some(parent_scope), name);
+            }
         }
-        else {
-            eprintln!("Couldn't find current scope");
-            None
-        }
+        None
     }
 
-    pub fn declare_fn(&mut self, func: FunctionInfo) -> Option<usize> {
-        self.functions.declare(func)
+    pub fn declare_in_scope(&'tcx self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+        let Some(scope) = self.scopes.get(&scope_id) else {
+            panic!("Couldn't find scope '{:#?}'", scope_id);
+        };
+        scope.add_sym(sym)
+    }
+
+    pub fn declare(&'tcx self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+        let Some(current_scope) = self.scopes.get(&self.current_scope.get().id) else {
+            panic!("Couldn't find current scope");
+        };
+        current_scope.add_sym(sym)
+    }
+
+    pub fn declare_fn(&'tcx self, name: &'tcx str, func: FunctionInfo<'tcx>) -> Option<&'tcx FunctionInfo<'tcx>> {
+        self.functions.declare(name, func)
     }
 
     pub fn lookup_fn(&self, func_id: usize) -> Option<&FunctionInfo> {
         self.functions.lookup_by_id(func_id)
     }
 
-    pub fn lookup_fn_by_name(&self, name: &str) -> Option<&FunctionInfo> {
-        self.functions.lookup(&name)
+    pub fn lookup_fn_by_name(&'tcx self, name: &str) -> Option<&'tcx FunctionInfo<'tcx> > {
+        self.functions.lookup(name)
     }
 
-    pub fn update_current_func(&mut self, new_fn: usize) {
-        self.current_function = new_fn;
+    pub fn update_current_func(&self, new_fn: usize) {
+        self.current_function.replace(new_fn);
     }
 
     pub fn current_fn(&self) -> usize {
-        self.current_function
+        self.current_function.get()
     }
 
-    pub fn collect_params(&self, scope_id: usize) -> Vec<&Symbol> {
-        if let Some(scope) = self.scope_mgr.get(scope_id) {
-            scope.table.iter().filter(|&sym| sym.class == StorageClass::PARAM).collect_vec()
+    pub fn collect_params(&self, scope_id: ScopeId) -> Vec<&Symbol> {
+        vec![]
+    }
+
+    pub fn is_inside_scope_type(&self, mut scope_id: ScopeId, target: ScopeType) -> bool {
+        while let Some(scope) = self.scopes.get(&scope_id) {
+            if scope.ty == target {
+                return true;
+            }
+            if let Some(parent) = scope.parent_scope {
+                scope_id = parent;
+            } else {
+                break;
+            }
         }
-        else {
-            vec![]
-        }
+        false
     }
 
     pub fn inside_function(&self) -> bool {
-        if self.current_scope.typ == ScopeType::Function {
+        if self.current_scope.get().typ == ScopeType::Function {
             return true;
         }
-        self.scope_mgr.is_inside_scope_type(self.current_scope.id, ScopeType::Function)
+        self.is_inside_scope_type(self.current_scope.get().id, ScopeType::Function)
     }
 
     pub fn inside_loop(&self) -> bool {
-        if self.current_scope.typ == ScopeType::Loop {
+        if self.current_scope.get().typ == ScopeType::Loop {
             return true;
         }
-        else if self.prev_scope == 0 {
+        else if self.prev_scope.get().0 == 0 {
             return false;
         }
-        self.scope_mgr.is_inside_scope_type(self.current_scope.id, ScopeType::Loop)
+        self.is_inside_scope_type(self.current_scope.get().id, ScopeType::Loop)
     }
 
     pub fn inside_if(&self) -> bool {
-        if self.current_scope.typ == ScopeType::If {
+        if self.current_scope.get().typ == ScopeType::If {
             return true;
         }
-        else if self.prev_scope == 0 {
+        else if self.prev_scope.get().0 == 0 {
             return false;
         }
-        self.scope_mgr.is_inside_scope_type(self.current_scope.id, ScopeType::If)
+        self.is_inside_scope_type(self.current_scope.get().id, ScopeType::If)
     }
 }

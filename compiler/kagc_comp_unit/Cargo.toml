@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+typed-arena = "2.0.2"
+
 kagc_ast = { path = "../kagc_ast" }
 kagc_token = { path = "../kagc_token" }

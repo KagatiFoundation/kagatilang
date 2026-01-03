@@ -1,19 +1,21 @@
-use crate::{LitTypeVariant, TypeSized};
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
+
+use crate::TyKind;
 
 pub type RecordFieldOffset = usize;
 
 #[derive(Debug, Default, Clone)]
-pub struct RecordType {
-    pub name: String,
+pub struct RecordType<'tcx> {
+    pub name: &'tcx str,
     pub size: usize,
-    pub fields: Vec<RecordFieldType>,
+    pub fields: Vec<RecordFieldType<'tcx>>,
     pub __alignment: usize
 }
 
-impl RecordType {
-    pub fn new(name: String) -> Self {
+impl<'tcx> RecordType<'tcx> {
+    pub fn new(name: &'tcx str) -> Self {
         let size = Self::calc_size();
-
         Self {
             name,
             size,
@@ -27,15 +29,9 @@ impl RecordType {
     }
 }
 
-impl TypeSized for RecordType {
-    fn type_size(&self) -> usize {
-        todo!()
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct RecordFieldType {
-    pub name: String,
-    pub typ: LitTypeVariant,
+#[derive(Debug, Clone)]
+pub struct RecordFieldType<'tcx> {
+    pub name: &'tcx str,
+    pub ty: TyKind<'tcx>,
     pub rel_stack_off: usize
 }

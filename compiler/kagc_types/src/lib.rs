@@ -1,29 +1,13 @@
-/*
-MIT License
-
-Copyright (c) 2023 Kagati Foundation
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 pub mod record;
 pub mod builtins;
+pub mod type_;
+pub mod ctx;
+pub mod str_interner;
+
+pub use type_::*;
 
 use core::panic;
 use std::collections::HashMap;
@@ -60,7 +44,7 @@ pub trait TypeSized {
 
 /// Represents literal value types used in the language.
 #[derive(Debug, Clone)]
-pub enum LitType {
+pub enum LitValue<'tcx> {
     /// 64-bit signed integer.
     I64(i64),
 
@@ -83,7 +67,7 @@ pub enum LitType {
     /// Represents a `void` type, typically used for functions with no return value.
     Void,
 
-    RawStr(String),
+    RawStr(&'tcx str),
 
     /// Represents a string literal paired with a unique label identifier.
     PoolStr(usize),
@@ -106,10 +90,10 @@ pub enum LitType {
     None,
 }
 
-impl From<LitType> for String {
-    fn from(value: LitType) -> Self {
+impl<'tcx> From<LitValue<'tcx>> for String {
+    fn from(value: LitValue) -> Self {
         match value {
-            LitType::I32(val) => val.to_string(),
+            LitValue::I32(val) => val.to_string(),
             _ => todo!()
         }
     }
@@ -237,7 +221,7 @@ impl LitTypeVariant {
     check_lit_type_var_fn_impl!(is_int8, U8);
 }
 
-impl PartialEq for LitType {
+impl<'tcx> PartialEq for LitValue<'tcx> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::I32(l0), Self::I32(r0)) => *l0 == *r0,
@@ -254,7 +238,7 @@ impl PartialEq for LitType {
 macro_rules! impl_ltype_unwrap {
     ($fn_name:ident, $variant:ident, $ty:ty) => {
         pub fn $fn_name(&self) -> Option<&$ty> {
-            if let LitType::$variant(val, ..) = self {
+            if let LitValue::$variant(val, ..) = self {
                 Some(val)
             } else {
                 None
@@ -271,7 +255,7 @@ macro_rules! impl_ltype_tychk {
     };
 }
 
-impl LitType {
+impl<'tcx> LitValue<'tcx> {
     impl_ltype_tychk!(is_i32, I32);
     impl_ltype_tychk!(is_i64, I64);
     impl_ltype_tychk!(is_char, U8);
@@ -310,73 +294,57 @@ impl LitType {
 
     pub fn size(&self) -> usize {
         match self {
-            LitType::I32(_) | LitType::F32(_) => 32,
-            LitType::I16(_) => 16,
-            LitType::U8(_) => 8,
+            LitValue::I32(_) | LitValue::F32(_) => 32,
+            LitValue::I16(_) => 16,
+            LitValue::U8(_) => 8,
             _ => 0,
         }
     }
 
-    pub fn coerce_to(&self, target_type: LitType) -> Result<LitType, String> {
+    pub fn coerce_to(&self, target_type: LitValue) -> Result<LitValue, String> {
         match target_type {
-            LitType::I16(_) => self.coerce_to_i16(),
-            LitType::I32(_) => self.coerce_to_i32(),
-            LitType::I64(_) => self.coerce_to_i64(),
+            LitValue::I16(_) => self.coerce_to_i16(),
+            LitValue::I32(_) => self.coerce_to_i32(),
+            LitValue::I64(_) => self.coerce_to_i64(),
             _ => panic!("Error")
         }
     }
 
-    fn coerce_to_i16(&self) -> Result<LitType, String> {
+    fn coerce_to_i16(&self) -> Result<LitValue, String> {
         match self {
-            LitType::U8(val) => Ok(LitType::I16(*val as i16)),
+            LitValue::U8(val) => Ok(LitValue::I16(*val as i16)),
             _ => panic!("Error")
         }
     }
 
-    fn coerce_to_i32(&self) -> Result<LitType, String> {
+    fn coerce_to_i32(&self) -> Result<LitValue, String> {
         match self {
-            LitType::U8(val) => Ok(LitType::I32(*val as i32)),
-            LitType::I16(val) => Ok(LitType::I32(*val as i32)),
+            LitValue::U8(val) => Ok(LitValue::I32(*val as i32)),
+            LitValue::I16(val) => Ok(LitValue::I32(*val as i32)),
             _ => panic!("Error")
         }
     }
 
-    fn coerce_to_i64(&self) -> Result<LitType, String> {
+    fn coerce_to_i64(&self) -> Result<LitValue, String> {
         match self {
-            LitType::U8(val) => Ok(LitType::I64(*val as i64)),
-            LitType::I16(val) => Ok(LitType::I64(*val as i64)),
-            LitType::I32(val) => Ok(LitType::I64(*val as i64)),
+            LitValue::U8(val) => Ok(LitValue::I64(*val as i64)),
+            LitValue::I16(val) => Ok(LitValue::I64(*val as i64)),
+            LitValue::I32(val) => Ok(LitValue::I64(*val as i64)),
             _ => panic!("Error")
         }
     }
 }
 
-impl Display for LitType {
+impl<'tcx> Display for LitValue<'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let result = match self {
-            LitType::I32(value) => format!("{}", *value),
-            LitType::U8(value) => format!("{}", *value),
-            LitType::PoolStr(pos) => format!("__G_{pos}"),
+            LitValue::I32(value) => format!("{}", *value),
+            LitValue::U8(value) => format!("{}", *value),
+            LitValue::PoolStr(pos) => format!("__G_{pos}"),
             _ => panic!()
         };
         _ = writeln!(f, "{}", result);
         Ok(())
-    }
-}
-
-impl BTypeComparable for LitType {
-    fn cmp(&self, other: &LitType) -> bool {
-        self.variant() == other.variant()
-    }
-    
-    fn variant(&self) -> LitTypeVariant {
-        self.variant()
-    }
-}
-
-impl TypeSized for LitType {
-    fn type_size(&self) -> usize {
-        self.size()
     }
 }
 

@@ -1,73 +1,59 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-#![allow(unused_assignments)]
-
-use std::path::Path;
-use std::rc::Rc;
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum ParsingStageError {
-    FileNotFound,
-    TokenizationError,
-    ParsingError,
-    FileReadingError,
-    None,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum ParsingStage {
-    /// Nothing has been done till now. Even the file hasn't
-    /// been loaded into memory.
-    Unprocessed,
-
-    /// File has been loaded into memory.
-    Loaded,
-
-    /// Tokens has been generated for this file.
-    Tokenized,
-
-    Parsed,
-
-    /// Some kind of error has occured during reading this file
-    /// or during token generation.
-    Error(ParsingStageError),
-}
-
 pub const DUMMY_FILE_INDEX: usize = 0xFFFFFFFF;
+use std::path::PathBuf;
+use typed_arena::Arena;
 
 #[derive(Debug, Default, Clone)]
 pub struct FileMeta {
     pub name: String,
-
-    pub abs_path: String
+    pub abs_path: PathBuf,
 }
 
 #[derive(Clone, Debug)]
-pub struct SourceFile {
-    pub content: Rc<String>,
-    pub meta: FileMeta
+pub struct SourceFile<'tcx> {
+    pub content: &'tcx str,
+    pub meta: FileMeta,
 }
 
-impl SourceFile {
-    pub fn from_file(path: &str) -> std::io::Result<Self> {
-        let file_path: &Path = Path::new(path);
-        let content: String = std::fs::read_to_string(file_path)?;
-        let name = file_path
+impl<'tcx> SourceFile<'tcx> {
+    /// Loads a file from disk and keeps its content in the arena.
+    pub fn from_file(
+        path: PathBuf, 
+        arena: &'tcx Arena<String>
+    ) -> std::io::Result<Self> {
+        let raw_content = std::fs::read_to_string(&path)?;
+        
+        let allocated_str: &'tcx String = arena.alloc(raw_content);
+
+        let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+            .unwrap_or_else(|| "unknown.kag".to_string());
 
         Ok(Self {
-            content: Rc::new(content),
-            meta: FileMeta { abs_path: path.to_string(), name }
+            content: allocated_str.as_str(),
+            meta: FileMeta { 
+                abs_path: path, 
+                name 
+            }
         })
     }
 
-    pub fn from_string(name: &str, content: &str) -> Self {
+    pub fn from_string(
+        name: &str, 
+        content: &str, 
+        arena: &'tcx Arena<String>
+    ) -> Self {
+        let allocated_str = arena.alloc(content.to_string());
+
         Self {
-            content: Rc::new(content.to_string()),
-            meta: FileMeta { name: name.to_string(), abs_path: format!("<{name}>") }
+            content: allocated_str.as_str(),
+            meta: FileMeta { 
+                name: name.to_string(), 
+                abs_path: PathBuf::from(format!("<{}>", name)) 
+            }
         }
     }
 }

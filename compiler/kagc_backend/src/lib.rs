@@ -3,9 +3,9 @@
 
 pub mod regalloc;
 pub mod reg;
-pub mod codegen;
+// pub mod codegen;
 pub mod codegen_asm;
-pub mod codegen_lsvm;
+// pub mod codegen_lsvm;
 
 use std::collections::HashMap;
 
