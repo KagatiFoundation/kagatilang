@@ -18,9 +18,10 @@ use kagc_types::str_interner::StringInterner;
 use crate::comp_unit::CompUnit;
 
 pub struct CompilerPipeline<'tcx> {
-    units: HashMap<String, CompUnit<'tcx>>,
-    compiler_order: Vec<String>,
+    compilation_units: HashMap<String, CompUnit<'tcx>>,
+    compile_order: Vec<String>,
     
+    // Shared global compiler state
     diagnostics: &'tcx DiagnosticBag,
     const_pool: &'tcx ConstPool,
     scope_ctx: &'tcx ScopeCtx<'tcx>,
@@ -39,8 +40,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
         const_pool: &'tcx ConstPool
     ) -> Self {
         Self {
-            compiler_order: vec![],
-            units: HashMap::new(),
+            compile_order: vec![],
+            compilation_units: HashMap::new(),
             diagnostics,
             const_pool,
             scope_ctx,
@@ -50,77 +51,35 @@ impl<'tcx> CompilerPipeline<'tcx> {
         }
     }
 
-    fn compile_all(&self) {
-
-    }
-
-    fn collect_compilable_files(&self) {
-
-    }
-
-    fn parse_and_register_symbols(&self) {
-
-    }
-
     pub fn compile(&mut self, entry_file: &str) -> Result<(), std::io::Error> {
-        if self.units.contains_key(entry_file) {
+        if self.compilation_units.contains_key(entry_file) {
            return Ok(());
         }
         
-        let Some(unit) = self.compile_unit_recursive(entry_file) else {
-            panic!("Could not parse file '{entry_file}'");
+        let Some(unit) = self.compile_path_into_unit(entry_file) else {
+            return Ok(());
         };
 
-        self.units.insert(entry_file.to_string(), unit);
-        self.compiler_order.push(entry_file.to_string());
+        self.compile_order.push(entry_file.to_string()); // compile 'entry_file' first
 
-        // symbol resolver
-        // let mut resolver = Resolver::new(
-        //     self.scope_ctx, 
-        //     &mut self.const_pool, 
-        //     &self.diagnostics,
-        //     &mut asts
-        // );
-
-        // type checker
-        // let mut analyzer = TypeChecker::new(self.scope_ctx, &self.diagnostics);
-
-        // let mut modules: Vec<MirModule> = vec![];
-        
-        for unit_file in &self.compiler_order {
-            // resolver.resolve(&mut asts);
-
-            /*
-            if let Some(unit) = self.units.get_mut(unit_file) {
-                // set this so that the compiler passes(resolver, semantic analysis, and code generation) 
-                // know which file is currently being processed
-                self.source_map.borrow_mut().current = FileId(unit.meta_id);
-                resolv.resolve(&mut unit.asts);
-                analyzer.start_analysis(&mut unit.asts);
-
-                if self.diagnostics.has_errors() {
-                    println!("{:#?}", self.diagnostics);
-                    // self.ctx.borrow().diagnostics.report_all(&self.ctx.borrow().source_map, unit);
-                    std::process::exit(1)
-                }
-
-                // AST to IR generator
-                let mut lowerer = AstToMirLowerer::new(&self.scope_ctx, &self.const_pool);
-                if lowerer.lower_irs(&mut unit.asts).is_ok() {
-                    let mir_module = lowerer.ir_builder.build();
-                    modules.push(mir_module);
-                }
-                else {
-                    bug!("cannot lower MIR into LIR");
-                }
+        let mut imported_units = vec![];
+        for import in unit.extract_imports() {
+            if let Some(imported_unit) = self.compile_path_into_unit(import.path) {
+                imported_units.push(imported_unit);
+                self.compile_order.push(import.path.to_string());
             }
-        */
         }
-        // self.compile_mir_modules_into_asm(&modules);
+
+        // add the 'entry_file' to the compilation queue
+        self.compilation_units.insert(entry_file.to_string(), unit);
         Ok(())
     }
 
-    fn compile_unit_recursive(&mut self, file_path: &str) -> Option<CompUnit<'tcx>> {
+    fn compile_path_into_unit(&mut self, file_path: &str) -> Option<CompUnit<'tcx>> {
+        if self.compilation_units.contains_key(file_path) {
+            return None;
+        }
+
         let Ok(file) = ImportResolver::resolve(
             file_path, 
             self.str_arena
@@ -128,6 +87,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         else {
             panic!("File not found: '{file_path}'");
         };
+
         let file_id = self.source_map.insert(file);
         Self::tokenize_and_parse(
             self.source_map, 
@@ -161,23 +121,9 @@ impl<'tcx> CompilerPipeline<'tcx> {
         let asts = parser.parse();
 
         if diagnostics.has_errors() {
-            diagnostics.extend(parser.diagnostics.clone());
-            // diagnostics.report_all(&self.source_map);
-            println!("{:#?}", diagnostics);
-            std::process::exit(1);
+            panic!("{:#?}", diagnostics);
         }
-
-        let unit = CompUnit { asts };
-        let imports = unit.extract_imports();
-
-        for import in &imports {
-        //     if let Some(im_unit) = self.compile_unit_recursive(import)? {
-        //         self.units.insert(import.path.to_string(), im_unit);
-        //         self.compiler_order.push(import.path.to_string());
-        //     }
-        }
-
-        Some(unit)
+        Some(CompUnit { asts })
     }
 
     fn _compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
