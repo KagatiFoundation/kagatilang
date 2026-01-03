@@ -20,7 +20,8 @@ use kagc_types::record::RecordFieldType;
 use kagc_types::LitValue;
 
 use crate::options::ParserOptions;
-use crate::prelude::ParseOutput;
+
+pub(crate) type ParseOutput<'tcx> = Option<AST<'tcx>>;
 
 /// Represents an invalid function ID.
 ///
@@ -1286,19 +1287,34 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
+    use kagc_errors::diagnostic::DiagnosticBag;
     use kagc_lexer::Tokenizer;
-    use kagc_token::TokenKind;
+    use kagc_token::{Token, TokenKind};
+    use kagc_types::str_interner::StringInterner;
 
-    use crate::{Parser, session::ParserSession};
+    use crate::{Parser, options::ParserOptions};
+
+    fn mk_parser<'p, 'tcx>(tokens: Vec<Token<'tcx>>, diags: &'p DiagnosticBag) -> Parser<'p, 'tcx> {
+        Parser::new(
+            ParserOptions {  },
+            diags,
+            tokens
+        )
+    }
 
     #[test]
     fn test_token_advance_logic_holds_correct() {
-        let mut session = ParserSession::from_string("let a = 12 + 12;");
-        let lexer = Tokenizer::new();
-        let mut parser = Parser::new(&mut session, lexer);
+        let str_arena = typed_arena::Arena::<String>::new();
+        let diag_bag = DiagnosticBag::default();
+        let str_intern = StringInterner::new(&str_arena);
+        let mut lexer = Tokenizer::new(
+            &diag_bag,
+            &str_intern
+        );
+        let mut parser = mk_parser(lexer.tokenize("let a = 12 + 12;"), &diag_bag);
+        
         assert!(parser.advance().kind == TokenKind::KW_LET);
         assert!(parser.advance().kind == TokenKind::T_IDENTIFIER);
         assert!(parser.advance().kind == TokenKind::T_EQUAL);
@@ -1311,9 +1327,14 @@ mod tests {
 
     #[test]
     fn test_advance_is_idempotent_after_eof() {
-        let mut session = ParserSession::from_string("let a = 12 + 12;");
-        let lexer = Tokenizer::new();
-        let mut parser = Parser::new(&mut session, lexer);
+        let str_arena = typed_arena::Arena::<String>::new();
+        let diag_bag = DiagnosticBag::default();
+        let str_intern = StringInterner::new(&str_arena);
+        let mut lexer = Tokenizer::new(
+            &diag_bag,
+            &str_intern
+        );
+        let mut parser = mk_parser(lexer.tokenize("12 + 12"), &diag_bag);
 
         while parser.advance().kind != TokenKind::T_EOF {}
 
@@ -1321,4 +1342,3 @@ mod tests {
         assert_eq!(parser.advance().kind, TokenKind::T_EOF);
     }
 }
-*/

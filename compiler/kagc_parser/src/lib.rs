@@ -3,7 +3,6 @@
 
 mod parser_impl;
 
-pub mod prelude;
 pub mod options;
 
 pub use parser_impl::*;
