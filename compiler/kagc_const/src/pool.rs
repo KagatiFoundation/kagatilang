@@ -46,7 +46,7 @@ pub struct RecordConst {
     pub alias: String,
 
     /// Name and the pool index of fields
-    pub fields: OrderedMap<String, PoolIdx>,
+    pub fields: OrderedMap<String, usize>,
 
     /// How to align the record: platform dependent
     pub alignment: usize

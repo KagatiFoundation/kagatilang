@@ -168,6 +168,13 @@ impl<'tcx> Stmt<'tcx> {
         }
     }
 
+    pub fn as_func_decl(&self) -> Option<&FuncDeclStmt<'tcx>> {
+        match self {
+            Stmt::FuncDecl(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
     pub fn as_func_decl_mut(&mut self) -> Option<&mut FuncDeclStmt<'tcx>> {
         match self {
             Stmt::FuncDecl(stmt) => Some(stmt),

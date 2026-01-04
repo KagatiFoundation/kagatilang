@@ -268,7 +268,7 @@ impl<'tcx> AST<'tcx> {
         }
     }
 
-    pub fn as_stmt(&'tcx self) -> Option<&'tcx Stmt<'tcx>> {
+    pub fn as_stmt(&self) -> Option<&Stmt<'tcx>> {
         match &self.kind {
             ASTKind::StmtAST(stmt) => Some(stmt),
             _ => None,
@@ -281,6 +281,11 @@ impl<'tcx> AST<'tcx> {
             _ => None,
         }
     }
+    
+    pub fn expect_func_decl_stmt(&self) -> &FuncDeclStmt<'tcx> {
+        let stmt = self.as_stmt().expect("expected stmt");
+        stmt.as_func_decl().expect("expected function declaration stmt")
+    }
 
     pub fn expect_func_decl_stmt_mut(&mut self) -> &mut FuncDeclStmt<'tcx> {
         let stmt = self.as_stmt_mut().expect("expected stmt");
@@ -292,7 +297,7 @@ impl<'tcx> AST<'tcx> {
         stmt.as_block_mut().expect("expected block stmt")
     }
 
-    pub fn expect_if_stmt(&mut self) -> &IfStmt {
+    pub fn expect_if_stmt(&self) -> &IfStmt {
         let stmt = self.as_stmt().expect("expected stmt");
         stmt.as_if().expect("expected if stmt")
     }
