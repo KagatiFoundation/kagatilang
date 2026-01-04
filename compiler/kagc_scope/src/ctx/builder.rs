@@ -2,19 +2,20 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use kagc_symbol::Sym;
 use kagc_symbol::function::{FuncId, FuncTable};
 use kagc_symbol::record::RecordTable;
 
 use crate::ctx::{_ScopeMeta, ScopeCtx};
-use crate::scope::{_Scope, ScopeId, ScopeType};
+use crate::scope::{ScopeId, ScopeType};
+use crate::scope_table::ScopeTable;
 
 pub struct ScopeCtxBuilder<'tcx> {
     functions:              Option<FuncTable<'tcx>>,
     current_function:       Option<FuncId>,
-    scope_mgr:              Option<HashMap<ScopeId, _Scope<'tcx>>>,
+    scope_table:            Option<ScopeTable<'tcx>>,
     current_scope:          Option<_ScopeMeta>,
     previous_scope:         Option<_ScopeMeta>,
     scope_id_counter:       Option<ScopeId>,
@@ -30,7 +31,7 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         Self {
             functions:          None,
             current_function:   None,
-            scope_mgr:          None,
+            scope_table:        None,
             current_scope:      None,
             previous_scope:     None,
             scope_id_counter:   None,
@@ -51,8 +52,8 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         self
     }
 
-    pub fn scope_manager(mut self, scope_mgr: HashMap<ScopeId, _Scope<'tcx>>) -> Self {
-        self.scope_mgr = Some(scope_mgr);
+    pub fn scopes(mut self, table: ScopeTable<'tcx>) -> Self {
+        self.scope_table = Some(table);
         self
     }
 
@@ -93,9 +94,9 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
 
     pub fn build(self) -> ScopeCtx<'tcx> {
         ScopeCtx {
-            functions: self.functions.unwrap_or_default(),
+            functions: self.functions.unwrap(),
             current_func_id: Cell::new(self.current_function.unwrap_or(FuncId(0))), // start counting function ids at 0
-            scopes: self.scope_mgr.unwrap_or_default(),
+            scopes: self.scope_table.unwrap(),
             current: Cell::new(self.current_scope.unwrap_or(_ScopeMeta {
                 id: ScopeId::default(),
                 typ: ScopeType::default(),

@@ -10,28 +10,27 @@ use crate::function::FuncId;
 
 use super::Func;
 
-#[derive(Default)]
 pub struct FuncTable<'tcx> {
-    arena: typed_arena::Arena<Func<'tcx>>,
+    arena: &'tcx typed_arena::Arena<Func<'tcx>>,
     functions: RefCell<HashMap<&'tcx str, &'tcx Func<'tcx>>>,
     next_id: Cell<usize>,
 }
 
 impl<'tcx> FuncTable<'tcx> {
-    pub fn new() -> Self {
+    pub fn new(arena: &'tcx typed_arena::Arena<Func<'tcx>>) -> Self {
         Self {
-            arena: typed_arena::Arena::new(),
+            arena,
             functions: RefCell::new(HashMap::new()),
             next_id: Cell::new(0) // begin the counter
         }
     }
 
-    pub fn get(&'tcx self, name: &str) -> Option<&'tcx Func<'tcx>> {
+    pub fn get(&self, name: &str) -> Option<&'tcx Func<'tcx>> {
         let functions = self.functions.borrow();
         functions.get(name).copied()
     }
 
-    pub fn add(&'tcx self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>>  {
+    pub fn add(&self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>>  {
         let mut functions = self.functions.borrow_mut();
         if let Some(existing) = functions.get(name) {
             return Err(*existing);

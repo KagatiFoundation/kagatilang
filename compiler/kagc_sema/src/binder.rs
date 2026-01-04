@@ -6,7 +6,7 @@ use kagc_ast::*;
 use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag, Severity};
 use kagc_scope::ctx::ScopeCtx;
-use kagc_scope::scope::ScopeId;
+use kagc_scope::scope::{ScopeId, ScopeType};
 use kagc_symbol::function::{Func, FuncId};
 use kagc_symbol::{Sym, SymTy};
 use kagc_const::pool::{ConstPool, KagcConst, OrderedMap, RecordConst};
@@ -181,6 +181,8 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
 
         let defined_func_id = insert_res.ok().unwrap().id.get(); // okay to unwrap
         self.curr_func_id = Some(defined_func_id.0);
+
+        self.scope.push(ScopeType::Function);
 
         // loop through function's body to find new symbols
         if let Some(func_body) = &mut node.left {

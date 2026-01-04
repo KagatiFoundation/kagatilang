@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::cell::Cell;
+
 use kagc_symbol::{Sym, SymTable, Symbol, Symtable};
 
 /// Scope ID
 #[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ScopeId(pub usize);
+
+pub const INVALID_SCOPE_ID: usize = 0xFFFFFFFC;
 
 #[derive(Debug, Default, Eq, PartialEq, Clone, Copy)]
 pub enum ScopeType {
@@ -52,7 +56,8 @@ impl<'tcx> Scope<'tcx> {
 pub struct _Scope<'tcx> {
     pub symt: SymTable<'tcx>,
     pub parent: Option<ScopeId>,
-    pub ty: ScopeType
+    pub ty: ScopeType,
+    pub id: Cell<ScopeId>
 }
 
 impl<'tcx> _Scope<'tcx> {
@@ -64,7 +69,8 @@ impl<'tcx> _Scope<'tcx> {
         Self {
             symt: SymTable::new(arena),
             parent,
-            ty
+            ty,
+            id: Cell::new(ScopeId(INVALID_SCOPE_ID))
         }
     }
 

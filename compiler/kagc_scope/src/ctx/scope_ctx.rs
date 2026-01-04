@@ -3,7 +3,6 @@
 
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use kagc_symbol::Sym;
@@ -16,6 +15,7 @@ use kagc_types::record::RecordType;
 
 use crate::ctx::builder::ScopeCtxBuilder;
 use crate::scope::*;
+use crate::scope_table::ScopeTable;
 
 #[derive(Debug, Clone, Copy)]
 pub struct _ScopeMeta {
@@ -26,7 +26,7 @@ pub struct _ScopeMeta {
 pub struct ScopeCtx<'tcx> {
     pub(crate) functions:           FuncTable<'tcx>,
     pub(crate) records:             RecordTable<'tcx>,
-    pub(crate) scopes:              HashMap<ScopeId, _Scope<'tcx>>,
+    pub(crate) scopes:              ScopeTable<'tcx>,
     pub(crate) user_types:          RefCell<HashSet<String>>,
     pub(crate) current_func_id:     Cell<FuncId>,
     pub(crate) current:             Cell<_ScopeMeta>,
@@ -39,11 +39,12 @@ pub struct ScopeCtx<'tcx> {
 impl<'tcx> ScopeCtx<'tcx> {
     pub fn new(
         sym_arena: &'tcx typed_arena::Arena<Sym<'tcx>>,
-        rec_arena: &'tcx typed_arena::Arena<RecordType<'tcx>>
+        func_arena: &'tcx typed_arena::Arena<Func<'tcx>>,
+        rec_arena: &'tcx typed_arena::Arena<RecordType<'tcx>>,
+        scope_arena: &'tcx typed_arena::Arena<_Scope<'tcx>>
     ) -> Self {
-        let mut scope_manager = HashMap::new();
-        scope_manager.insert(
-            ScopeId(0), 
+        let scope_table = ScopeTable::new(scope_arena);
+        scope_table.add(
             _Scope::new(
                 sym_arena,
                 ScopeType::Root,
@@ -51,17 +52,19 @@ impl<'tcx> ScopeCtx<'tcx> {
             )
         ); // the root scope(id 0)
 
-        let records = RecordTable::new(rec_arena);
+        let rec_table = RecordTable::new(rec_arena);
+        let func_table = FuncTable::new(func_arena);
 
         ScopeCtxBuilder::new()
-            .scope_manager(scope_manager)
-            .records(records)
+            .scopes(scope_table)
+            .records(rec_table)
+            .functions(func_table)
             .sym_arena(sym_arena)
             .scope_id_counter(ScopeId(1)) // since zero(0) is for the root scope
             .build()
     }
 
-    pub fn create_record(&'tcx self, name: &'tcx str, record_entry: RecordType<'tcx>) -> Option<&'tcx str> {
+    pub fn create_record(&self, name: &'tcx str, record_entry: RecordType<'tcx>) -> Option<&'tcx str> {
         let rec_name = record_entry.name;
         if self.records.declare(name, record_entry).is_some() {
             self.user_types.borrow_mut().insert(rec_name.to_string());
@@ -89,7 +92,7 @@ impl<'tcx> ScopeCtx<'tcx> {
 
     pub fn enter(&self, scope_id: ScopeId) -> Option<ScopeId> {
         let scopes = &self.scopes;
-        if scopes.contains_key(&scope_id) {
+        if scopes.contains(scope_id) {
             let curr_scope = self.current.get();
             self.current.replace(_ScopeMeta { id: scope_id, typ: curr_scope.typ });
             Some(curr_scope.id)
@@ -102,12 +105,11 @@ impl<'tcx> ScopeCtx<'tcx> {
     /// Creates a new scope with the given type.
     /// 
     /// Returns the ID of newly created scope.
-    pub fn push(&mut self, scope_type: ScopeType) -> ScopeId {
+    pub fn push(&self, scope_type: ScopeType) -> ScopeId {
         let scope_id = self.next_id.replace(ScopeId(self.next_id.get().0 + 1));
-        let scopes = &mut self.scopes;
 
-        let parent = *scopes.iter().last().expect("Stack required non-empty").0;
-        scopes.insert(scope_id, _Scope::new(self.sym_arena, scope_type, Some(parent)));
+        let parent = self.scopes.iter().last().expect("Stack required non-empty").id.get();
+        self.scopes.add(_Scope::new(self.sym_arena, scope_type, Some(parent)));
 
         self.stack.borrow_mut().push(scope_id);
         let curr_scope = self.current.replace(_ScopeMeta { id: scope_id, typ: scope_type });
@@ -127,7 +129,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         let popped_id = self.stack.borrow_mut().pop().unwrap();
         let stack = self.stack.borrow();
         let new_top_id = *stack.last().unwrap();
-        let new_top_scope = self.scopes.get(&new_top_id).expect("Sync error");
+        let new_top_scope = self.scopes.get(new_top_id).expect("Sync error");
 
         self.current.replace(_ScopeMeta { 
             id: new_top_id, 
@@ -137,7 +139,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         // If there is another scope below our new top, that is the new 'previous'
         if stack.len() > 1 {
             let parent_id = stack[stack.len() - 2];
-            let parent_scope = self.scopes.get(&parent_id).unwrap();
+            let parent_scope = self.scopes.get(parent_id).unwrap();
             self.previous.replace(_ScopeMeta { id: parent_id, typ: parent_scope.ty });
         } else {
             // we are back at root, there is no previous.
@@ -147,7 +149,7 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn deep_lookup(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym> {
-        if let Some(scope) = self.scopes.get(&scope_id.unwrap_or(self.current.get().id)) {
+        if let Some(scope) = self.scopes.get(scope_id.unwrap_or(self.current.get().id)) {
             if let Some(sym) = scope.get_sym(name) {
                 return Some(sym);
             }
@@ -159,14 +161,14 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn declare_in_scope(&'tcx self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
-        let Some(scope) = self.scopes.get(&scope_id) else {
+        let Some(scope) = self.scopes.get(scope_id) else {
             panic!("Couldn't find scope '{:#?}'", scope_id);
         };
         scope.add_sym(sym)
     }
 
     pub fn declare(&'tcx self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
-        let Some(current_scope) = self.scopes.get(&self.current.get().id) else {
+        let Some(current_scope) = self.scopes.get(self.current.get().id) else {
             panic!("Couldn't find current scope");
         };
         current_scope.add_sym(sym)
@@ -197,7 +199,7 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn is_inside_scope_type(&self, mut scope_id: ScopeId, target: ScopeType) -> bool {
-        while let Some(scope) = self.scopes.get(&scope_id) {
+        while let Some(scope) = self.scopes.get(scope_id) {
             if scope.ty == target {
                 return true;
             }
@@ -240,16 +242,24 @@ impl<'tcx> ScopeCtx<'tcx> {
 
 #[cfg(test)]
 mod tests {
-    use kagc_symbol::Sym;
+    use kagc_symbol::{Sym, function::Func};
     use kagc_types::record::RecordType;
 
-    use crate::{ctx::ScopeCtx, scope::ScopeType};
+    use crate::ctx::ScopeCtx;
+    use crate::scope::{_Scope, ScopeType};
 
     #[test]
     fn test_current_and_previous_pointers_on_push() {
         let sym_arena = typed_arena::Arena::<Sym>::new();
         let rec_arena = typed_arena::Arena::<RecordType>::new();
-        let mut cx = ScopeCtx::new(&sym_arena, &rec_arena);
+        let func_arena = typed_arena::Arena::<Func>::new();
+        let scope_arena = typed_arena::Arena::<_Scope>::new();
+        let cx = ScopeCtx::new(
+            &sym_arena, 
+            &func_arena,
+            &rec_arena,
+            &scope_arena
+        );
         cx.push(ScopeType::Function);
 
         assert!(cx.current.get().typ == ScopeType::Function);
@@ -269,7 +279,14 @@ mod tests {
     fn test_current_and_previous_pointers_on_pop() {
         let sym_arena = typed_arena::Arena::<Sym>::new();
         let rec_arena = typed_arena::Arena::<RecordType>::new();
-        let mut cx = ScopeCtx::new(&sym_arena, &rec_arena);
+        let func_arena = typed_arena::Arena::<Func>::new();
+        let scope_arena = typed_arena::Arena::<_Scope>::new();
+        let cx = ScopeCtx::new(
+            &sym_arena, 
+            &func_arena,
+            &rec_arena,
+            &scope_arena
+        );
         cx.push(ScopeType::Function);
         cx.push(ScopeType::Loop);
         cx.push(ScopeType::Loop);
