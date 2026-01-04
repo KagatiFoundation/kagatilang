@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::{cell::RefCell, collections::HashMap, slice::{Iter, IterMut}};
-use crate::{STableLookupKey, Sym, sym::SymbolTrait};
+use std::{cell::{Cell, RefCell}, collections::HashMap, slice::{Iter, IterMut}};
+use crate::{STableLookupKey, Sym, SymId, sym::SymbolTrait};
 
 /// Maximum number of symbols that can be stored in the symbol table.
 pub const NSYMBOLS: usize = 1024;
@@ -115,14 +115,16 @@ impl<T: SymbolTrait + Clone> Symtable<T> {
 
 pub struct SymTable<'tcx> {
     arena: &'tcx typed_arena::Arena<Sym<'tcx>>,
-    pub symbols: RefCell<HashMap<&'tcx str, &'tcx Sym<'tcx>>>
+    pub symbols: RefCell<HashMap<&'tcx str, &'tcx Sym<'tcx>>>,
+    pub next_id: Cell<usize>,
 }
 
 impl<'tcx> SymTable<'tcx> {
     pub fn new(arena: &'tcx typed_arena::Arena<Sym<'tcx>>) -> Self {
         Self {
             arena,
-            symbols: RefCell::new(HashMap::new())
+            symbols: RefCell::new(HashMap::new()),
+            next_id: Cell::new(0) // begin the count
         }
     }
 
@@ -132,6 +134,9 @@ impl<'tcx> SymTable<'tcx> {
             return Err(*existing);
         }
         
+        let sym_id = self.next_id.replace(self.next_id.get() + 1);
+        sym.id.replace(SymId(sym_id));
+
         let alloced = self.arena.alloc(sym);
         syms.insert(alloced.name, alloced);
         Ok(alloced)

@@ -9,7 +9,7 @@ use kagc_token::{
 };
 use kagc_types::TyKind;
 
-use crate::{BlockStmt, Expr, FuncCallExpr, IfStmt, Stmt};
+use crate::{BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, IfStmt, Stmt};
 
 use super::ASTKind;
 
@@ -282,6 +282,11 @@ impl<'tcx> AST<'tcx> {
         }
     }
 
+    pub fn expect_func_decl_stmt_mut(&mut self) -> &mut FuncDeclStmt<'tcx> {
+        let stmt = self.as_stmt_mut().expect("expected stmt");
+        stmt.as_func_decl_mut().expect("expected function declaration stmt")
+    } 
+
     pub fn expect_block_stmt_mut(&mut self) -> &mut BlockStmt<'tcx> {
         let stmt = self.as_stmt_mut().expect("expected stmt");
         stmt.as_block_mut().expect("expected block stmt")
@@ -297,7 +302,7 @@ impl<'tcx> AST<'tcx> {
         stmt.as_if_mut().expect("expected if stmt")
     }
 
-    pub fn expect_function_call_expr_mut(&mut self) -> &mut FuncCallExpr<'tcx> {
+    pub fn expect_func_call_expr_mut(&mut self) -> &mut FuncCallExpr<'tcx> {
         let expr = self.as_expr_mut().expect("expected expression");
         expr.as_func_call_mut().expect("expected function call")
     }

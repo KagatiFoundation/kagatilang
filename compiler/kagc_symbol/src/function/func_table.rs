@@ -3,39 +3,51 @@
 
 #![allow(clippy::new_without_default)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use super::FunctionInfo;
+use crate::function::FuncId;
+
+use super::Func;
 
 #[derive(Default)]
-pub struct FunctionInfoTable<'tcx> {
-    arena: typed_arena::Arena<FunctionInfo<'tcx>>,
-    functions: RefCell<HashMap<&'tcx str, &'tcx FunctionInfo<'tcx>>>
+pub struct FuncTable<'tcx> {
+    arena: typed_arena::Arena<Func<'tcx>>,
+    functions: RefCell<HashMap<&'tcx str, &'tcx Func<'tcx>>>,
+    next_id: Cell<usize>,
 }
 
-impl<'tcx> FunctionInfoTable<'tcx> {
+impl<'tcx> FuncTable<'tcx> {
     pub fn new() -> Self {
         Self {
             arena: typed_arena::Arena::new(),
-            functions: RefCell::new(HashMap::new())
+            functions: RefCell::new(HashMap::new()),
+            next_id: Cell::new(0) // begin the counter
         }
     }
 
-    pub fn lookup(&'tcx self, name: &str) -> Option<&'tcx FunctionInfo<'tcx>> {
+    pub fn get(&'tcx self, name: &str) -> Option<&'tcx Func<'tcx>> {
         let functions = self.functions.borrow();
         functions.get(name).copied()
     }
 
-    pub fn declare(&'tcx self, name: &'tcx str, entry: FunctionInfo<'tcx>) -> Option<&'tcx FunctionInfo<'tcx>> {
+    pub fn add(&'tcx self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>>  {
         let mut functions = self.functions.borrow_mut();
-        let allocated = self.arena.alloc(entry);
-        functions.insert(name, allocated)
+        if let Some(existing) = functions.get(name) {
+            return Err(*existing);
+        }
+
+        let func_id = self.next_id.replace(self.next_id.get() + 1);
+        func.id.replace(FuncId(func_id));
+
+        let alloced = self.arena.alloc(func);
+        functions.insert(name, alloced);
+        Ok(alloced)
     }
 
-    pub fn lookup_by_id(&self, id: usize) -> Option<&'tcx FunctionInfo<'tcx>> {
+    pub fn get_by_id(&self, id: FuncId) -> Option<&'tcx Func<'tcx>> {
         let functions = self.functions.borrow();
-        let function = functions.iter().find(|&(_, &func)| func.func_id == id)?;
+        let function = functions.iter().find(|&(_, &func)| func.id.get() == id)?;
         Some(function.1)
     }
 

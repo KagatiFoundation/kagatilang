@@ -20,7 +20,7 @@ use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
 use kagc_mir::builtin::BuiltinFn;
 use kagc_errors::diagnostic::Diagnostic;
-use kagc_symbol::function::FunctionInfo;
+use kagc_symbol::function::Func;
 use kagc_utils::bug;
 
 use crate::fn_ctx::FunctionContext;
@@ -46,7 +46,7 @@ pub struct AstToMirLowerer<'a, 'tcx> {
     pub ir_builder: MirBuilder,
 
     /// Current function that is being parsed
-    current_function: Option<FunctionInfo<'tcx>>,
+    current_function: Option<Func<'tcx>>,
 }
 
 impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {

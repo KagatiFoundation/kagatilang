@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_symbol::function::FunctionId;
+use kagc_symbol::function::FuncId;
 use kagc_types::LitValue;
 use kagc_types::TyKind;
 
@@ -60,7 +60,7 @@ pub struct FuncCallExpr<'tcx> {
     /// Name of the called function
     pub symbol_name: &'tcx str,
 
-    pub id: FunctionId,
+    pub id: FuncId,
 
     pub ty: TyKind<'tcx>,
     // args

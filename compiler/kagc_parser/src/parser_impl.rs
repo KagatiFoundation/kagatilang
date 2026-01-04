@@ -334,7 +334,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         param.ty, 
                         SymTy::Variable, 
                         StorageClass::PARAM, 
-                        self.current_function_id
+                        FuncId(self.current_function_id)
                     );
                     if let TyKind::Record{ name } = sym.ty.get() {
                         sym.sym_ty = Cell::new(SymTy::Record { name });
@@ -1215,7 +1215,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         ty: TyKind::None,
                         symbol_name: called_symbol,
                         args: func_args,
-                        id: 0xFFFFFFFF // resolver sets this value
+                        id: FuncId(INVALID_FUNC_ID) // resolver sets this value
                     }
                 )
             ),

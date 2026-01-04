@@ -3,16 +3,18 @@
 
 #![allow(clippy::new_without_default)]
 
+use std::cell::Cell;
+
 use kagc_types::TyKind;
 
 use crate::sym::StorageClass;
 use crate::SymbolPos;
 
-/// Inavlid function ID.
-pub const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+pub struct FuncId(pub usize);
 
-/// Function ID
-pub type FunctionId = usize;
+/// Invalid function id
+pub const INVALID_FUNC_ID: usize = 0xFFFFFFFD;
 
 /// Represents a function parameter in the symbol table.
 #[derive(Clone, Debug)]
@@ -27,12 +29,12 @@ pub struct FuncParam<'tcx> {
 }
 
 #[derive(Clone, Debug)]
-pub struct FunctionInfo<'tcx> {
+pub struct Func<'tcx> {
     /// Name of the function.
     pub name: &'tcx str,
 
     /// ID of the function.
-    pub func_id: FunctionId,
+    pub id: Cell<FuncId>,
 
     /// The return type of the function.
     pub ty: TyKind<'tcx>,
@@ -46,10 +48,9 @@ pub struct FunctionInfo<'tcx> {
     pub storage_class: StorageClass
 }
 
-impl<'tcx> FunctionInfo<'tcx> {
+impl<'tcx> Func<'tcx> {
     pub fn new(
         name: &'tcx str, 
-        func_id: usize, 
         ty: TyKind<'tcx>,
         storage_class: StorageClass,
         locals: Vec<SymbolPos>,
@@ -57,7 +58,7 @@ impl<'tcx> FunctionInfo<'tcx> {
     ) -> Self {
         Self {
             name, 
-            func_id,
+            id: Cell::new(FuncId(INVALID_FUNC_ID)),
             ty, 
             local_syms: locals,
             storage_class,

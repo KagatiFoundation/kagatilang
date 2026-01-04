@@ -167,6 +167,13 @@ impl<'tcx> Stmt<'tcx> {
         }
     }
 
+    pub fn as_func_decl_mut(&mut self) -> Option<&mut FuncDeclStmt<'tcx>> {
+        match self {
+            Stmt::FuncDecl(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
     pub fn as_if(&self) -> Option<&IfStmt> {
         match self {
             Stmt::If(stmt) => Some(stmt),

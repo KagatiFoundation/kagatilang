@@ -268,7 +268,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
             .lookup_fn_by_name(func_call.symbol_name)
             .unwrap()
             .clone();
-        func_call.id = func_detail.func_id;
+        func_call.id = func_detail.id.get();
         let func_param_types = func_detail.param_types.clone();
 
         self.check_func_call_args(

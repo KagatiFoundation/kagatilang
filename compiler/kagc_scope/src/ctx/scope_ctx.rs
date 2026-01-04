@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use kagc_symbol::Sym;
-use kagc_symbol::function::FunctionInfo;
-use kagc_symbol::function::FunctionInfoTable;
+use kagc_symbol::function::Func;
+use kagc_symbol::function::FuncId;
+use kagc_symbol::function::FuncTable;
 use kagc_symbol::record::RecordTable;
 use kagc_symbol::Symbol;
 use kagc_types::record::RecordType;
@@ -23,7 +24,7 @@ pub struct CurrentScopeMeta {
 }
 
 pub struct ScopeCtx<'tcx> {
-    pub(crate) functions:           FunctionInfoTable<'tcx>,
+    pub(crate) functions:           FuncTable<'tcx>,
     pub(crate) records:             RecordTable<'tcx>,
     pub(crate) scopes:              HashMap<ScopeId, _Scope<'tcx>>,
     pub(crate) user_types:          RefCell<HashSet<String>>,
@@ -139,16 +140,16 @@ impl<'tcx> ScopeCtx<'tcx> {
         current_scope.add_sym(sym)
     }
 
-    pub fn declare_fn(&'tcx self, name: &'tcx str, func: FunctionInfo<'tcx>) -> Option<&'tcx FunctionInfo<'tcx>> {
-        self.functions.declare(name, func)
+    pub fn declare_fn(&'tcx self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>> {
+        self.functions.add(name, func)
     }
 
-    pub fn lookup_fn(&self, func_id: usize) -> Option<&FunctionInfo> {
-        self.functions.lookup_by_id(func_id)
+    pub fn lookup_fn(&self, func_id: usize) -> Option<&Func> {
+        self.functions.get_by_id(FuncId(func_id))
     }
 
-    pub fn lookup_fn_by_name(&'tcx self, name: &str) -> Option<&'tcx FunctionInfo<'tcx> > {
-        self.functions.lookup(name)
+    pub fn lookup_fn_by_name(&'tcx self, name: &str) -> Option<&'tcx Func<'tcx> > {
+        self.functions.get(name)
     }
 
     pub fn update_current_func(&self, new_fn: usize) {

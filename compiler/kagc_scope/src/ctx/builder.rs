@@ -5,14 +5,14 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use kagc_symbol::Sym;
-use kagc_symbol::function::FunctionInfoTable;
+use kagc_symbol::function::FuncTable;
 use kagc_symbol::record::RecordTable;
 
 use crate::ctx::{CurrentScopeMeta, ScopeCtx};
 use crate::scope::{_Scope, ScopeId, ScopeType};
 
 pub struct ScopeCtxBuilder<'tcx> {
-    functions:              Option<FunctionInfoTable<'tcx>>,
+    functions:              Option<FuncTable<'tcx>>,
     current_function:       Option<usize>,
     scope_mgr:              Option<HashMap<ScopeId, _Scope<'tcx>>>,
     current_scope:          Option<CurrentScopeMeta>,
@@ -41,7 +41,7 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         }
     }
 
-    pub fn functions(mut self, functions: FunctionInfoTable<'tcx>) -> Self {
+    pub fn functions(mut self, functions: FuncTable<'tcx>) -> Self {
         self.functions = Some(functions);
         self
     }

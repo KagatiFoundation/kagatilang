@@ -5,7 +5,7 @@ use std::cell::Cell;
 
 use kagc_types::*;
 
-use crate::function::FunctionId;
+use crate::function::FuncId;
 
 pub type SymbolId = usize;
 
@@ -169,6 +169,12 @@ impl<'tcx> Symbol<'tcx> {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+pub struct SymId(pub usize);
+
+/// Invalid symbol id
+pub const INVALID_SYM_ID: usize = 0xFFFFFFFE;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub enum SymTy<'tcx> {
     Variable,
     Function,
@@ -176,20 +182,22 @@ pub enum SymTy<'tcx> {
 }
 
 pub struct Sym<'tcx> {
+    pub id: Cell<SymId>,
     pub name: &'tcx str,
     pub ty: Cell<TyKind<'tcx>>,
     pub sym_ty: Cell<SymTy<'tcx>>,
     pub class: StorageClass,
-    pub function_id: Cell<FunctionId>
+    pub function_id: Cell<FuncId>
 }
 
 impl<'tcx> Sym<'tcx> {
     pub fn new(
         name: &'tcx str, ty: TyKind<'tcx>,
         sym_ty: SymTy<'tcx>, class: StorageClass,
-        func_id: FunctionId
+        func_id: FuncId
     ) -> Self {
         Self {
+            id: Cell::new(SymId(INVALID_SYM_ID)),
             name,
             ty: Cell::new(ty),
             sym_ty: Cell::new(sym_ty),

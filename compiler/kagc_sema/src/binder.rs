@@ -7,7 +7,7 @@ use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag, Severity};
 use kagc_scope::ctx::ScopeCtx;
 use kagc_scope::scope::ScopeId;
-use kagc_symbol::function::FunctionInfo;
+use kagc_symbol::function::{Func, FuncId};
 use kagc_symbol::{Sym, SymTy};
 use kagc_const::pool::{ConstPool, KagcConst, OrderedMap, RecordConst};
 use kagc_types::builtins::obj::KObjType;
@@ -134,64 +134,60 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     }
 
     fn declare_function_symbol(&mut self, node: &'r mut AST<'tcx>) -> BindingResult {
-        if !node.kind.is_stmt() {
-            bug!("cannot proceed without a FuncStmt");
+        let func_decl = node.expect_func_decl_stmt_mut();
+        let sym = Sym::new(
+            func_decl.name, 
+            func_decl.ty, 
+            SymTy::Function, 
+            func_decl.storage_class, 
+            FuncId(func_decl.func_id)
+        );
+
+        let insert_res = self
+            .scope
+            .root_scope()
+            .add_sym(sym);
+
+        if let Err(sym) = insert_res {
+            return Err(Diagnostic {
+                code: Some(ErrCode::SEM2001),
+                severity: Severity::Error,
+                primary_span: node.meta.span,
+                secondary_spans: Vec::with_capacity(0),
+                message: format!("symbol '{}' already defined", sym.name),
+                notes: Vec::with_capacity(0)
+            });
+        };
+
+        let func = Func::new(
+            func_decl.name,
+            func_decl.ty,
+            func_decl.storage_class,
+            func_decl.locals.clone(),
+            func_decl.func_param_types.clone()
+        );
+
+        let insert_res = self.scope.declare_fn(func_decl.name, func);
+        if let Err(func) = insert_res {
+            return Err(Diagnostic {
+                code: Some(ErrCode::SEM2001),
+                severity: Severity::Error,
+                primary_span: node.meta.span,
+                secondary_spans: Vec::with_capacity(0),
+                message: format!("function '{}' already defined", func.name),
+                notes: Vec::with_capacity(0)
+            });
+        };
+
+        let defined_func_id = insert_res.ok().unwrap().id.get(); // okay to unwrap
+        self.curr_func_id = Some(defined_func_id.0);
+
+        // loop through function's body to find new symbols
+        if let Some(func_body) = &mut node.left {
+            let _ = self.declare_symbol(func_body)?;
         }
 
-        if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt_mut() {
-            let function_id: Option<usize> = {
-                let sym = Sym::new(func_decl.name, func_decl.ty, SymTy::Function, func_decl.storage_class, func_decl.func_id);
-                // let insert_pos = self
-                    // .sess
-                    // .scope
-                    // .root_scope()
-                    // .add_sym(_sym);
-                Some(0)
-            };
-            // ^^^^ scope.declare() returns None if the symbol cannot be added indicating re-definition of the symbol
-            if function_id.is_none() {
-                let already_defined_err = Diagnostic {
-                    code: Some(ErrCode::SEM2001),
-                    severity: Severity::Error,
-                    primary_span: node.meta.span,
-                    secondary_spans: Vec::with_capacity(0),
-                    message: "symbol already defined".to_string(),
-                    notes: Vec::with_capacity(0)
-                };
-                return Err(already_defined_err);
-            };
-
-            // switch to function's scope
-            self.scope.enter_scope(ScopeId(func_decl.scope_id));
-            let function_id = function_id.unwrap();
-            self.curr_func_id = Some(function_id);
-
-            // making sure the subsequent users of this FuncDeclStmt AST know 
-            // what the function ID is
-            func_decl.func_id = function_id;
-
-            let func_info = FunctionInfo::<'tcx>::new(
-                func_decl.name,
-                function_id,
-                func_decl.ty,
-                func_decl.storage_class,
-                func_decl.locals.clone(),
-                func_decl.func_param_types.clone()
-            );
-
-            // create a new FunctionInfo
-            self.scope.declare_fn(func_info.name, func_info);
-
-            // loop through function's body to find new symbols
-            if let Some(func_body) = &mut node.left {
-                let _ = self.declare_symbol(func_body)?;
-            }
-
-            // exit the function's scope
-            self.scope.exit_scope();
-            return Ok(function_id);
-        }
-        bug!("Not a function declaration statement!");
+        Ok(defined_func_id.0)
     }
 
     fn declare_let_binding(&mut self, node: &mut AST<'tcx>) -> BindingResult {
@@ -209,7 +205,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         }
 
         stmt.func_id = self.scope.current_fn();
-        let sym = Sym::new(stmt.sym_name, stmt.ty, stmt.symbol_type, stmt.class, stmt.func_id);
+        let sym = Sym::new(stmt.sym_name, stmt.ty, stmt.symbol_type, stmt.class, FuncId(stmt.func_id));
         let id = self.scope.declare(sym);
 
         if let Ok(sym) = id {
