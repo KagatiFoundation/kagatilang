@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use kagc_const::pool::{ConstEntry, ConstPool, KagcConst};
-use kagc_ctx::CompilerCtx;
 use kagc_lir::block::LirTerminator;
 use kagc_lir::instruction::{LirAddress, LirInstruction};
 use kagc_lir::operand::LirOperand;

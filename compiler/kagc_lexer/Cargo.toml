@@ -12,3 +12,4 @@ kagc_errors = { path = "../kagc_errors" }
 kagc_types = { path = "../kagc_types" }
 kagc_token = { path = "../kagc_token" }
 kagc_span = { path = "../kagc_span" }
+kagc_ctx = { path = "../kagc_ctx" }

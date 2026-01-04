@@ -1,3 +1,5 @@
-mod ctx;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
-pub use ctx::*;
+mod interner;
+pub use interner::*;

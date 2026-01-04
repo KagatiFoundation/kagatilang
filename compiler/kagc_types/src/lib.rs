@@ -5,7 +5,6 @@ pub mod record;
 pub mod builtins;
 pub mod type_;
 pub mod ctx;
-pub mod str_interner;
 
 pub use type_::*;
 

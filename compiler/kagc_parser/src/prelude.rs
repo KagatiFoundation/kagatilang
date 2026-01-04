@@ -4,7 +4,7 @@
 use kagc_ast::Expr;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_lexer::Tokenizer;
-use kagc_types::str_interner::StringInterner;
+use kagc_ctx::StringInterner;
 
 use crate::Parser;
 use crate::options::ParserOptions;

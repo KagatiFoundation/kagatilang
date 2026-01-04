@@ -10,7 +10,7 @@ use kagc_span::span::{SourcePos, Span};
 use kagc_token::{Token, TokenKind, TokenPos};
 
 extern crate lazy_static;
-use kagc_types::str_interner::StringInterner;
+use kagc_ctx::StringInterner;
 use lazy_static::lazy_static;
 
 lazy_static! {

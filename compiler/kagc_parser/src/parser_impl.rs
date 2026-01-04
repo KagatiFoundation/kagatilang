@@ -1292,7 +1292,7 @@ mod tests {
     use kagc_errors::diagnostic::DiagnosticBag;
     use kagc_lexer::Tokenizer;
     use kagc_token::{Token, TokenKind};
-    use kagc_types::str_interner::StringInterner;
+    use kagc_ctx::StringInterner;
 
     use crate::{Parser, options::ParserOptions};
 
