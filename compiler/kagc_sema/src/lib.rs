@@ -6,4 +6,4 @@ mod analyzer;
 pub use analyzer::*;
 
 // symbol resolver
-pub mod resolver;
+pub mod binder;

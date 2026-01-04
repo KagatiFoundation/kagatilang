@@ -15,7 +15,7 @@ use kagc_types::record::{RecordFieldType, RecordType};
 use kagc_types::{LitValue, TyKind};
 use kagc_utils::bug;
 
-pub struct Resolver<'r, 'tcx> where 'tcx: 'r {
+pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
     pub local_offset: usize,
     curr_func_id: Option<usize>,
     pub diagnostics: &'r DiagnosticBag,
@@ -24,9 +24,9 @@ pub struct Resolver<'r, 'tcx> where 'tcx: 'r {
     pub asts: &'r mut Vec<AST<'tcx>>
 }
 
-pub type ResolverResult = Result<usize, Diagnostic>;
+pub type BindingResult = Result<usize, Diagnostic>;
 
-impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
+impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     pub fn new(
         scope: &'tcx ScopeCtx<'tcx>,
         const_pool: &'r mut ConstPool,
@@ -51,7 +51,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn declare_symbol(&mut self, node: &'r mut AST<'tcx>) -> ResolverResult  {
+    fn declare_symbol(&mut self, node: &'r mut AST<'tcx>) -> BindingResult  {
         match node.operation {
             ASTOperation::AST_FUNCTION => self.declare_function_symbol(node),
             ASTOperation::AST_VAR_DECL => self.declare_let_binding(node),
@@ -103,7 +103,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn declare_if_else_tree(&mut self, node: &'r mut AST<'tcx>) -> ResolverResult {
+    fn declare_if_else_tree(&mut self, node: &'r mut AST<'tcx>) -> BindingResult {
         if !node.kind.is_stmt() {
             bug!("Needed a IfDecl--but found {:#?}", node);
         }
@@ -133,7 +133,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         Ok(0)
     }
 
-    fn declare_function_symbol(&mut self, node: &'r mut AST<'tcx>) -> ResolverResult {
+    fn declare_function_symbol(&mut self, node: &'r mut AST<'tcx>) -> BindingResult {
         if !node.kind.is_stmt() {
             bug!("cannot proceed without a FuncStmt");
         }
@@ -194,7 +194,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         bug!("Not a function declaration statement!");
     }
 
-    fn declare_let_binding(&mut self, node: &mut AST<'tcx>) -> ResolverResult {
+    fn declare_let_binding(&mut self, node: &mut AST<'tcx>) -> BindingResult {
         let stmt = match &mut node.kind {
             ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => bug!("Invalid node"),
@@ -229,7 +229,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn validate_and_process_expr(&mut self, ast: &mut AST<'tcx>, symbol_name: &'tcx str) -> ResolverResult {
+    fn validate_and_process_expr(&mut self, ast: &mut AST<'tcx>, symbol_name: &'tcx str) -> BindingResult {
         if !ast.kind.is_expr() {
             bug!("Expected an Expr--but found {:#?}", ast);
         }
@@ -239,7 +239,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         bug!("")
     }
 
-    fn resolve_literal_constant(&mut self, expr: &mut Expr<'tcx>, parent_is_record: bool, symbol_name: &'tcx str, meta: &NodeMeta) -> ResolverResult {
+    fn resolve_literal_constant(&mut self, expr: &mut Expr<'tcx>, parent_is_record: bool, symbol_name: &'tcx str, meta: &NodeMeta) -> BindingResult {
         if let Expr::LitVal(lit_expr) = expr {
             match lit_expr.ty {
                 TyKind::Str => {
@@ -336,7 +336,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         })
     }
 
-    fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> ResolverResult {
+    fn validate_record_let_binding(&mut self, rec_name: &str, value_node: &AST) -> BindingResult {
         let rec = self.scope.lookup_record(rec_name).ok_or_else(|| {
             Diagnostic {
                 code: Some(ErrCode::SEM2000),
@@ -382,7 +382,7 @@ impl<'r, 'tcx> Resolver<'r, 'tcx> where 'tcx: 'r {
         Ok(0)
     }
 
-    fn declare_record(&mut self, node: &mut AST<'tcx>) -> ResolverResult {
+    fn declare_record(&mut self, node: &mut AST<'tcx>) -> BindingResult {
         if let ASTKind::StmtAST(Stmt::Record(stmt)) = &node.kind {
             let record_entry = RecordType {
                 name: stmt.name,
