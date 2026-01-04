@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use kagc_symbol::function::FuncId;
 use kagc_symbol::{StorageClass, SymTy};
 use kagc_types::record::RecordFieldType;
 use kagc_types::TyKind;
@@ -12,7 +13,7 @@ use super::Expr;
 #[derive(Clone, Debug)]
 pub struct FuncDeclStmt<'tcx> {
     /// Function's ID
-    pub func_id: usize,
+    pub id: FuncId,
 
     /// Function's name
     pub name: &'tcx str,
@@ -37,7 +38,7 @@ pub struct FuncDeclStmt<'tcx> {
 #[derive(Clone, Debug)]
 pub struct ReturnStmt {
     /// ID of the function that this `return` statement is in.
-    pub func_id: usize
+    pub func_id: FuncId
 }
 
 #[derive(Clone, Debug)]

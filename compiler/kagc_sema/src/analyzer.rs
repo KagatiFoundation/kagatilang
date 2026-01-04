@@ -10,6 +10,7 @@ use kagc_scope::ctx::ScopeCtx;
 use kagc_scope::scope::ScopeId;
 use kagc_symbol::Sym;
 use kagc_symbol::SymTy;
+use kagc_symbol::function::FuncId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use kagc_types::TyKind;
@@ -396,11 +397,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt() {
             let func_ret_type = self
                 .scope
-                .root_scope()
+                .root()
                 .get_sym(func_decl.name)
                 .map(|func_sym| func_sym.ty.clone());
 
-            self.scope.update_current_func(func_decl.func_id);
+            self.scope.update_current_func(func_decl.id);
 
             if func_ret_type.is_none() {
                 let diag = Diagnostic {
@@ -419,16 +420,16 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
             let func_ret_type: TyKind = TyKind::Void;
 
             // switch to function's scope
-            self.scope.enter_scope(ScopeId(func_decl.scope_id));
+            self.scope.enter(ScopeId(func_decl.scope_id));
 
             if let Some(func_body) = &mut node.left {
                 self.analyze_node(func_body)?;
             }
 
             // exit function's scope
-            self.scope.exit_scope();
+            self.scope.pop();
             // invalidate function id
-            self.scope.update_current_func(INVALID_FUNC_ID);
+            self.scope.update_current_func(FuncId(INVALID_FUNC_ID));
             return Some(func_ret_type);
         }
         panic!("Not a function declaration statement!");
@@ -514,7 +515,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
 
     fn analyze_if_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
         let if_stmt = node.expect_if_stmt();
-        self.scope.enter_scope(ScopeId(if_stmt.scope_id));
+        self.scope.enter(ScopeId(if_stmt.scope_id));
 
         // every 'if' has an expression attached with it in its
         // left branch
@@ -538,16 +539,16 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         if let Some(if_body) = &mut node.mid {
             self.analyze_node(if_body)?;
         }
-        self.scope.exit_scope();
+        self.scope.pop();
 
         // else-block
         if let Some(right_tree) = &mut node.right {
             if let Some(else_block_tree) = &mut right_tree.left {
                 if let ASTKind::StmtAST(Stmt::Scoping(scoping_stmt)) = &else_block_tree.kind {
-                    self.scope.enter_scope(ScopeId(scoping_stmt.scope_id));
+                    self.scope.enter(ScopeId(scoping_stmt.scope_id));
                 }
                 self.analyze_node(else_block_tree)?;
-                self.scope.exit_scope();
+                self.scope.pop();
             }
         }
         Some(TyKind::None)

@@ -20,7 +20,7 @@ use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
 use kagc_mir::builtin::BuiltinFn;
 use kagc_errors::diagnostic::Diagnostic;
-use kagc_symbol::function::Func;
+use kagc_symbol::function::{Func, FuncId};
 use kagc_utils::bug;
 
 use crate::fn_ctx::FunctionContext;
@@ -106,14 +106,14 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
-        let (func_id, func_scope): (usize, usize) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
-            self.scope.enter_scope(ScopeId(func_decl.scope_id));
-            (func_decl.func_id, func_decl.scope_id)
+        let (func_id, func_scope) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
+            self.scope.enter(ScopeId(func_decl.scope_id));
+            (func_decl.id, func_decl.scope_id)
         } else {
             bug!("expected FuncStmt but found {:?}", ast);
         };
 
-        let func_name = self.get_func_name(func_id).expect("Function name error!");
+        let func_name = self.get_func_name(func_id.0).expect("Function name error!");
         let mut store_class = StorageClass::GLOBAL;
         if let Some(finfo) = self.scope.lookup_fn_by_name(func_name.as_str()) {
             self.current_function = Some(finfo.clone());
@@ -167,7 +167,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         self.current_function = None;
         // exit function's scope
-        self.scope.exit_scope();
+        self.scope.pop();
         Ok(current_block_id)
     }
 
@@ -533,7 +533,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
-            self.scope.enter_scope(ScopeId(if_stmt.scope_id));
+            self.scope.enter(ScopeId(if_stmt.scope_id));
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
@@ -576,7 +576,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             }
         }
         // exit if-scope
-        self.scope.exit_scope();
+        self.scope.pop();
         
         if let Some(right_tree) = &mut ast.right {
             // dump 'else' block's code
@@ -608,7 +608,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let ASTKind::StmtAST(Stmt::Scoping(scope_stmt)) = &ast.kind {
-            self.scope.enter_scope(ScopeId(scope_stmt.scope_id));
+            self.scope.enter(ScopeId(scope_stmt.scope_id));
         }
         else {
             bug!("provided AST tree is not of type 'AST_ELSE'");
@@ -631,7 +631,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             }
         }
 
-        self.scope.exit_scope();
+        self.scope.pop();
         Ok(last_block_id)
     }
 
@@ -644,7 +644,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn get_func_name(&mut self, index: usize) -> Option<String> {
-        self.scope.lookup_fn(index).map(|func| func.name.to_string())
+        self.scope.lookup_fn(FuncId(index)).map(|func| func.name.to_string())
     }
 
     fn get_symbol_local_or_global(&self, sym_name: &str) -> Option<Sym<'tcx>> {

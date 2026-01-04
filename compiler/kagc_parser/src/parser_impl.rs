@@ -383,7 +383,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         // Return AST for function declaration
         Some(AST::with_meta(
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
-                func_id: temp_func_id,
+                id: FuncId(temp_func_id),
                 name: id_token.lexeme,
                 scope_id: 0,
                 ty: func_return_type,
@@ -475,7 +475,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     ASTKind::StmtAST(
                         Stmt::Return(
                             ReturnStmt {
-                                func_id: self.current_function_id,
+                                func_id: FuncId(self.current_function_id),
                             }
                         )
                     ),
@@ -499,7 +499,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 kind: ASTKind::StmtAST(
                     Stmt::Return(
                         ReturnStmt {
-                            func_id: self.current_function_id,
+                            func_id: FuncId(self.current_function_id),
                         }
                     )
                 ),

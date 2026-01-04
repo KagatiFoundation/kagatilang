@@ -18,7 +18,7 @@ use crate::ctx::builder::ScopeCtxBuilder;
 use crate::scope::*;
 
 #[derive(Debug, Clone, Copy)]
-pub struct CurrentScopeMeta {
+pub struct _ScopeMeta {
     pub(crate) id: ScopeId,
     pub(crate) typ: ScopeType
 }
@@ -28,11 +28,11 @@ pub struct ScopeCtx<'tcx> {
     pub(crate) records:             RecordTable<'tcx>,
     pub(crate) scopes:              HashMap<ScopeId, _Scope<'tcx>>,
     pub(crate) user_types:          RefCell<HashSet<String>>,
-    pub(crate) current_function:    Cell<usize>,
-    pub(crate) current_scope:       Cell<CurrentScopeMeta>,
-    pub(crate) scope_id_counter:    Cell<ScopeId>,
-    pub(crate) prev_scope:          Cell<ScopeId>,
-    pub(crate) scope_stack:         RefCell<HashSet<ScopeId>>,
+    pub(crate) current_func_id:     Cell<FuncId>,
+    pub(crate) current:             Cell<_ScopeMeta>,
+    pub(crate) previous:            Cell<_ScopeMeta>,
+    pub(crate) next_id:             Cell<ScopeId>,
+    pub(crate) stack:               RefCell<Vec<ScopeId>>,
     pub(crate) sym_arena:           &'tcx typed_arena::Arena<Sym<'tcx>>,
 }
 
@@ -42,7 +42,14 @@ impl<'tcx> ScopeCtx<'tcx> {
         rec_arena: &'tcx typed_arena::Arena<RecordType<'tcx>>
     ) -> Self {
         let mut scope_manager = HashMap::new();
-        scope_manager.insert(ScopeId(0), _Scope::new(sym_arena, ScopeType::Root)); // the root scope(id 0)
+        scope_manager.insert(
+            ScopeId(0), 
+            _Scope::new(
+                sym_arena,
+                ScopeType::Root,
+                None // root scope has no parent(lol that's sad)
+            )
+        ); // the root scope(id 0)
 
         let records = RecordTable::new(rec_arena);
 
@@ -71,21 +78,20 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.user_types.borrow().contains(rec_name)
     }
 
-    pub fn live_scope_id(&self) -> ScopeId {
-        self.current_scope.get().id
+    pub fn live_id(&self) -> ScopeId {
+        self.current.get().id
     }
 
-    pub fn root_scope(&self) -> &'tcx _Scope {
+    pub fn root(&self) -> &'tcx _Scope {
         todo!()
         // self.scopes.borrow().get(&ScopeId(0)).unwrap() // root scope's ID is 0 and it is always present
     }
 
-    pub fn enter_scope(&self, scope_id: ScopeId) -> Option<ScopeId> {
+    pub fn enter(&self, scope_id: ScopeId) -> Option<ScopeId> {
         let scopes = &self.scopes;
         if scopes.contains_key(&scope_id) {
-            self.prev_scope.replace(self.current_scope.get().id);
-            let curr_scope = self.current_scope.get();
-            self.current_scope.replace(CurrentScopeMeta { id: scope_id, typ: curr_scope.typ });
+            let curr_scope = self.current.get();
+            self.current.replace(_ScopeMeta { id: scope_id, typ: curr_scope.typ });
             Some(curr_scope.id)
         }
         else {
@@ -93,33 +99,59 @@ impl<'tcx> ScopeCtx<'tcx> {
         }
     }
 
-    pub fn enter_new_scope(&mut self, scope_type: ScopeType) -> ScopeId {
-        let new_scope_id = self.scope_id_counter.get();
+    /// Creates a new scope with the given type.
+    /// 
+    /// Returns the ID of newly created scope.
+    pub fn push(&mut self, scope_type: ScopeType) -> ScopeId {
+        let scope_id = self.next_id.replace(ScopeId(self.next_id.get().0 + 1));
         let scopes = &mut self.scopes;
-        // self.scopes.insert(new_scope_id, Scope::new(self.current_scope.get().id, scope_type));
-        scopes.insert(new_scope_id, _Scope::new(self.sym_arena, scope_type));
-        self.scope_id_counter.replace(ScopeId(self.scope_id_counter.get().0 + 1));
 
-        // set scope id
-        self.prev_scope.replace( self.current_scope.get().id);
-        let curr_scope = self.current_scope.get();
-        self.current_scope.replace(CurrentScopeMeta { id: new_scope_id, typ: curr_scope.typ });
-        curr_scope.id
+        let parent = *scopes.iter().last().expect("Stack required non-empty").0;
+        scopes.insert(scope_id, _Scope::new(self.sym_arena, scope_type, Some(parent)));
+
+        self.stack.borrow_mut().push(scope_id);
+        let curr_scope = self.current.replace(_ScopeMeta { id: scope_id, typ: scope_type });
+
+        self.previous.replace(curr_scope);
+        scope_id
     }
 
-    /// Returns the ID of the exited scope.
-    pub fn exit_scope(&self) -> ScopeId {
-        let ret = self.current_scope.get();
-        self.current_scope.replace(CurrentScopeMeta { id: self.prev_scope.get(), typ: ret.typ });
-        ret.id
+    /// Goes back to the previous scope.
+    /// 
+    /// Returns the ID of the popped scope.
+    pub fn pop(&self) -> ScopeId {
+        if self.stack.borrow().len() <= 1 {
+            panic!("Attempted to pop the root scope!");
+        }
+
+        let popped_id = self.stack.borrow_mut().pop().unwrap();
+        let stack = self.stack.borrow();
+        let new_top_id = *stack.last().unwrap();
+        let new_top_scope = self.scopes.get(&new_top_id).expect("Sync error");
+
+        self.current.replace(_ScopeMeta { 
+            id: new_top_id, 
+            typ: new_top_scope.ty 
+        });
+
+        // If there is another scope below our new top, that is the new 'previous'
+        if stack.len() > 1 {
+            let parent_id = stack[stack.len() - 2];
+            let parent_scope = self.scopes.get(&parent_id).unwrap();
+            self.previous.replace(_ScopeMeta { id: parent_id, typ: parent_scope.ty });
+        } else {
+            // we are back at root, there is no previous.
+            self.previous.replace(_ScopeMeta { id: ScopeId(0), typ: ScopeType::Root });
+        }
+        popped_id
     }
 
     pub fn deep_lookup(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym> {
-        if let Some(scope) = self.scopes.get(&scope_id.unwrap_or(self.current_scope.get().id)) {
+        if let Some(scope) = self.scopes.get(&scope_id.unwrap_or(self.current.get().id)) {
             if let Some(sym) = scope.get_sym(name) {
                 return Some(sym);
             }
-            else if let Some(parent_scope) = scope.parent_scope {
+            else if let Some(parent_scope) = scope.parent {
                 return self.deep_lookup(Some(parent_scope), name);
             }
         }
@@ -134,7 +166,7 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn declare(&'tcx self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
-        let Some(current_scope) = self.scopes.get(&self.current_scope.get().id) else {
+        let Some(current_scope) = self.scopes.get(&self.current.get().id) else {
             panic!("Couldn't find current scope");
         };
         current_scope.add_sym(sym)
@@ -144,20 +176,20 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.functions.add(name, func)
     }
 
-    pub fn lookup_fn(&self, func_id: usize) -> Option<&Func> {
-        self.functions.get_by_id(FuncId(func_id))
+    pub fn lookup_fn(&self, id: FuncId) -> Option<&Func> {
+        self.functions.get_by_id(id)
     }
 
     pub fn lookup_fn_by_name(&'tcx self, name: &str) -> Option<&'tcx Func<'tcx> > {
         self.functions.get(name)
     }
 
-    pub fn update_current_func(&self, new_fn: usize) {
-        self.current_function.replace(new_fn);
+    pub fn update_current_func(&self, new_fn: FuncId) {
+        self.current_func_id.replace(new_fn);
     }
 
-    pub fn current_fn(&self) -> usize {
-        self.current_function.get()
+    pub fn current_fn(&self) -> FuncId {
+        self.current_func_id.get()
     }
 
     pub fn collect_params(&self, scope_id: ScopeId) -> Vec<&Symbol> {
@@ -169,7 +201,7 @@ impl<'tcx> ScopeCtx<'tcx> {
             if scope.ty == target {
                 return true;
             }
-            if let Some(parent) = scope.parent_scope {
+            if let Some(parent) = scope.parent {
                 scope_id = parent;
             } else {
                 break;
@@ -179,29 +211,80 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn inside_function(&self) -> bool {
-        if self.current_scope.get().typ == ScopeType::Function {
+        if self.current.get().typ == ScopeType::Function {
             return true;
         }
-        self.is_inside_scope_type(self.current_scope.get().id, ScopeType::Function)
+        self.is_inside_scope_type(self.current.get().id, ScopeType::Function)
     }
 
     pub fn inside_loop(&self) -> bool {
-        if self.current_scope.get().typ == ScopeType::Loop {
+        if self.current.get().typ == ScopeType::Loop {
             return true;
         }
-        else if self.prev_scope.get().0 == 0 {
+        else if self.previous.get().id == ScopeId(0) {
             return false;
         }
-        self.is_inside_scope_type(self.current_scope.get().id, ScopeType::Loop)
+        self.is_inside_scope_type(self.current.get().id, ScopeType::Loop)
     }
 
     pub fn inside_if(&self) -> bool {
-        if self.current_scope.get().typ == ScopeType::If {
+        if self.current.get().typ == ScopeType::If {
             return true;
         }
-        else if self.prev_scope.get().0 == 0 {
+        else if self.previous.get().id == ScopeId(0) {
             return false;
         }
-        self.is_inside_scope_type(self.current_scope.get().id, ScopeType::If)
+        self.is_inside_scope_type(self.current.get().id, ScopeType::If)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kagc_symbol::Sym;
+    use kagc_types::record::RecordType;
+
+    use crate::{ctx::ScopeCtx, scope::ScopeType};
+
+    #[test]
+    fn test_current_and_previous_pointers_on_push() {
+        let sym_arena = typed_arena::Arena::<Sym>::new();
+        let rec_arena = typed_arena::Arena::<RecordType>::new();
+        let mut cx = ScopeCtx::new(&sym_arena, &rec_arena);
+        cx.push(ScopeType::Function);
+
+        assert!(cx.current.get().typ == ScopeType::Function);
+        assert!(cx.previous.get().typ == ScopeType::Root);
+
+        cx.push(ScopeType::Loop);
+        assert!(cx.current.get().typ == ScopeType::Loop);
+        assert!(cx.previous.get().typ == ScopeType::Function);
+
+        cx.push(ScopeType::Loop);
+        cx.push(ScopeType::If);
+        assert!(cx.current.get().typ == ScopeType::If);
+        assert!(cx.previous.get().typ == ScopeType::Loop);
+    }
+
+    #[test]
+    fn test_current_and_previous_pointers_on_pop() {
+        let sym_arena = typed_arena::Arena::<Sym>::new();
+        let rec_arena = typed_arena::Arena::<RecordType>::new();
+        let mut cx = ScopeCtx::new(&sym_arena, &rec_arena);
+        cx.push(ScopeType::Function);
+        cx.push(ScopeType::Loop);
+        cx.push(ScopeType::Loop);
+        cx.push(ScopeType::If);
+
+        cx.pop();
+        assert!(cx.current.get().typ == ScopeType::Loop);
+        assert!(cx.previous.get().typ == ScopeType::Loop);
+
+        cx.pop();
+        assert!(cx.current.get().typ == ScopeType::Loop);
+        assert!(cx.previous.get().typ == ScopeType::Function);
+
+        cx.pop();
+        assert!(cx.current.get().typ == ScopeType::Function);
+        assert!(cx.previous.get().typ == ScopeType::Root, "previous is {:#?}", cx.previous.get().typ);
     }
 }

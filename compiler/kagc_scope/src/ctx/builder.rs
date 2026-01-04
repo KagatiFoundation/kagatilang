@@ -5,22 +5,22 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 use kagc_symbol::Sym;
-use kagc_symbol::function::FuncTable;
+use kagc_symbol::function::{FuncId, FuncTable};
 use kagc_symbol::record::RecordTable;
 
-use crate::ctx::{CurrentScopeMeta, ScopeCtx};
+use crate::ctx::{_ScopeMeta, ScopeCtx};
 use crate::scope::{_Scope, ScopeId, ScopeType};
 
 pub struct ScopeCtxBuilder<'tcx> {
     functions:              Option<FuncTable<'tcx>>,
-    current_function:       Option<usize>,
+    current_function:       Option<FuncId>,
     scope_mgr:              Option<HashMap<ScopeId, _Scope<'tcx>>>,
-    current_scope:          Option<CurrentScopeMeta>,
+    current_scope:          Option<_ScopeMeta>,
+    previous_scope:         Option<_ScopeMeta>,
     scope_id_counter:       Option<ScopeId>,
-    prev_scope:             Option<ScopeId>,
     records:                Option<RecordTable<'tcx>>,
     user_types:             Option<HashSet<String>>,
-    scope_stack:            Option<HashSet<ScopeId>>,
+    scope_stack:            Option<Vec<ScopeId>>,
     sym_arena:              Option<&'tcx typed_arena::Arena<Sym<'tcx>>>,
 }
 
@@ -32,8 +32,8 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
             current_function:   None,
             scope_mgr:          None,
             current_scope:      None,
+            previous_scope:     None,
             scope_id_counter:   None,
-            prev_scope:         None,
             records:            None,
             user_types:         None,
             scope_stack:        None,
@@ -46,8 +46,8 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         self
     }
 
-    pub fn current_function(mut self, current_function: usize) -> Self {
-        self.current_function = Some(current_function);
+    pub fn current_function(mut self, id: FuncId) -> Self {
+        self.current_function = Some(id);
         self
     }
 
@@ -56,18 +56,18 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         self
     }
 
-    pub fn current_scope(mut self, current_scope: CurrentScopeMeta) -> Self {
+    pub fn current_scope(mut self, current_scope: _ScopeMeta) -> Self {
         self.current_scope = Some(current_scope);
+        self
+    }
+
+    pub fn previous_scope(mut self, p: _ScopeMeta) -> Self {
+        self.previous_scope = Some(p);
         self
     }
 
     pub fn scope_id_counter(mut self, scope_id_counter: ScopeId) -> Self {
         self.scope_id_counter = Some(scope_id_counter);
-        self
-    }
-
-    pub fn previous_scope(mut self, prev_scope: ScopeId) -> Self {
-        self.prev_scope = Some(prev_scope);
         self
     }
 
@@ -86,21 +86,29 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         self
     }
 
+    pub fn stack(mut self, s: Vec<ScopeId>) -> Self {
+        self.scope_stack = Some(s);
+        self
+    }
+
     pub fn build(self) -> ScopeCtx<'tcx> {
         ScopeCtx {
             functions: self.functions.unwrap_or_default(),
-            current_function: Cell::new(self.current_function.unwrap_or_default()),
+            current_func_id: Cell::new(self.current_function.unwrap_or(FuncId(0))), // start counting function ids at 0
             scopes: self.scope_mgr.unwrap_or_default(),
-            current_scope: Cell::new(self.current_scope.unwrap_or(CurrentScopeMeta {
+            current: Cell::new(self.current_scope.unwrap_or(_ScopeMeta {
                 id: ScopeId::default(),
                 typ: ScopeType::default(),
             })),
-            scope_id_counter: Cell::new(self.scope_id_counter.unwrap_or(ScopeId(0))),
-            prev_scope: Cell::new(self.prev_scope.unwrap_or(ScopeId(0))),
+            previous: Cell::new(self.previous_scope.unwrap_or(_ScopeMeta {
+                id: ScopeId::default(),
+                typ: ScopeType::default(),
+            })),
+            next_id: Cell::new(self.scope_id_counter.unwrap_or(ScopeId(0))),
             records: self.records.unwrap(), // unsafe unwrap call
             user_types: RefCell::new(self.user_types.unwrap_or_default()),
             sym_arena: self.sym_arena.unwrap(), // unsafe unwrap call
-            scope_stack: RefCell::new(self.scope_stack.unwrap_or_default())
+            stack: RefCell::new(self.scope_stack.unwrap_or_default())
         }
     }
 }

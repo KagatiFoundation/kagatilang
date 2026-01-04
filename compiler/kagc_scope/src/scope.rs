@@ -9,11 +9,12 @@ pub struct ScopeId(pub usize);
 
 #[derive(Debug, Default, Eq, PartialEq, Clone, Copy)]
 pub enum ScopeType {
-    #[default] Function,
+    Function,
     Loop,
     If,
 
     /// Default scope
+    #[default] 
     Root
 }
 
@@ -50,15 +51,19 @@ impl<'tcx> Scope<'tcx> {
 
 pub struct _Scope<'tcx> {
     pub symt: SymTable<'tcx>,
-    pub parent_scope: Option<ScopeId>,
+    pub parent: Option<ScopeId>,
     pub ty: ScopeType
 }
 
 impl<'tcx> _Scope<'tcx> {
-    pub fn new(arena: &'tcx typed_arena::Arena<Sym<'tcx>>, ty: ScopeType) -> Self {
+    pub fn new(
+        arena: &'tcx typed_arena::Arena<Sym<'tcx>>, 
+        ty: ScopeType,
+        parent: Option<ScopeId>
+    ) -> Self {
         Self {
             symt: SymTable::new(arena),
-            parent_scope: None,
+            parent,
             ty
         }
     }

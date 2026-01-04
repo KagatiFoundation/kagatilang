@@ -108,8 +108,8 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             bug!("Needed a IfDecl--but found {:#?}", node);
         }
         if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &mut node.kind {
-            self.scope.enter_scope(ScopeId(if_stmt.scope_id));
-            self.scope.exit_scope();
+            self.scope.enter(ScopeId(if_stmt.scope_id));
+            self.scope.pop();
         }
         else {
             bug!("Provided Stmt {:#?} is not of type IfStmt! Aborting...", node);
@@ -117,17 +117,17 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
 
         if let Some(mid_tree) = &mut node.mid {
             self.declare_symbol(mid_tree)?; // mid tree is the 'if' block
-            self.scope.exit_scope(); // exit if-block's scope
+            self.scope.pop(); // exit if-block's scope
         }
 
         if let Some(right_tree) = &mut node.right {
             // right tree is the 'else' block
             if let Some(else_block_tree) = &mut right_tree.left {
                 if let ASTKind::StmtAST(Stmt::Scoping(scoping_stmt)) = &else_block_tree.kind {
-                    self.scope.enter_scope(ScopeId(scoping_stmt.scope_id));
+                    self.scope.enter(ScopeId(scoping_stmt.scope_id));
                 }
                 self.declare_symbol(else_block_tree)?;
-                self.scope.exit_scope();
+                self.scope.pop();
             }
         }
         Ok(0)
@@ -140,12 +140,12 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             func_decl.ty, 
             SymTy::Function, 
             func_decl.storage_class, 
-            FuncId(func_decl.func_id)
+            func_decl.id
         );
 
         let insert_res = self
             .scope
-            .root_scope()
+            .root()
             .add_sym(sym);
 
         if let Err(sym) = insert_res {
@@ -204,7 +204,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             self.validate_and_process_expr(left, stmt.sym_name)?;
         }
 
-        stmt.func_id = self.scope.current_fn();
+        stmt.func_id = self.scope.current_fn().0;
         let sym = Sym::new(stmt.sym_name, stmt.ty, stmt.symbol_type, stmt.class, FuncId(stmt.func_id));
         let id = self.scope.declare(sym);
 
