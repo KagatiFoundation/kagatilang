@@ -385,7 +385,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 id: FuncId(temp_func_id),
                 name: id_token.lexeme,
-                scope_id: 0,
                 ty: func_return_type,
                 storage_class: func_storage_class,
                 locals: func_locals,
@@ -574,31 +573,25 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_if_stmt(&mut self) -> ParseOutput<'tcx> {
         let cond_ast = self.parse_conditional_stmt(TokenKind::KW_IF)?;
-        // let if_scope = self.scope.enter_new_scope(ScopeType::If); // enter if's scope
-
         let if_true_ast = self.parse_single_stmt()?;
-        // self.scope.exit_scope(); // exit
 
         let mut if_false_ast = None;
         if self.peek().kind == TokenKind::KW_ELSE {
-            // let else_scope = self.scope.enter_new_scope(ScopeType::If);
-
             self.advance(); // skip 'else'
 
-            let else_block = self.parse_single_stmt()?;
+            let else_block = self.parse_compound_stmt()?;
             if_false_ast = Some(
                 AST::new(
-                    ASTKind::StmtAST(Stmt::Scoping(ScopingStmt { scope_id: 0 })),
+                    ASTKind::StmtAST(Stmt::Scoping),
                     ASTOperation::AST_ELSE,
                     Some(else_block),
                     None,
                     None
                 )
             );          
-            // self.scope.exit_scope();
         }
         Some(AST::with_mid(
-            ASTKind::StmtAST(Stmt::If(IfStmt { scope_id: 0 })),
+            ASTKind::StmtAST(Stmt::If),
             ASTOperation::AST_IF,
             Some(cond_ast),
             Some(if_true_ast),
@@ -659,8 +652,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         // Name of the variable.
         let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
 
-        // self.var_offsets.insert(id_token.lexeme.clone(), self.local_offset as usize);
-
         // Parser may encounter a colon after the identifier name.
         // This means the type of this variable has been defined
         // by the user.
@@ -670,7 +661,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
             // if the declared variable is a record
             if let TyKind::Record { name: rec_name } = &var_type {
-                sym_type = SymTy::Record { name: rec_name }; //SymbolType::Record { name: rec_name };
+                sym_type = SymTy::Record { name: rec_name };
             }
             else {
                 self.advance();
@@ -694,9 +685,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         } 
         else if let Some(Some(expr_ast)) = &assignment_parse_res {
             if let ASTKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.kind {
-                // sym_type = SymbolType::Record { 
-                //     name: record_create.name.clone() 
-                // };
                 sym_type = SymTy::Record { name: record_create.name }
             }
         }

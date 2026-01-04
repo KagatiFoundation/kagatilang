@@ -18,10 +18,6 @@ pub struct FuncDeclStmt<'tcx> {
     /// Function's name
     pub name: &'tcx str,
 
-    /// Function's scope ID
-    #[deprecated]
-    pub scope_id: usize,
-
     /// Function's return type
     pub ty: TyKind<'tcx>,
 
@@ -87,19 +83,6 @@ pub struct FuncCallStmt<'tcx> {
     pub ty: TyKind<'tcx>
 }
 
-/// Represents an `if` statement and its associated lexical scope.
-#[derive(Debug, Clone)]
-pub struct IfStmt {
-    /// Unique identifier for the scope introduced by the `if` statement.
-    pub scope_id: usize,
-}
-
-/// A statement type which create its own scope.
-#[derive(Clone, Debug)]
-pub struct ScopingStmt {
-    pub scope_id: usize
-}
-
 /// Represents a top-level `import` statement in a source file.
 #[derive(Debug, Clone)]
 pub struct ImportStmt<'tcx> {
@@ -129,7 +112,7 @@ pub struct BlockStmt<'tcx> {
 #[derive(Clone, Debug)]
 pub enum Stmt<'tcx> {
     Glue,
-    If(IfStmt),
+    If,
     For,
     While,
     Loop,
@@ -147,7 +130,7 @@ pub enum Stmt<'tcx> {
     Import(ImportStmt<'tcx>),
     Record(RecordDeclStmt<'tcx>),
     RecordField(RecordFieldStmt<'tcx>),
-    Scoping(ScopingStmt),
+    Scoping,
 
     /// Block statement
     Block(BlockStmt<'tcx>)
@@ -182,16 +165,9 @@ impl<'tcx> Stmt<'tcx> {
         }
     }
 
-    pub fn as_if(&self) -> Option<&IfStmt> {
+    pub fn as_if(&self) -> Option<()> {
         match self {
-            Stmt::If(stmt) => Some(stmt),
-            _ => None
-        }
-    }
-
-    pub fn as_if_mut(&mut self) -> Option<&mut IfStmt> {
-        match self {
-            Stmt::If(stmt) => Some(stmt),
+            Stmt::If => Some(()),
             _ => None
         }
     }

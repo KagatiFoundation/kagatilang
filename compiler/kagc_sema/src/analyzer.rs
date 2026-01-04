@@ -420,7 +420,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
             let func_ret_type: TyKind = TyKind::Void;
 
             // switch to function's scope
-            self.scope.enter(ScopeId(func_decl.scope_id));
+            self.scope.enter(ScopeId(0));
 
             if let Some(func_body) = &mut node.left {
                 self.analyze_node(func_body)?;
@@ -438,8 +438,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     fn analyze_var_decl_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
         if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
             let var_value_type: TyKind = self.analyze_expr(node.left.as_mut().unwrap())?;
-            let curr_func_id = self.scope.current_fn();
-
             if let Some(var_sym) = self.scope.deep_lookup(Some(self.current_scope), var_decl.sym_name) {
                 let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
                 
@@ -514,8 +512,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_if_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
-        let if_stmt = node.expect_if_stmt();
-        self.scope.enter(ScopeId(if_stmt.scope_id));
+        node.expect_if_stmt();
+        self.scope.enter(ScopeId(0));
 
         // every 'if' has an expression attached with it in its
         // left branch
@@ -544,8 +542,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         // else-block
         if let Some(right_tree) = &mut node.right {
             if let Some(else_block_tree) = &mut right_tree.left {
-                if let ASTKind::StmtAST(Stmt::Scoping(scoping_stmt)) = &else_block_tree.kind {
-                    self.scope.enter(ScopeId(scoping_stmt.scope_id));
+                if let ASTKind::StmtAST(Stmt::Scoping) = &else_block_tree.kind {
+                    self.scope.enter(ScopeId(0)); // TODO
                 }
                 self.analyze_node(else_block_tree)?;
                 self.scope.pop();

@@ -107,8 +107,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
         let (func_id, func_scope) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
-            self.scope.enter(ScopeId(func_decl.scope_id));
-            (func_decl.id, func_decl.scope_id)
+            self.scope.enter(ScopeId(0));
+            (func_decl.id, 0)
         } else {
             bug!("expected FuncStmt but found {:?}", ast);
         };
@@ -532,8 +532,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let ASTKind::StmtAST(Stmt::If(if_stmt)) = &ast.kind {
-            self.scope.enter(ScopeId(if_stmt.scope_id));
+        if let ASTKind::StmtAST(Stmt::If) = &ast.kind {
+            self.scope.enter(ScopeId(0));
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
@@ -607,8 +607,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let ASTKind::StmtAST(Stmt::Scoping(scope_stmt)) = &ast.kind {
-            self.scope.enter(ScopeId(scope_stmt.scope_id));
+        if let ASTKind::StmtAST(Stmt::Scoping) = &ast.kind {
+            self.scope.enter(ScopeId(0)); // TODO
         }
         else {
             bug!("provided AST tree is not of type 'AST_ELSE'");
