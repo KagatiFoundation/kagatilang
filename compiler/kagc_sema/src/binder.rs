@@ -76,7 +76,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     }
 
     fn bind_if_stmt(&self, node: &'tcx AST<'tcx>) -> BindingResult {
-        let _ = node.expect_if_stmt();
+        node.expect_if_stmt();
 
         if let Some(mid_tree) = &node.mid {
             self.scope.push(ScopeType::If);

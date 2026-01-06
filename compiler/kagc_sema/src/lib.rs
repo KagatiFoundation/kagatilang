@@ -2,8 +2,8 @@
 // Copyright (c) 2023 Kagati Foundation
 
 // type checker
-mod analyzer;
-pub use analyzer::*;
+mod ty_checker;
+pub use ty_checker::*;
 
 // symbol resolver
 pub mod binder;
