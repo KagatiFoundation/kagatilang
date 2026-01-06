@@ -51,15 +51,14 @@ impl<'tcx> AstNode<'tcx> {
             id: NodeId(INVALID_NODE_ID),
             data: NodeKind::Empty,
             op: AstOp::None,
-            left: None,
-            right: None,
-            mid: None,
-            ty: None,
+            left: None, right: None,
+            mid: None, ty: None,
             meta: NodeMeta::none()
         }
     }
 
-    pub fn new(
+    pub fn binary(
+        id: NodeId,
         kind: NodeKind<'tcx>, 
         operation: AstOp, 
         left: Option<AstNode<'tcx>>, 
@@ -74,29 +73,27 @@ impl<'tcx> AstNode<'tcx> {
             right: right.map(Box::new),
             ty,
             meta: NodeMeta::none(),
-            id: NodeId(INVALID_NODE_ID)
+            id
         }
     }
 
-    pub fn create_leaf(
+    pub fn leaf(
+        id: NodeId,
         kind: NodeKind<'tcx>, 
         operation: AstOp, 
         ty: Option<TyKind<'tcx>>,
         meta: NodeMeta
     ) -> Self {
         Self {
-            data: kind,
-            op: operation,
-            left: None,
-            mid: None,
-            right: None,
-            ty,
-            meta,
-            id: NodeId(INVALID_NODE_ID)
+            data: kind, op: operation,
+            left: None, mid: None,
+            right: None, ty,
+            meta, id
         }
     }
     
-    pub fn with_mid(
+    pub fn ternary(
+        id: NodeId,
         kind: NodeKind<'tcx>, 
         op: AstOp, 
         left: Option<AstNode<'tcx>>, 
@@ -112,28 +109,7 @@ impl<'tcx> AstNode<'tcx> {
             right: right.map(Box::new),
             ty,
             meta: NodeMeta::none(),
-            id: NodeId(INVALID_NODE_ID)
-        }
-    }
-
-    pub fn with_meta(
-        kind: NodeKind<'tcx>,
-        op: AstOp,
-        left: Option<AstNode<'tcx>>,
-        mid: Option<AstNode<'tcx>>,
-        right: Option<AstNode<'tcx>>,
-        ty: Option<TyKind<'tcx>>,
-        meta: NodeMeta
-    ) -> Self {
-        Self {
-            data: kind,
-            op,
-            left: left.map(Box::new),
-            mid: mid.map(Box::new),
-            right: right.map(Box::new),
-            ty,
-            meta,
-            id: NodeId(INVALID_NODE_ID)
+            id
         }
     }
 
