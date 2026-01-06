@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_ast::{import::Import, ASTKind, ASTOperation, Stmt, AST};
+use kagc_ast::{import::Import, NodeKind, AstOp, Stmt, AstNode};
 
 use crate::source::SourceFile;
 
@@ -63,7 +63,7 @@ pub struct CompilationUnit<'tcx> {
     pub meta_id: usize,
     pub imports: Vec<Import<'tcx>>,
     pub stage: ParsingStage,
-    pub asts: Vec<AST<'tcx>>
+    pub asts: Vec<AstNode<'tcx>>
 }
 
 impl<'tcx> CompilationUnit<'tcx> {
@@ -81,9 +81,9 @@ impl<'tcx> CompilationUnit<'tcx> {
         let mut imports = vec![]; 
 
         for ast in &self.asts {
-            match ast.operation {
-                ASTOperation::AST_IMPORT => {
-                    if let ASTKind::StmtAST(Stmt::Import(import)) = &ast.kind {
+            match ast.op {
+                AstOp::Import => {
+                    if let NodeKind::StmtAST(Stmt::Import(import)) = &ast.data {
                         imports.push(
                             Import { path: import.path }
                         );

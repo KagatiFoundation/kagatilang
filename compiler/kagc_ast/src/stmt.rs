@@ -6,7 +6,7 @@ use kagc_symbol::{StorageClass, SymTy};
 use kagc_types::record::RecordFieldType;
 use kagc_types::TyKind;
 
-use crate::AST;
+use crate::AstNode;
 
 use super::Expr;
 
@@ -106,7 +106,7 @@ pub struct RecordFieldStmt<'tcx> {
 
 #[derive(Debug, Clone)]
 pub struct BlockStmt<'tcx> {
-    pub statements: Vec<AST<'tcx>>
+    pub statements: Vec<AstNode<'tcx>>
 }
 
 #[derive(Clone, Debug)]

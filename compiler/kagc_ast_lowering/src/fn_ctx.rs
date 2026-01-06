@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use kagc_ast::ASTOperation;
+use kagc_ast::AstOp;
 use kagc_mir::block::BlockId;
 use kagc_mir::ir_operands::TempId;
 use kagc_mir::value::IRValueId;
@@ -26,10 +26,10 @@ pub struct FunctionContext {
     pub early_return: bool,
 
     /// Kind of the previous AST operation processed.
-    pub prev_ast_kind: Option<ASTOperation>,
+    pub prev_ast_kind: Option<AstOp>,
 
     /// Kind of the parent AST operation.
-    pub parent_ast_kind: ASTOperation,
+    pub parent_ast_kind: AstOp,
 
     /// Counter for generating unique labels.
     pub next_label: LabelId,
@@ -55,7 +55,7 @@ impl FunctionContext {
             temp_counter: 0, 
             early_return: Default::default(), 
             prev_ast_kind: None,
-            parent_ast_kind: ASTOperation::AST_FUNCTION,
+            parent_ast_kind: AstOp::Func,
             next_label: 0,
             force_label_use: 0,
             var_offsets: HashMap::new(),
@@ -95,7 +95,7 @@ impl FunctionContext {
         id
     }
 
-    pub fn change_parent_ast_kind(&mut self, new_op: ASTOperation) {
+    pub fn change_parent_ast_kind(&mut self, new_op: AstOp) {
         self.prev_ast_kind = Some(self.parent_ast_kind);
         self.parent_ast_kind = new_op;
     }

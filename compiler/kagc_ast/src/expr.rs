@@ -5,12 +5,12 @@ use kagc_symbol::function::FuncId;
 use kagc_types::LitValue;
 use kagc_types::TyKind;
 
-use super::{ASTOperation, AST};
+use super::{AstOp, AstNode};
 
 /// A binary expression AST node.
 #[derive(Clone, Debug)]
 pub struct BinExpr<'tcx> {
-    pub operation: ASTOperation,
+    pub operation: AstOp,
     pub left: Box<Expr<'tcx>>,
     pub right: Box<Expr<'tcx>>,
     pub ty: TyKind<'tcx>,
@@ -19,7 +19,7 @@ pub struct BinExpr<'tcx> {
 /// A widen expression AST node.
 #[derive(Clone, Debug)]
 pub struct WidenExpr<'tcx> {
-    pub from: Box<AST<'tcx>>,
+    pub from: Box<AstNode<'tcx>>,
     pub ty: TyKind<'tcx>
 }
 

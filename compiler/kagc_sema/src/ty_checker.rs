@@ -37,33 +37,33 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     /// 
     /// This starts an analysis process for the given list of nodes. 
     /// This function panics if it encounters any form of error.
-    pub fn start_analysis(&mut self, nodes: &'tcx mut [AST<'tcx>]) {
+    pub fn start_analysis(&mut self, nodes: &'tcx mut [AstNode<'tcx>]) {
         for node in nodes {
             self.analyze_node(node);
         }
     }
 
-    fn analyze_node(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_node(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let Some(_) = node.as_stmt() else {
             panic!("Only statement nodes are supported, but found {:#?}!", node);
         };
-        match node.operation {
-            ASTOperation::AST_VAR_DECL      => self.analyze_var_decl_stmt(node),
-            ASTOperation::AST_FUNCTION      => self.analyze_func_decl_stmt(node),
-            ASTOperation::AST_RETURN        => self.analyze_return_stmt(node),
-            ASTOperation::AST_FUNC_CALL     => self.analyze_fn_call(node),
-            ASTOperation::AST_LOOP          => self.analyze_node(node.left.as_mut().unwrap()),
-            ASTOperation::AST_IF            => self.analyze_if_stmt(node),
-            ASTOperation::AST_IMPORT        => Some(TyKind::Void),
-            ASTOperation::AST_RECORD_DECL   => self.analyze_record_decl_stmt(node),
-            ASTOperation::AST_BLOCK         => self.analyze_block_stmt(node),
-            ASTOperation::AST_NONE 
-            | ASTOperation::AST_BREAK       => Some(TyKind::None),
-            _ => panic!("Operation '{:#?}' not supported!", node.operation)
+        match node.op {
+            AstOp::VarDecl      => self.analyze_var_decl_stmt(node),
+            AstOp::Func      => self.analyze_func_decl_stmt(node),
+            AstOp::Return        => self.analyze_return_stmt(node),
+            AstOp::FuncCall     => self.analyze_fn_call(node),
+            AstOp::Loop          => self.analyze_node(node.left.as_mut().unwrap()),
+            AstOp::If            => self.analyze_if_stmt(node),
+            AstOp::Import        => Some(TyKind::Void),
+            AstOp::RecDecl   => self.analyze_record_decl_stmt(node),
+            AstOp::Block         => self.analyze_block_stmt(node),
+            AstOp::None 
+            | AstOp::Break       => Some(TyKind::None),
+            _ => panic!("Operation '{:#?}' not supported!", node.op)
         }
     }
 
-    fn analyze_block_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_block_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let block_stmt = node.expect_block_stmt_mut();
         for s in &mut block_stmt.statements {
             self.analyze_node(s)?;
@@ -71,10 +71,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         Some(TyKind::None)
     }
 
-    fn analyze_fn_call(&mut self, node: &mut AST<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_fn_call(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         // let call_expr = node.expect_function_call_expr_mut();
         // self.analyze_func_call_expr(call_expr, &node.meta)
-        if let ASTKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut node.kind {
+        if let NodeKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut node.data {
             self.analyze_func_call_expr(func_call_expr, &node.meta)
         }
         else {
@@ -82,11 +82,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         }
     }
 
-    fn analyze_expr(&mut self, ast: &mut AST<'tcx>) -> TypeCheckResult<'tcx> {
-        if !ast.kind.is_expr() {
+    fn analyze_expr(&mut self, ast: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        if !ast.data.is_expr() {
             panic!("Needed an Expr--but found {:#?}", ast);
         }
-        if let ASTKind::ExprAST(expr) = &mut ast.kind {
+        if let NodeKind::ExprAST(expr) = &mut ast.data {
             ast.ty = self.analyze_and_mutate_expr(expr, &ast.meta);
             return ast.ty;
         }
@@ -109,13 +109,13 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     fn are_types_compatible(
         &mut self, 
         lhs: TyKind<'tcx>, rhs: TyKind<'tcx>, 
-        op: ASTOperation, meta: &NodeMeta
+        op: AstOp, meta: &NodeMeta
     ) -> Option<TyKind<'tcx>> {
         match op {
-            ASTOperation::AST_ADD |
-            ASTOperation::AST_MULTIPLY |
-            ASTOperation::AST_SUBTRACT |
-            ASTOperation::AST_DIVIDE => {
+            AstOp::Add |
+            AstOp::Multiply |
+            AstOp::Subtract |
+            AstOp::Divide => {
                 match (lhs, rhs) {
                     (TyKind::I64, TyKind::I64) => Some(TyKind::I64),
                     (TyKind::U8, TyKind::U8) => Some(TyKind::I64),
@@ -323,8 +323,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         Some(expr.ty)
     }
 
-    fn analyze_record_decl_stmt(&mut self, node: &mut AST<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.kind.is_stmt() {
+    fn analyze_record_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        if !node.data.is_stmt() {
             panic!("Needed a RecordDeclStmt--but found {node:#?}");
         }
 
@@ -333,12 +333,12 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         })
     }
 
-    fn analyze_return_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.kind.is_stmt() {
+    fn analyze_return_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        if !node.data.is_stmt() {
             panic!("Needed a ReturnStmt--but found {node:#?}");
         }
 
-        if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt_mut() {
+        if let Some(Stmt::Return(ret_stmt)) = &mut node.data.as_stmt_mut() {
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
             let current_fn = self.scope.current_fn();
@@ -389,12 +389,12 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         panic!("Not a return statement!");
     }
 
-    fn analyze_func_decl_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.kind.is_stmt() {
+    fn analyze_func_decl_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        if !node.data.is_stmt() {
             panic!("Needed a FuncDecl--but found {:#?}", node);
         }
 
-        if let Some(Stmt::FuncDecl(func_decl)) = &mut node.kind.as_stmt() {
+        if let Some(Stmt::FuncDecl(func_decl)) = &mut node.data.as_stmt() {
             let func_ret_type = self
                 .scope
                 .root()
@@ -435,8 +435,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         panic!("Not a function declaration statement!");
     }
 
-    fn analyze_var_decl_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
-        if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
+    fn analyze_var_decl_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        if let Some(Stmt::VarDecl(var_decl)) = node.data.as_stmt_mut() {
             let var_value_type: TyKind = self.analyze_expr(node.left.as_mut().unwrap())?;
             if let Some(var_sym) = self.scope.deep_lookup(Some(self.current_scope), var_decl.sym_name) {
                 let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
@@ -511,7 +511,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         Some(expr_type)
     }
 
-    fn analyze_if_stmt(&mut self, node: &'tcx mut AST<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_if_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         node.expect_if_stmt();
         self.scope.enter(ScopeId(0));
 
@@ -542,7 +542,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         // else-block
         if let Some(right_tree) = &mut node.right {
             if let Some(else_block_tree) = &mut right_tree.left {
-                if let ASTKind::StmtAST(Stmt::Scoping) = &else_block_tree.kind {
+                if let NodeKind::StmtAST(Stmt::Scoping) = &else_block_tree.data {
                     self.scope.enter(ScopeId(0)); // TODO
                 }
                 self.analyze_node(else_block_tree)?;

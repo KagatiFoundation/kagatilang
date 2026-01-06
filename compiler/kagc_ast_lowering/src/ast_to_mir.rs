@@ -59,15 +59,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    pub fn lower_irs(&mut self, nodes: &mut [AST]) -> StmtLoweringResult {
+    pub fn lower_irs(&mut self, nodes: &mut [AstNode]) -> StmtLoweringResult {
         for node in nodes {
             self.lower_ir_node(node, &mut FunctionContext::new())?;
         }
         Ok(self.ir_builder.current_block_id_unchecked())
     }
 
-    pub fn lower_ir_node(&mut self, node: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if node.operation == ASTOperation::AST_GLUE {
+    pub fn lower_ir_node(&mut self, node: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        if node.op == AstOp::Glue {
             if let Some(left_tree) = node.left.as_mut() {
                 return self.lower_ir_node(left_tree, fn_ctx);
             }
@@ -75,38 +75,38 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 return self.lower_ir_node(right_tree, fn_ctx);
             }
         }
-        else if node.operation == ASTOperation::AST_FUNCTION {
+        else if node.op == AstOp::Func {
             return self.lower_function(node);
         }
-        else if node.operation == ASTOperation::AST_FUNC_CALL {
+        else if node.op == AstOp::FuncCall {
             return self.lower_function_call(node, fn_ctx);
         }
-        else if node.operation == ASTOperation::AST_VAR_DECL {
+        else if node.op == AstOp::VarDecl {
             return self.lower_variable_declaration(node, fn_ctx);
         }
-        else if node.operation == ASTOperation::AST_RETURN {
+        else if node.op == AstOp::Return {
             return self.lower_return(node, fn_ctx);
         }
-        else if node.operation == ASTOperation::AST_IMPORT {
+        else if node.op == AstOp::Import {
             return self.lower_import();
         }
-        else if node.operation == ASTOperation::AST_RECORD_DECL {
+        else if node.op == AstOp::RecDecl {
             return self.lower_record_declaration(node);
         }
-        else if node.operation == ASTOperation::AST_LOOP {
+        else if node.op == AstOp::Loop {
             return self.lower_infinite_loop(node, fn_ctx);
         }
-        else if node.operation == ASTOperation::AST_IF {
+        else if node.op == AstOp::If {
             return self.lower_if_else_tree(node, fn_ctx);
         }
-        else if node.operation == ASTOperation::AST_ELSE {
+        else if node.op == AstOp::Else {
             return self.lower_else_block(node, fn_ctx);
         }
-        todo!("{node_type:#?}", node_type = node.operation);
+        todo!("{node_type:#?}", node_type = node.op);
     }
 
-    fn lower_function(&mut self, ast: &mut AST) -> StmtLoweringResult {
-        let (func_id, func_scope) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
+    fn lower_function(&mut self, ast: &mut AstNode) -> StmtLoweringResult {
+        let (func_id, func_scope) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.data.as_stmt() {
             self.scope.enter(ScopeId(0));
             (func_decl.id, 0)
         } else {
@@ -171,22 +171,22 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(current_block_id)
     }
 
-    fn lower_function_call(&mut self, node: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let ASTKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
+    fn lower_function_call(&mut self, node: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        if let NodeKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.data {
             let _ = self.lower_function_call_expr(func_call, fn_ctx)?;
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
         panic!()
     }
 
-    fn lower_variable_declaration(&mut self, var_ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
+    fn lower_variable_declaration(&mut self, var_ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        let var_decl = var_ast.data.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
             if var_ast.left.is_none() {
                 bug!("Variable is not assigned a value!");
             }
 
-            fn_ctx.change_parent_ast_kind(ASTOperation::AST_VAR_DECL);
+            fn_ctx.change_parent_ast_kind(AstOp::VarDecl);
             let var_decl_value = self.lower_expression_ast(var_ast.left.as_mut().unwrap(), fn_ctx)?;
 
             if !var_ast.ty.unwrap().is_gc_alloced() { // unsafe unwrap call
@@ -210,12 +210,12 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         bug!("required VarDeclStmt--but found {var_ast:#?}");
     }
 
-    fn lower_expression_ast(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        if !ast.kind.is_expr() {
+    fn lower_expression_ast(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+        if !ast.data.is_expr() {
             bug!("needed an Expr--but found {ast:#?}");
         }
         let expr = ast
-            .kind
+            .data
             .as_expr_mut()
             .unwrap_or_else(|| bug!("cannot lower an expression"));
         self.lower_expression(expr, fn_ctx)
@@ -456,22 +456,22 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         match bin_expr.operation {
-            ASTOperation::AST_ADD       => Ok(self.ir_builder.create_add(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_SUBTRACT  => Ok(self.ir_builder.create_subtract(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_MULTIPLY  => Ok(self.ir_builder.create_divide(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_DIVIDE    => Ok(self.ir_builder.create_multiply(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_EQEQ      => Ok(self.ir_builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_NEQ       => Ok(self.ir_builder.create_conditional_jump(IRCondition::NEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_LTEQ      => Ok(self.ir_builder.create_conditional_jump(IRCondition::LTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_GTEQ      => Ok(self.ir_builder.create_conditional_jump(IRCondition::GTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_LTHAN     => Ok(self.ir_builder.create_conditional_jump(IRCondition::LThan, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            ASTOperation::AST_GTHAN     => Ok(self.ir_builder.create_conditional_jump(IRCondition::GThan, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Add       => Ok(self.ir_builder.create_add(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Subtract  => Ok(self.ir_builder.create_subtract(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Multiply  => Ok(self.ir_builder.create_divide(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Divide    => Ok(self.ir_builder.create_multiply(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::EqEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::NEq       => Ok(self.ir_builder.create_conditional_jump(IRCondition::NEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::LtEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::LTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::GtEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::GTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::LThan     => Ok(self.ir_builder.create_conditional_jump(IRCondition::LThan, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::GThan     => Ok(self.ir_builder.create_conditional_jump(IRCondition::GThan, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             _ => unimplemented!()
         }
     }
 
-    fn lower_return(&mut self, ret_stmt: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
+    fn lower_return(&mut self, ret_stmt: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        if let Some(Stmt::Return(_)) = &ret_stmt.data.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_id_unchecked();
                 let func_exit_block = fn_ctx
@@ -509,7 +509,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         bug!("expected ReturnStmt but found {ret_stmt:#?}");
     }
 
-    fn lower_infinite_loop(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
         let loop_body_id = self.ir_builder.create_block("loop_body");
         let loop_tail_id = self.ir_builder.create_label();
@@ -531,8 +531,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(current_block_id)
     }
 
-    fn lower_if_else_tree(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let ASTKind::StmtAST(Stmt::If) = &ast.kind {
+    fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        if let NodeKind::StmtAST(Stmt::If) = &ast.data {
             self.scope.enter(ScopeId(0));
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
@@ -594,7 +594,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(merge_block)
     }
 
-    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AST], fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AstNode], fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let mut current = self.ir_builder.current_block_id_unchecked();
         let stmts_len = stmts.len();
         for (idx, stmt) in stmts.iter_mut().enumerate() {
@@ -606,8 +606,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(current)
     }
 
-    fn lower_else_block(&mut self, ast: &mut AST, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let ASTKind::StmtAST(Stmt::Scoping) = &ast.kind {
+    fn lower_else_block(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+        if let NodeKind::StmtAST(Stmt::Scoping) = &ast.data {
             self.scope.enter(ScopeId(0)); // TODO
         }
         else {
@@ -639,7 +639,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(INVALID_BLOCK_ID) // import statements aren't supported inside functions
     }
 
-    fn lower_record_declaration(&mut self, _node: &mut AST) -> StmtLoweringResult {
+    fn lower_record_declaration(&mut self, _node: &mut AstNode) -> StmtLoweringResult {
         Ok(INVALID_BLOCK_ID) // record declaration statements aren't supported inside functions
     }
 

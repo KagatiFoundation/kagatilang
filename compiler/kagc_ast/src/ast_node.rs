@@ -1,126 +1,49 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-#![allow(non_camel_case_types)]
 use kagc_span::span::{HasSpan, SourcePos, Span};
-use kagc_token::{
-    FromTokenKind, 
-    TokenKind
-};
 use kagc_types::TyKind;
 
-use crate::{BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, Stmt};
+use crate::{AstOp, BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, Stmt};
 
-use super::ASTKind;
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
-pub enum ASTOperation {
-    // below this are relational operators
-    AST_EQEQ = 0,  // equal equal
-    AST_NEQ,   // not equal
-    AST_LTEQ,  // less than or equal to
-    AST_GTEQ,  // greate than equal to
-    AST_GTHAN, // greater than
-    AST_LTHAN, // less than
-
-    AST_NONE,     // used as a placeholder
-    AST_ADD = 10, // an AST node with "+" as the root node
-    AST_SUBTRACT, // an AST node with "-" as the root node
-    AST_MULTIPLY, // an AST node with "*" as the root node
-    AST_DIVIDE,   // an AST node with "/" as the root node
-    // end of relational operators
-
-    AST_INTLIT, // a leaf AST node with literal integer value
-    AST_IDENT,  // a leaf AST node with an identifier name
-    AST_LVIDENT,
-    AST_ASSIGN,
-    AST_GLUE,
-    AST_IF,
-    AST_ELSE,
-
-    AST_IMPORT,
-    
-    // Record related operations
-    AST_RECORD_DECL,
-    AST_RECORD_FIELD_DECL,
-    AST_RECORD_CREATE,
-    AST_RECORD_FIELD_ACCESS,
-
-    AST_WHILE,
-    AST_FOR,
-    AST_BLOCK,
-    AST_LOOP,
-    AST_BREAK,
-    AST_FUNCTION,
-    AST_FUNC_CALL,
-    AST_RETURN,       // return statement AST node
-    AST_ADDR,         // for address-of operator
-    AST_DEREF,        // for dereferencing operator
-    AST_WIDEN,        // need to widen the tree
-    AST_ARRAY_ACCESS, // access array element
-    AST_STRLIT, // string literal node
-    AST_VAR_DECL,
-    AST_ARR_VAR_DECL,
-
-    /// Null AST
-    AST_NULL
-}
-
-impl FromTokenKind<ASTOperation> for ASTOperation {
-    fn from_token_kind(tk: TokenKind) -> Option<ASTOperation> {
-        match tk {
-            TokenKind::T_PLUS => Some(Self::AST_ADD),
-            TokenKind::T_MINUS => Some(Self::AST_SUBTRACT),
-            TokenKind::T_STAR => Some(Self::AST_MULTIPLY),
-            TokenKind::T_SLASH => Some(Self::AST_DIVIDE),
-            TokenKind::T_EQEQ => Some(Self::AST_EQEQ),
-            TokenKind::T_NEQ => Some(Self::AST_NEQ),
-            TokenKind::T_GTHAN => Some(Self::AST_GTHAN),
-            TokenKind::T_LTHAN => Some(Self::AST_LTHAN),
-            TokenKind::T_GTEQ => Some(Self::AST_GTEQ),
-            TokenKind::T_LTEQ => Some(Self::AST_LTEQ),
-            _ => unimplemented!("Not implemented for now!"),
-        }
-    }
-}
+use super::NodeKind;
 
 /// Represents a node in the Abstract Syntax Tree (AST).
 ///
-/// The `AST` struct encapsulates various properties of an AST node, 
+/// The `AstNode` struct encapsulates various properties of an AST node, 
 /// including its kind, operation, child nodes (left, mid, and right), 
 /// value, and result type. Each node in the AST corresponds to a specific 
 /// operation or expression in the source code.
 /// 
 /// # Fields
 ///
-/// * `kind` - An enum representing the kind of AST node (`ASTKind`).
-/// * `operation` - An enum representing the operation performed by the AST 
-///   node (`ASTOperation`).
+/// * `data` - An enum representing the kind of AST node (`AstData`).
+/// * `op` - An enum representing the operation performed by the AST 
+///   node (`AstOp`).
 /// * `left` - A boxed optional child node representing the left subtree of 
 ///   the current node.
 /// * `mid` - A boxed optional child node representing the middle subtree of 
 ///   the current node.
 /// * `right` - A boxed optional child node representing the right subtree of 
 ///   the current node.
-/// * `value` - An optional literal value associated with the AST node (`LitType`).
-/// * `result_type` - The variant of literal type representing the result type of 
-///   the AST node (`LitTypeVariant`).
+/// * `ty` - The variant of literal type representing the result type of 
+///   the AST node (`TyKind`).
 #[derive(Clone, Debug)]
-pub struct AST<'tcx> {
-    pub kind: ASTKind<'tcx>,
-    pub operation: ASTOperation,
-    pub left: Option<Box<AST<'tcx>>>,
-    pub mid: Option<Box<AST<'tcx>>>,
-    pub right: Option<Box<AST<'tcx>>>,
+pub struct AstNode<'tcx> {
+    pub data: NodeKind<'tcx>,
+    pub op: AstOp,
+    pub left: Option<Box<AstNode<'tcx>>>,
+    pub mid: Option<Box<AstNode<'tcx>>>,
+    pub right: Option<Box<AstNode<'tcx>>>,
     pub ty: Option<TyKind<'tcx>>,
     pub meta: NodeMeta,
 }
 
-impl<'tcx> AST<'tcx> {
+impl<'tcx> AstNode<'tcx> {
     pub fn empty() -> Self {
         Self {
-            kind: ASTKind::Empty,
-            operation: ASTOperation::AST_NONE,
+            data: NodeKind::Empty,
+            op: AstOp::None,
             left: None,
             right: None,
             mid: None,
@@ -130,15 +53,15 @@ impl<'tcx> AST<'tcx> {
     }
 
     pub fn new(
-        kind: ASTKind<'tcx>, 
-        operation: ASTOperation, 
-        left: Option<AST<'tcx>>, 
-        right: Option<AST<'tcx>>, 
+        kind: NodeKind<'tcx>, 
+        operation: AstOp, 
+        left: Option<AstNode<'tcx>>, 
+        right: Option<AstNode<'tcx>>, 
         ty: Option<TyKind<'tcx>>,
     ) -> Self {
         Self {
-            kind,
-            operation,
+            data: kind,
+            op: operation,
             left: left.map(Box::new),
             mid: None,
             right: right.map(Box::new),
@@ -148,14 +71,14 @@ impl<'tcx> AST<'tcx> {
     }
 
     pub fn create_leaf(
-        kind: ASTKind<'tcx>, 
-        operation: ASTOperation, 
+        kind: NodeKind<'tcx>, 
+        operation: AstOp, 
         ty: Option<TyKind<'tcx>>,
         meta: NodeMeta
     ) -> Self {
         Self {
-            kind,
-            operation,
+            data: kind,
+            op: operation,
             left: None,
             mid: None,
             right: None,
@@ -165,16 +88,16 @@ impl<'tcx> AST<'tcx> {
     }
     
     pub fn with_mid(
-        kind: ASTKind<'tcx>, 
-        op: ASTOperation, 
-        left: Option<AST<'tcx>>, 
-        mid: Option<AST<'tcx>>, 
-        right: Option<AST<'tcx>>, 
+        kind: NodeKind<'tcx>, 
+        op: AstOp, 
+        left: Option<AstNode<'tcx>>, 
+        mid: Option<AstNode<'tcx>>, 
+        right: Option<AstNode<'tcx>>, 
         ty: Option<TyKind<'tcx>>
     ) -> Self {
         Self {
-            kind,
-            operation: op,
+            data: kind,
+            op,
             left: left.map(Box::new),
             mid: mid.map(Box::new),
             right: right.map(Box::new),
@@ -184,17 +107,17 @@ impl<'tcx> AST<'tcx> {
     }
 
     pub fn with_meta(
-        kind: ASTKind<'tcx>,
-        op: ASTOperation,
-        left: Option<AST<'tcx>>,
-        mid: Option<AST<'tcx>>,
-        right: Option<AST<'tcx>>,
+        kind: NodeKind<'tcx>,
+        op: AstOp,
+        left: Option<AstNode<'tcx>>,
+        mid: Option<AstNode<'tcx>>,
+        right: Option<AstNode<'tcx>>,
         ty: Option<TyKind<'tcx>>,
         meta: NodeMeta
     ) -> Self {
         Self {
-            kind,
-            operation: op,
+            data: kind,
+            op,
             left: left.map(Box::new),
             mid: mid.map(Box::new),
             right: right.map(Box::new),
@@ -203,9 +126,9 @@ impl<'tcx> AST<'tcx> {
         }
     }
 
-    pub fn linearize(&self) -> Vec<&AST<'tcx>> {
-        let mut output: Vec<&AST> = vec![];
-        if self.operation == ASTOperation::AST_GLUE {
+    pub fn linearize(&self) -> Vec<&AstNode<'tcx>> {
+        let mut output: Vec<&AstNode> = vec![];
+        if self.op == AstOp::Glue {
             if let Some(left) = &self.left {
                 output.extend(left.linearize());
             }
@@ -219,9 +142,9 @@ impl<'tcx> AST<'tcx> {
         output
     }
 
-    pub fn linearize_mut(&mut self) -> Vec<&mut AST<'tcx>> {
-        let mut output: Vec<&mut AST> = vec![];
-        if self.operation == ASTOperation::AST_GLUE {
+    pub fn linearize_mut(&mut self) -> Vec<&mut AstNode<'tcx>> {
+        let mut output: Vec<&mut AstNode> = vec![];
+        if self.op == AstOp::Glue {
             if let Some(left) = &mut self.left {
                 output.extend(left.linearize_mut());
             }
@@ -237,10 +160,10 @@ impl<'tcx> AST<'tcx> {
     }
 
     #[allow(unused_parens)]
-    pub fn contains_operation(&self, op: ASTOperation) -> bool {
-        fn check_node_for_operation(node: &Option<Box<AST>>, op: ASTOperation) -> bool {
+    pub fn contains_operation(&self, op: AstOp) -> bool {
+        fn check_node_for_operation(node: &Option<Box<AstNode>>, op: AstOp) -> bool {
             if let Some(n) = node {
-                if n.operation == op {
+                if n.op == op {
                     return true;
                 }
                 return n.children().any(|child| check_node_for_operation(child, op));
@@ -250,34 +173,34 @@ impl<'tcx> AST<'tcx> {
         self.children().any(|child| check_node_for_operation(child, op))
     }
 
-    fn children(&self) -> impl Iterator<Item = &Option<Box<AST>>> {
+    fn children(&self) -> impl Iterator<Item = &Option<Box<AstNode>>> {
         [&self.left, &self.mid, &self.right].into_iter()
     }
 
     pub fn as_expr(&self) -> Option<&Expr<'tcx>> {
-        match &self.kind {
-            ASTKind::ExprAST(expr) => Some(expr),
+        match &self.data {
+            NodeKind::ExprAST(expr) => Some(expr),
             _ => None,
         }
     }
 
     pub fn as_expr_mut(&mut self) -> Option<&mut Expr<'tcx>> {
-        match &mut self.kind {
-            ASTKind::ExprAST(expr) => Some(expr),
+        match &mut self.data {
+            NodeKind::ExprAST(expr) => Some(expr),
             _ => None,
         }
     }
 
     pub fn as_stmt(&self) -> Option<&Stmt<'tcx>> {
-        match &self.kind {
-            ASTKind::StmtAST(stmt) => Some(stmt),
+        match &self.data {
+            NodeKind::StmtAST(stmt) => Some(stmt),
             _ => None,
         }
     }
 
     pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt<'tcx>> {
-        match &mut self.kind {
-            ASTKind::StmtAST(stmt) => Some(stmt),
+        match &mut self.data {
+            NodeKind::StmtAST(stmt) => Some(stmt),
             _ => None,
         }
     }
@@ -321,7 +244,7 @@ macro_rules! contains_ops {
 }
 
 /// `HasSpan` implemented for AST node.
-impl HasSpan for AST<'_> {
+impl HasSpan for AstNode<'_> {
     fn span(&self) -> &Span {
         &self.meta.span
     }

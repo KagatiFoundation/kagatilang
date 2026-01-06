@@ -15,7 +15,7 @@ pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
     pub local_offset: usize,
     pub diagnostics: &'r DiagnosticBag,
     pub scope: &'tcx ScopeCtx<'tcx>,
-    pub asts: &'tcx Vec<AST<'tcx>>
+    pub asts: &'tcx Vec<AstNode<'tcx>>
 }
 
 pub type BindingResult = Option<SymId>;
@@ -24,7 +24,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     pub fn new(
         scope: &'tcx ScopeCtx<'tcx>,
         diags: &'r DiagnosticBag,
-        asts: &'tcx mut Vec<AST<'tcx>>
+        asts: &'tcx mut Vec<AstNode<'tcx>>
     ) -> Self {
         Self {
             diagnostics: diags,
@@ -40,19 +40,19 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn bind_sym(&self, node: &'tcx AST<'tcx>) -> BindingResult  {
-        match node.operation {
-            ASTOperation::AST_IF => self.bind_if_stmt(node),
-            ASTOperation::AST_VAR_DECL => self.bind_let_stmt(node),
-            ASTOperation::AST_FUNCTION => self.bind_func_decl_stmt(node),
-            ASTOperation::AST_RECORD_DECL => self.bind_record_decl_stmt(node),
-            ASTOperation::AST_LOOP => {
+    fn bind_sym(&self, node: &'tcx AstNode<'tcx>) -> BindingResult  {
+        match node.op {
+            AstOp::If => self.bind_if_stmt(node),
+            AstOp::VarDecl => self.bind_let_stmt(node),
+            AstOp::Func => self.bind_func_decl_stmt(node),
+            AstOp::RecDecl => self.bind_record_decl_stmt(node),
+            AstOp::Loop => {
                 if let Some(left) = &node.left {
                     return self.bind_sym(left);
                 }
                 None
             }
-            ASTOperation::AST_BLOCK => {
+            AstOp::Block => {
                 if let Some(stmt) = node.as_stmt() {
                     if let Some(block) = stmt.as_block() {
                         for s in &block.statements {
@@ -62,7 +62,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                 }
                 None
             }
-            ASTOperation::AST_GLUE => {
+            AstOp::Glue => {
                 if let Some(left) = node.left.as_ref() {
                     let _ = self.bind_sym(left)?;
                 }
@@ -75,7 +75,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn bind_if_stmt(&self, node: &'tcx AST<'tcx>) -> BindingResult {
+    fn bind_if_stmt(&self, node: &'tcx AstNode<'tcx>) -> BindingResult {
         node.expect_if_stmt();
 
         if let Some(mid_tree) = &node.mid {
@@ -95,7 +95,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         None
     }
 
-    fn bind_func_decl_stmt(&self, node: &'tcx AST<'tcx>) -> BindingResult {
+    fn bind_func_decl_stmt(&self, node: &'tcx AstNode<'tcx>) -> BindingResult {
         let func_decl = node.expect_func_decl_stmt();
         let sym = Sym::new(
             func_decl.name, 
@@ -160,9 +160,9 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         Some(sym_id)
     }
 
-    fn bind_let_stmt(&self, node: &'tcx AST<'tcx>) -> BindingResult {
-        let stmt = match &node.kind {
-            ASTKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
+    fn bind_let_stmt(&self, node: &'tcx AstNode<'tcx>) -> BindingResult {
+        let stmt = match &node.data {
+            NodeKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => bug!("Invalid node"),
         };
         let sym = Sym::new(
@@ -256,8 +256,8 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     }
     */
 
-    fn bind_record_decl_stmt(&self, node: &'tcx AST<'tcx>) -> BindingResult {
-        if let ASTKind::StmtAST(Stmt::Record(stmt)) = &node.kind {
+    fn bind_record_decl_stmt(&self, node: &'tcx AstNode<'tcx>) -> BindingResult {
+        if let NodeKind::StmtAST(Stmt::Record(stmt)) = &node.data {
             let record_entry = RecordType {
                 name: stmt.name,
                 size: 0,

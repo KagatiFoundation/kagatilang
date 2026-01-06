@@ -4,16 +4,16 @@
 use super::{Expr, Stmt};
 
 #[derive(Clone, Debug)]
-pub enum ASTKind<'tcx> {
+pub enum NodeKind<'tcx> {
     StmtAST(Stmt<'tcx>),
     ExprAST(Expr<'tcx>),
     Empty
 }
 
-impl<'tcx> ASTKind<'tcx> {
-    /// Checks if the ASTKind is an expression variant.
+impl<'tcx> NodeKind<'tcx> {
+    /// Checks if the NodeKind is an expression variant.
     pub fn is_expr(&self) -> bool {
-        matches!(self, ASTKind::ExprAST(_))
+        matches!(self, NodeKind::ExprAST(_))
     }
 
     pub fn expr(self) -> Option<Expr<'tcx>> {
@@ -43,7 +43,7 @@ impl<'tcx> ASTKind<'tcx> {
 
     /// Checks if the ASTKind is a statement variant.
     pub fn is_stmt(&self) -> bool {
-        matches!(self, ASTKind::StmtAST(_))
+        matches!(self, NodeKind::StmtAST(_))
     }
 
     pub fn stmt(self) -> Option<Stmt<'tcx>> {

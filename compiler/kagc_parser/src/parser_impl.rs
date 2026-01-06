@@ -21,7 +21,7 @@ use kagc_types::LitValue;
 
 use crate::options::ParserOptions;
 
-pub(crate) type ParseOutput<'tcx> = Option<AST<'tcx>>;
+pub(crate) type ParseOutput<'tcx> = Option<AstNode<'tcx>>;
 
 /// Represents an invalid function ID.
 ///
@@ -80,7 +80,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             return None;
         }
         match self.parse_record_or_expr(None) {
-            Some(ast) => ast.kind.expr(),
+            Some(ast) => ast.data.expr(),
             None => None
         }
     }
@@ -90,17 +90,17 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             return None;
         }
         match self.parse_single_stmt() {
-            Some(ast) => ast.kind.stmt(),
+            Some(ast) => ast.data.stmt(),
             None => None
         }
     }
 
-    pub fn parse(&mut self) -> Vec<AST<'tcx>> {
+    pub fn parse(&mut self) -> Vec<AstNode<'tcx>> {
         if self.tokens.is_empty() {
             return Vec::with_capacity(0);
         }
 
-        let mut nodes: Vec<AST> = vec![];
+        let mut nodes: Vec<AstNode> = vec![];
         loop {
             let peek_kind = self.peek().kind;
             if peek_kind == TokenKind::T_EOF {
@@ -168,13 +168,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             }
         }
         if statements.is_empty() {
-            return Some(AST::empty());
+            return Some(AstNode::empty());
         }
         let block_stmt_ast = Stmt::Block(BlockStmt { statements });
         Some(
-            AST::create_leaf(
-                ASTKind::StmtAST(block_stmt_ast),
-                ASTOperation::AST_BLOCK,
+            AstNode::create_leaf(
+                NodeKind::StmtAST(block_stmt_ast),
+                AstOp::Block,
                 None,
                 NodeMeta::none()
             )
@@ -201,13 +201,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             vec![]
         );
         Some(
-            AST::create_leaf(
-                ASTKind::StmtAST(
+            AstNode::create_leaf(
+                NodeKind::StmtAST(
                     Stmt::Import(
                         ImportStmt { path: module_path_tok.lexeme }
                     )
                 ), 
-                ASTOperation::AST_IMPORT,
+                AstOp::Import,
                 None,
                 meta
             )
@@ -241,8 +241,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             vec![]
         );
         Some(
-            AST::create_leaf(
-                ASTKind::StmtAST(
+            AstNode::create_leaf(
+                NodeKind::StmtAST(
                     Stmt::Record(
                         RecordDeclStmt { 
                             name: id_token.lexeme,
@@ -258,7 +258,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         }
                     )
                 ), 
-                ASTOperation::AST_RECORD_DECL,
+                AstOp::RecDecl,
                 None,
                 // LitTypeVariant::Record { name: id_token.lexeme },
                 meta
@@ -366,7 +366,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         let func_return_type = self.parse_fn_ret_type()?;
         self.advance();
 
-        let mut function_body: Option<AST> = None;
+        let mut function_body: Option<AstNode> = None;
 
         // create function body
         if func_storage_class != StorageClass::EXTERN {
@@ -381,8 +381,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         self.current_function_id = INVALID_FUNC_ID; 
 
         // Return AST for function declaration
-        Some(AST::with_meta(
-            ASTKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
+        Some(AstNode::with_meta(
+            NodeKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 id: FuncId(temp_func_id),
                 name: id_token.lexeme,
                 ty: func_return_type,
@@ -390,7 +390,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 locals: func_locals,
                 func_param_types
             })),
-            ASTOperation::AST_FUNCTION,
+            AstOp::Func,
             function_body,
             None,
             None,
@@ -470,15 +470,15 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 vec![]
             );
             Some(
-                AST::create_leaf(
-                    ASTKind::StmtAST(
+                AstNode::create_leaf(
+                    NodeKind::StmtAST(
                         Stmt::Return(
                             ReturnStmt {
                                 func_id: FuncId(self.current_function_id),
                             }
                         )
                     ),
-                    ASTOperation::AST_RETURN,
+                    AstOp::Return,
                     None,
                     meta
                 )
@@ -494,8 +494,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 ),
                 vec![]
             );
-            let return_ast = AST {
-                kind: ASTKind::StmtAST(
+            let return_ast = AstNode {
+                data: NodeKind::StmtAST(
                     Stmt::Return(
                         ReturnStmt {
                             func_id: FuncId(self.current_function_id),
@@ -505,7 +505,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 left: Some(Box::new(return_expr)),
                 right: None,
                 mid: None,
-                operation: ASTOperation::AST_RETURN,
+                op: AstOp::Return,
                 ty: None,
                 meta
             };
@@ -517,9 +517,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         let cond_ast = self.parse_conditional_stmt(TokenKind::KW_WHILE)?;
         let while_body = self.parse_single_stmt()?;
         Some(
-            AST::new(
-                ASTKind::StmtAST(Stmt::While),
-                ASTOperation::AST_WHILE,
+            AstNode::new(
+                NodeKind::StmtAST(Stmt::While),
+                AstOp::While,
                 Some(cond_ast),
                 Some(while_body),
                 None
@@ -529,10 +529,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_loop_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?;
-        let loop_body: AST = self.parse_compound_stmt()?;
-        Some(AST::new(
-            ASTKind::StmtAST(Stmt::Loop),
-            ASTOperation::AST_LOOP,
+        let loop_body: AstNode = self.parse_compound_stmt()?;
+        Some(AstNode::new(
+            NodeKind::StmtAST(Stmt::Loop),
+            AstOp::Loop,
             Some(loop_body),
             None,
             None,
@@ -542,9 +542,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     fn parse_break_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_BREAK, "expected the keyword 'break'")?;
         Some(
-            AST::new(
-                ASTKind::StmtAST(Stmt::Break),
-                ASTOperation::AST_BREAK,
+            AstNode::new(
+                NodeKind::StmtAST(Stmt::Break),
+                AstOp::Break,
                 None,
                 None,
                 None
@@ -561,9 +561,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         let expr_ast = self.parse_record_or_expr(None)?;
         let body_ast = self.parse_compound_stmt()?;
-        Some(AST::with_mid(
-            ASTKind::StmtAST(Stmt::For),
-            ASTOperation::AST_FOR,
+        Some(AstNode::with_mid(
+            NodeKind::StmtAST(Stmt::For),
+            AstOp::For,
             Some(id_ast),
             Some(expr_ast),
             Some(body_ast),
@@ -581,18 +581,18 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
             let else_block = self.parse_compound_stmt()?;
             if_false_ast = Some(
-                AST::new(
-                    ASTKind::StmtAST(Stmt::Scoping),
-                    ASTOperation::AST_ELSE,
+                AstNode::new(
+                    NodeKind::StmtAST(Stmt::Scoping),
+                    AstOp::Else,
                     Some(else_block),
                     None,
                     None
                 )
             );          
         }
-        Some(AST::with_mid(
-            ASTKind::StmtAST(Stmt::If),
-            ASTOperation::AST_IF,
+        Some(AstNode::with_mid(
+            NodeKind::StmtAST(Stmt::If),
+            AstOp::If,
             Some(cond_ast),
             Some(if_true_ast),
             if_false_ast,
@@ -608,9 +608,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         let cond_ast = self.parse_equality();
 
         if let Some(cond_ast) = &cond_ast {
-            if (cond_ast.operation < ASTOperation::AST_EQEQ) || (cond_ast.operation > ASTOperation::AST_LTHAN) {
+            if (cond_ast.op < AstOp::EqEq) || (cond_ast.op > AstOp::LThan) {
                 // if operation kind is not "relational operation"
-                panic!("'{:?}' is not allowed in {kind:?}'s condition.", cond_ast.operation);
+                panic!("'{:?}' is not allowed in {kind:?}'s condition.", cond_ast.op);
             }
         }
         _ = self.consume(TokenKind::T_RPAREN, "')' expected")?; // match and ignore ')'
@@ -684,7 +684,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             return None;
         } 
         else if let Some(Some(expr_ast)) = &assignment_parse_res {
-            if let ASTKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.kind {
+            if let NodeKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.data {
                 sym_type = SymTy::Record { name: record_create.name }
             }
         }
@@ -703,8 +703,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         if let Some(assign_ast_node_res) = assignment_parse_res {
             self.expect_semicolon();
-            Some(AST::new(
-                ASTKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
+            Some(AstNode::new(
+                NodeKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
                     symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
                     symbol_type: sym_type,
                     class: var_class,
@@ -713,7 +713,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     local_offset: local_off,
                     func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
                 })),
-                ASTOperation::AST_VAR_DECL,
+                AstOp::VarDecl,
                 Some(assign_ast_node_res?),
                 None,
                 Some(var_type),
@@ -821,8 +821,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         );
 
         Some(
-            AST::create_leaf(
-                ASTKind::ExprAST(
+            AstNode::create_leaf(
+                NodeKind::ExprAST(
                     Expr::RecordCreation(
                         RecordCreationExpr { 
                             name: id_token.lexeme, 
@@ -832,7 +832,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         }
                     )
                 ),
-                ASTOperation::AST_RECORD_CREATE, 
+                AstOp::RecCreate, 
                 None,
                 meta
             )
@@ -844,7 +844,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         _ = self.consume(TokenKind::T_EQUAL, "'=' expected"); // parse '='
         let field_val = self.parse_record_or_expr(None)?;
 
-        if let ASTKind::ExprAST(expr) = field_val.kind {
+        if let NodeKind::ExprAST(expr) = field_val.data {
             return Some(
                 RecordFieldAssignExpr { 
                     name: id_token.lexeme, 
@@ -884,7 +884,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         self.try_parsing_binary(left, vec![TokenKind::T_SLASH, TokenKind::T_STAR])
     }
 
-    fn try_parsing_binary(&mut self, left: AST<'tcx>, tokens: Vec<TokenKind>) -> ParseOutput<'tcx> {
+    fn try_parsing_binary(&mut self, left: AstNode<'tcx>, tokens: Vec<TokenKind>) -> ParseOutput<'tcx> {
         let current_token_kind = self.peek().kind;
         if !tokens.contains(&current_token_kind) {
             return Some(left);
@@ -895,10 +895,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         _ = self.advance(); // skip the operator
 
-        let ast_op = ASTOperation::from_token_kind(current_token_kind).unwrap(); // DANGEROUS unwrap CALL
+        let ast_op = AstOp::from_token_kind(current_token_kind).unwrap(); // DANGEROUS unwrap CALL
         let right = self.parse_equality()?;
-        let left_expr = left.kind.expr().unwrap();
-        let right_expr = right.kind.expr().unwrap();
+        let left_expr = left.data.expr().unwrap();
+        let right_expr = right.data.expr().unwrap();
 
         // end of the expression
         let span_end = right.meta.span;
@@ -910,8 +910,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         };
 
         Some(
-            AST::create_leaf(
-                ASTKind::ExprAST(
+            AstNode::create_leaf(
+                NodeKind::ExprAST(
                     Expr::Binary(BinExpr {
                         operation: ast_op,
                         left: Box::new(left_expr),
@@ -954,7 +954,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         LitValue::I32(current_token.lexeme.parse::<i32>().unwrap()),
-                        ASTOperation::AST_INTLIT,
+                        AstOp::IntLit,
                         single_token_meta
                     )
                 )
@@ -963,7 +963,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         LitValue::U8(current_token.lexeme.parse::<u8>().unwrap()),
-                        ASTOperation::AST_INTLIT,
+                        AstOp::IntLit,
                         single_token_meta
                     )
                 )
@@ -972,7 +972,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         LitValue::I64(current_token.lexeme.parse::<i64>().unwrap()),
-                        ASTOperation::AST_INTLIT,
+                        AstOp::IntLit,
                         single_token_meta
                     )
                 )
@@ -981,14 +981,14 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                Some(
                     Parser::create_expr_ast(
                         LitValue::F64(current_token.lexeme.parse::<f64>().unwrap()),
-                        ASTOperation::AST_INTLIT,
+                        AstOp::IntLit,
                         single_token_meta
                     )
                 ) 
             },
             TokenKind::T_STRING => { 
-                Some(AST::create_leaf(
-                    ASTKind::ExprAST(
+                Some(AstNode::create_leaf(
+                    NodeKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
                                 value: LitValue::RawStr(current_token.lexeme),
@@ -996,7 +996,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                             }
                         )
                     ),
-                    ASTOperation::AST_STRLIT,
+                    AstOp::Str,
                     Some(TyKind::Str),
                     single_token_meta
                 ))
@@ -1023,14 +1023,14 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     self.parse_record_field_access_expr(symbol_name, &current_token)
                 }
                 else {
-                    Some(AST::create_leaf(
-                        ASTKind::ExprAST(
+                    Some(AstNode::create_leaf(
+                        NodeKind::ExprAST(
                             Expr::Ident(IdentExpr {
                                 ty: TyKind::None, // We don't care about the type of this symbol, yet!
                                 sym_name: current_token.lexeme
                             }
                         )),
-                        ASTOperation::AST_IDENT,
+                        AstOp::Ident,
                         None, // type will be identified at the semantic analysis phases if the symbol is defined
                         single_token_meta
                     ))
@@ -1046,9 +1046,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
             // null type
             TokenKind::KW_NULL => {
-                Some(AST::create_leaf(
-                    ASTKind::ExprAST(Expr::Null), 
-                    ASTOperation::AST_NULL, 
+                Some(AstNode::create_leaf(
+                    NodeKind::ExprAST(Expr::Null), 
+                    AstOp::Null, 
                     Some(TyKind::Null), 
                     single_token_meta
                 ))
@@ -1077,8 +1077,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             ), 
             Vec::with_capacity(0)
         );
-        Some(AST::create_leaf(
-            ASTKind::ExprAST(
+        Some(AstNode::create_leaf(
+            NodeKind::ExprAST(
                 Expr::Ident(
                     IdentExpr { 
                         sym_name: id.lexeme, 
@@ -1086,15 +1086,15 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     }
                 )
             ),
-            ASTOperation::AST_IDENT,
+            AstOp::Ident,
             None,
             meta
         ))
     }
 
-    fn create_expr_ast(value: LitValue<'tcx>, operation: ASTOperation, meta: NodeMeta) -> AST<'tcx> {
-        AST::create_leaf(
-            ASTKind::ExprAST(
+    fn create_expr_ast(value: LitValue<'tcx>, operation: AstOp, meta: NodeMeta) -> AstNode<'tcx> {
+        AstNode::create_leaf(
+            NodeKind::ExprAST(
                 Expr::LitVal(
                     LitValExpr {
                         value: value.clone(),
@@ -1136,8 +1136,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         );
 
         Some(
-            AST::create_leaf(
-                ASTKind::ExprAST(
+            AstNode::create_leaf(
+                NodeKind::ExprAST(
                     Expr::RecordFieldAccess(
                         RecordFieldAccessExpr { 
                             rec_name: "", // name will be set by the semantic analyser
@@ -1148,7 +1148,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         }
                     )
                 ),
-                ASTOperation::AST_RECORD_FIELD_ACCESS, 
+                AstOp::RecFieldAccess, 
                 None, 
                 meta
             )
@@ -1166,7 +1166,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
             loop {
                 let argu = self.parse_record_or_expr(None)?;
-                func_args.push((arg_pos, argu.kind.expr().unwrap()));
+                func_args.push((arg_pos, argu.data.expr().unwrap()));
 
                 let is_tok_comma: bool = self.peek().kind == TokenKind::T_COMMA;
                 let is_tok_rparen: bool = self.peek().kind == TokenKind::T_RPAREN;
@@ -1196,8 +1196,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             column: end_token.pos.column
         };
 
-        Some(AST::create_leaf(
-            ASTKind::ExprAST(
+        Some(AstNode::create_leaf(
+            NodeKind::ExprAST(
                 Expr::FuncCall(
                     FuncCallExpr {
                         ty: TyKind::None,
@@ -1207,7 +1207,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     }
                 )
             ),
-            ASTOperation::AST_FUNC_CALL,
+            AstOp::FuncCall,
             None,
             NodeMeta::new(
                 Span::new(
