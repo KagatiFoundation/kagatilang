@@ -55,6 +55,7 @@ pub struct Parser<'p, 'tcx> where 'tcx: 'p {
 
     pub diagnostics: &'p DiagnosticBag,
     pub options: ParserOptions,
+    next_node_id: usize,
 }
 
 impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
@@ -72,6 +73,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             current_file: FileId(0),
             options,
             diagnostics: diags,
+            next_node_id: 0 // start counting at zero
         }
     }
 
@@ -507,7 +509,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 mid: None,
                 op: AstOp::Return,
                 ty: None,
-                meta
+                meta,
+                id: self.next_node_id()
             };
             Some(return_ast)
         }
@@ -1272,6 +1275,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         } else {
             *self.tokens.last().unwrap()
         }
+    }
+
+    fn next_node_id(&mut self) -> NodeId {
+        let curr_id = self.next_node_id;
+        self.next_node_id += 1;
+        NodeId(curr_id)
     }
 }
 

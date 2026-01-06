@@ -16,7 +16,7 @@ use kagc_scope::scope::_Scope;
 use kagc_symbol::Sym;
 use kagc_symbol::function::Func;
 use kagc_types::record::RecordType;
-use kagc_types::str_interner::StringInterner;
+use kagc_ctx::StringInterner;
 
 pub fn compile_file(file_name: &str) -> Result<(), Error> {
     let str_arena = typed_arena::Arena::<String>::new();

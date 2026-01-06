@@ -13,7 +13,7 @@ use kagc_lexer::Tokenizer;
 use kagc_parser::Parser;
 use kagc_parser::options::ParserOptions;
 use kagc_scope::ctx::ScopeCtx;
-use kagc_types::str_interner::StringInterner;
+use kagc_ctx::StringInterner;
 
 use crate::comp_unit::CompUnit;
 

@@ -54,10 +54,10 @@ impl<'tcx> Scope<'tcx> {
 }
 
 pub struct _Scope<'tcx> {
-    pub symt: SymTable<'tcx>,
-    pub parent: Option<ScopeId>,
-    pub ty: ScopeType,
-    pub id: Cell<ScopeId>
+    symt: SymTable<'tcx>,
+    pub(crate) parent: Option<ScopeId>,
+    pub(crate) ty: ScopeType,
+    pub(crate) id: Cell<ScopeId>
 }
 
 impl<'tcx> _Scope<'tcx> {

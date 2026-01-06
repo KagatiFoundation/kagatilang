@@ -2,8 +2,9 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use kagc_ast::NodeId;
 use kagc_symbol::Sym;
 use kagc_symbol::function::{FuncId, FuncTable};
 use kagc_symbol::record::RecordTable;
@@ -23,6 +24,7 @@ pub struct ScopeCtxBuilder<'tcx> {
     user_types:             Option<HashSet<String>>,
     scope_stack:            Option<Vec<ScopeId>>,
     sym_arena:              Option<&'tcx typed_arena::Arena<Sym<'tcx>>>,
+    node_scope_map:         Option<HashMap<NodeId, ScopeId>>
 }
 
 impl<'tcx> ScopeCtxBuilder<'tcx> {
@@ -39,6 +41,7 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
             user_types:         None,
             scope_stack:        None,
             sym_arena:          None,
+            node_scope_map:     None
         }
     }
 
@@ -92,6 +95,11 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         self
     }
 
+    pub fn node_scope_mapping(mut self, m: HashMap<NodeId, ScopeId>) -> Self {
+        self.node_scope_map = Some(m);
+        self
+    }
+
     pub fn build(self) -> ScopeCtx<'tcx> {
         ScopeCtx {
             functions: self.functions.unwrap(),
@@ -109,7 +117,8 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
             records: self.records.unwrap(), // unsafe unwrap call
             user_types: RefCell::new(self.user_types.unwrap_or_default()),
             sym_arena: self.sym_arena.unwrap(), // unsafe unwrap call
-            stack: RefCell::new(self.scope_stack.unwrap_or_default())
+            stack: RefCell::new(self.scope_stack.unwrap_or_default()),
+            node_scope_map: RefCell::new(self.node_scope_map.unwrap_or_default())
         }
     }
 }

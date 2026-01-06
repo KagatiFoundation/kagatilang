@@ -7,7 +7,7 @@ mod stmt;
 mod node_kind;
 pub mod import;
 pub mod record;
-pub mod pattern;
+mod pattern;
 mod operation;
 
 pub use ast_node::*;
@@ -15,3 +15,4 @@ pub use expr::*;
 pub use stmt::*;
 pub use node_kind::*;
 pub use operation::*;
+pub use pattern::*;

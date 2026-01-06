@@ -3,8 +3,10 @@
 
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
+use kagc_ast::NodeId;
 use kagc_symbol::Sym;
 use kagc_symbol::function::Func;
 use kagc_symbol::function::FuncId;
@@ -34,6 +36,7 @@ pub struct ScopeCtx<'tcx> {
     pub(crate) next_id:             Cell<ScopeId>,
     pub(crate) stack:               RefCell<Vec<ScopeId>>,
     pub(crate) sym_arena:           &'tcx typed_arena::Arena<Sym<'tcx>>,
+    pub(crate) node_scope_map:      RefCell<HashMap<NodeId, ScopeId>>
 }
 
 impl<'tcx> ScopeCtx<'tcx> {
@@ -60,6 +63,7 @@ impl<'tcx> ScopeCtx<'tcx> {
             .records(rec_table)
             .functions(func_table)
             .sym_arena(sym_arena)
+            .node_scope_mapping(HashMap::default())
             .scope_id_counter(ScopeId(1)) // since zero(0) is for the root scope
             .build()
     }
@@ -86,8 +90,10 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn root(&self) -> &'tcx _Scope {
-        todo!()
-        // self.scopes.borrow().get(&ScopeId(0)).unwrap() // root scope's ID is 0 and it is always present
+        let Some(root_scope) = self.scopes.get(ScopeId(0)) else {
+            panic!("A major bug! No root scope set")
+        };
+        root_scope
     }
 
     pub fn enter(&self, scope_id: ScopeId) -> Option<ScopeId> {
@@ -105,11 +111,12 @@ impl<'tcx> ScopeCtx<'tcx> {
     /// Creates a new scope with the given type.
     /// 
     /// Returns the ID of newly created scope.
-    pub fn push(&self, scope_type: ScopeType) -> ScopeId {
+    pub fn push(&self, node_id: NodeId, scope_type: ScopeType) -> ScopeId {
         let scope_id = self.next_id.replace(ScopeId(self.next_id.get().0 + 1));
 
         let parent = self.scopes.iter().last().expect("Stack required non-empty").id.get();
         self.scopes.add(_Scope::new(self.sym_arena, scope_type, Some(parent)));
+        self.node_scope_map.borrow_mut().insert(node_id, scope_id);
 
         self.stack.borrow_mut().push(scope_id);
         let curr_scope = self.current.replace(_ScopeMeta { id: scope_id, typ: scope_type });
@@ -148,33 +155,33 @@ impl<'tcx> ScopeCtx<'tcx> {
         popped_id
     }
 
-    pub fn deep_lookup(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym> {
+    pub fn lookup_sym(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym> {
         if let Some(scope) = self.scopes.get(scope_id.unwrap_or(self.current.get().id)) {
             if let Some(sym) = scope.get_sym(name) {
                 return Some(sym);
             }
             else if let Some(parent_scope) = scope.parent {
-                return self.deep_lookup(Some(parent_scope), name);
+                return self.lookup_sym(Some(parent_scope), name);
             }
         }
         None
     }
 
-    pub fn declare_in_scope(&'tcx self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+    pub fn declare_sym_in_scope(&self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
         let Some(scope) = self.scopes.get(scope_id) else {
             panic!("Couldn't find scope '{:#?}'", scope_id);
         };
         scope.add_sym(sym)
     }
 
-    pub fn declare(&'tcx self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+    pub fn declare_sym(&self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
         let Some(current_scope) = self.scopes.get(self.current.get().id) else {
             panic!("Couldn't find current scope");
         };
         current_scope.add_sym(sym)
     }
 
-    pub fn declare_fn(&'tcx self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>> {
+    pub fn declare_fn(&self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>> {
         self.functions.add(name, func)
     }
 
@@ -182,7 +189,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.functions.get_by_id(id)
     }
 
-    pub fn lookup_fn_by_name(&'tcx self, name: &str) -> Option<&'tcx Func<'tcx> > {
+    pub fn lookup_fn_by_name(&self, name: &str) -> Option<&'tcx Func<'tcx> > {
         self.functions.get(name)
     }
 
@@ -238,10 +245,23 @@ impl<'tcx> ScopeCtx<'tcx> {
         }
         self.is_inside_scope_type(self.current.get().id, ScopeType::If)
     }
+
+    /// Get scope associated with the ScopeId.
+    pub fn lookup_scope(&self, scope_id: ScopeId) -> Option<&'tcx _Scope> {
+        self.scopes.get(scope_id)
+    }
+
+    /// Get scope associated with the NodeId.
+    pub fn lookup_node_scope(&self, node_id: NodeId) -> Option<&'tcx _Scope> {
+        let scope_id = *self.node_scope_map.borrow().get(&node_id)?;
+        let scope = self.scopes.get(scope_id)?;
+        Some(scope)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use kagc_ast::NodeId;
     use kagc_symbol::{Sym, function::Func};
     use kagc_types::record::RecordType;
 
@@ -260,17 +280,17 @@ mod tests {
             &rec_arena,
             &scope_arena
         );
-        cx.push(ScopeType::Function);
+        cx.push(NodeId(0xFF), ScopeType::Function);
 
         assert!(cx.current.get().typ == ScopeType::Function);
         assert!(cx.previous.get().typ == ScopeType::Root);
 
-        cx.push(ScopeType::Loop);
+        cx.push(NodeId(0xFE), ScopeType::Loop);
         assert!(cx.current.get().typ == ScopeType::Loop);
         assert!(cx.previous.get().typ == ScopeType::Function);
 
-        cx.push(ScopeType::Loop);
-        cx.push(ScopeType::If);
+        cx.push(NodeId(0xFD), ScopeType::Loop);
+        cx.push(NodeId(0xFC), ScopeType::If);
         assert!(cx.current.get().typ == ScopeType::If);
         assert!(cx.previous.get().typ == ScopeType::Loop);
     }
@@ -287,10 +307,10 @@ mod tests {
             &rec_arena,
             &scope_arena
         );
-        cx.push(ScopeType::Function);
-        cx.push(ScopeType::Loop);
-        cx.push(ScopeType::Loop);
-        cx.push(ScopeType::If);
+        cx.push(NodeId(0xFF), ScopeType::Function);
+        cx.push(NodeId(0xFE), ScopeType::Loop);
+        cx.push(NodeId(0xFD), ScopeType::Loop);
+        cx.push(NodeId(0xFC), ScopeType::If);
 
         cx.pop();
         assert!(cx.current.get().typ == ScopeType::Loop);

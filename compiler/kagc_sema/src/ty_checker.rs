@@ -163,7 +163,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        if let Some(rec_sym) = self.scope.deep_lookup(Some(self.current_scope), field_access.rec_alias) {
+        if let Some(rec_sym) = self.scope.lookup_sym(Some(self.current_scope), field_access.rec_alias) {
             if let SymTy::Record { name } = rec_sym.sym_ty.get() {
                 if let Some(rec) = self.scope.lookup_record(name) {
                     if let Some(field) = rec.fields.iter().find(|&field| field.name == field_access.field_chain[0]) {
@@ -214,7 +214,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        if let Some(ident) = self.scope.deep_lookup(Some(self.current_scope), ident_expr.sym_name) {
+        if let Some(ident) = self.scope.lookup_sym(Some(self.current_scope), ident_expr.sym_name) {
             ident_expr.ty = ident.ty.get();
             Some(ident_expr.ty)
         }
@@ -238,7 +238,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     /// This analysis is done to check if the arguments to this 
     /// function call are valid.
     fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        let Some(func_symbol) = self.scope.deep_lookup(Some(self.current_scope), func_call.symbol_name) else {
+        let Some(func_symbol) = self.scope.lookup_sym(Some(self.current_scope), func_call.symbol_name) else {
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),
@@ -438,7 +438,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     fn analyze_var_decl_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         if let Some(Stmt::VarDecl(var_decl)) = node.data.as_stmt_mut() {
             let var_value_type: TyKind = self.analyze_expr(node.left.as_mut().unwrap())?;
-            if let Some(var_sym) = self.scope.deep_lookup(Some(self.current_scope), var_decl.sym_name) {
+            if let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) {
                 let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
                 
                 if let TyKind::Record{ name } = &var_value_type {

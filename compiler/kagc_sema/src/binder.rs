@@ -12,10 +12,10 @@ use kagc_types::record::{RecordFieldType, RecordType};
 use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag, Severity};
 
 pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
-    pub local_offset: usize,
-    pub diagnostics: &'r DiagnosticBag,
-    pub scope: &'tcx ScopeCtx<'tcx>,
-    pub asts: &'tcx Vec<AstNode<'tcx>>
+    _local_offset: usize,
+    diagnostics: &'r DiagnosticBag,
+    scope: &'tcx ScopeCtx<'tcx>,
+    ast_nodes: &'tcx Vec<AstNode<'tcx>>
 }
 
 pub type BindingResult = Option<SymId>;
@@ -29,13 +29,13 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         Self {
             diagnostics: diags,
             scope,
-            local_offset: 0,
-            asts
+            _local_offset: 0,
+            ast_nodes: asts
         }
     }
 
     pub fn bind(&mut self) {
-        for node in self.asts.iter() {
+        for node in self.ast_nodes.iter() {
             self.bind_sym(node);
         }
     }
@@ -79,7 +79,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         node.expect_if_stmt();
 
         if let Some(mid_tree) = &node.mid {
-            self.scope.push(ScopeType::If);
+            self.scope.push(node.id, ScopeType::If);
             self.bind_sym(mid_tree)?; // mid tree is the 'if' block
             self.scope.pop(); // exit if-block's scope
         }
@@ -87,7 +87,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         if let Some(right_tree) = &node.right {
             // right tree is the 'else' block
             if let Some(else_block_tree) = &right_tree.left {
-                self.scope.push(ScopeType::If);
+                self.scope.push(else_block_tree.id, ScopeType::If);
                 self.bind_sym(else_block_tree)?;
                 self.scope.pop();
             }
@@ -146,17 +146,12 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                 }
             );
         };
-
-        // let defined_func_id = insert_res.ok().unwrap().id.get(); // okay to unwrap
-        // self.curr_func_id = Some(defined_func_id.0);
-
-        self.scope.push(ScopeType::Function);
+        self.scope.push(node.id, ScopeType::Function);
 
         // loop through function's body to find new symbols
         if let Some(func_body) = &node.left {
             let _ = self.bind_sym(func_body)?;
         }
-
         Some(sym_id)
     }
 
@@ -172,7 +167,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             stmt.class, 
             FuncId(stmt.func_id)
         );
-        let id = self.scope.declare(sym);
+        let id = self.scope.declare_sym(sym);
 
         if let Ok(sym) = id {
             Some(sym.id.get())

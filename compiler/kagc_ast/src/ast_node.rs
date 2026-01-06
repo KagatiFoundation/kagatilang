@@ -8,6 +8,11 @@ use crate::{AstOp, BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, Stmt};
 
 use super::NodeKind;
 
+#[derive(Clone, Debug, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NodeId(pub usize);
+
+pub const INVALID_NODE_ID: usize = 0xFFFFFFFA;
+
 /// Represents a node in the Abstract Syntax Tree (AST).
 ///
 /// The `AstNode` struct encapsulates various properties of an AST node, 
@@ -30,6 +35,7 @@ use super::NodeKind;
 ///   the AST node (`TyKind`).
 #[derive(Clone, Debug)]
 pub struct AstNode<'tcx> {
+    pub id: NodeId,
     pub data: NodeKind<'tcx>,
     pub op: AstOp,
     pub left: Option<Box<AstNode<'tcx>>>,
@@ -42,6 +48,7 @@ pub struct AstNode<'tcx> {
 impl<'tcx> AstNode<'tcx> {
     pub fn empty() -> Self {
         Self {
+            id: NodeId(INVALID_NODE_ID),
             data: NodeKind::Empty,
             op: AstOp::None,
             left: None,
@@ -66,7 +73,8 @@ impl<'tcx> AstNode<'tcx> {
             mid: None,
             right: right.map(Box::new),
             ty,
-            meta: NodeMeta::none()
+            meta: NodeMeta::none(),
+            id: NodeId(INVALID_NODE_ID)
         }
     }
 
@@ -83,7 +91,8 @@ impl<'tcx> AstNode<'tcx> {
             mid: None,
             right: None,
             ty,
-            meta
+            meta,
+            id: NodeId(INVALID_NODE_ID)
         }
     }
     
@@ -102,7 +111,8 @@ impl<'tcx> AstNode<'tcx> {
             mid: mid.map(Box::new),
             right: right.map(Box::new),
             ty,
-            meta: NodeMeta::none()
+            meta: NodeMeta::none(),
+            id: NodeId(INVALID_NODE_ID)
         }
     }
 
@@ -122,7 +132,8 @@ impl<'tcx> AstNode<'tcx> {
             mid: mid.map(Box::new),
             right: right.map(Box::new),
             ty,
-            meta
+            meta,
+            id: NodeId(INVALID_NODE_ID)
         }
     }
 
