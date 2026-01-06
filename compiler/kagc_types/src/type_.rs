@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::fmt::Display;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TyKind<'tcx> {
     I64,
@@ -13,7 +15,6 @@ pub enum TyKind<'tcx> {
 
     // Composite types
     Array {
-        elem: &'tcx Ty<'tcx>,
         len: usize,
     },
 
@@ -23,6 +24,21 @@ pub enum TyKind<'tcx> {
 
     /// None type
     None
+}
+
+impl Display for TyKind<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ty_str = match self {
+            TyKind::I64 | TyKind::U8            => "integer",
+            TyKind::Void                        => "void",
+            TyKind::Null                        => "null",
+            TyKind::Str | TyKind::PoolStr       => "string",
+            TyKind::Array { len}        => &format!("array({len})"),
+            TyKind::Record { name }      => &format!("record({name})"),
+            TyKind::None => unimplemented!(),
+        };
+        write!(f, "{ty_str}")
+    }
 }
 
 impl<'tcx> TyKind<'tcx> {

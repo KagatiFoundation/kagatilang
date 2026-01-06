@@ -25,45 +25,48 @@ pub struct TypeChecker<'t, 'tcx> where 'tcx: 't {
 }
 
 impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
-    pub fn new(scope: &'tcx ScopeCtx<'tcx>, diags: &'t DiagnosticBag) -> Self {
+    pub fn new(
+        scope: &'tcx ScopeCtx<'tcx>, 
+        diags: &'t DiagnosticBag,
+    ) -> Self {
         Self { 
             diagnostics: diags,
             scope,
-            current_scope: ScopeId(0)
+            current_scope: ScopeId(0),
         }
     }
 
-    /// Start the analysis process
+    /// Start the type checking process
     /// 
-    /// This starts an analysis process for the given list of nodes. 
+    /// This starts an type checking process for the given list of nodes. 
     /// This function panics if it encounters any form of error.
-    pub fn start_analysis(&mut self, nodes: &'tcx mut [AstNode<'tcx>]) {
+    pub fn check(&mut self, nodes: &mut [AstNode<'tcx>]) {
         for node in nodes {
             self.analyze_node(node);
         }
     }
 
-    fn analyze_node(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_node(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let Some(_) = node.as_stmt() else {
             panic!("Only statement nodes are supported, but found {:#?}!", node);
         };
         match node.op {
             AstOp::VarDecl      => self.analyze_var_decl_stmt(node),
-            AstOp::Func      => self.analyze_func_decl_stmt(node),
-            AstOp::Return        => self.analyze_return_stmt(node),
+            AstOp::Func         => self.analyze_func_decl_stmt(node),
+            AstOp::Return       => self.analyze_return_stmt(node),
             AstOp::FuncCall     => self.analyze_fn_call(node),
-            AstOp::Loop          => self.analyze_node(node.left.as_mut().unwrap()),
-            AstOp::If            => self.analyze_if_stmt(node),
-            AstOp::Import        => Some(TyKind::Void),
-            AstOp::RecDecl   => self.analyze_record_decl_stmt(node),
-            AstOp::Block         => self.analyze_block_stmt(node),
+            AstOp::Loop         => self.analyze_node(node.left.as_mut().unwrap()),
+            AstOp::If           => self.analyze_if_stmt(node),
+            AstOp::Import       => Some(TyKind::Void),
+            AstOp::RecDecl      => self.analyze_record_decl_stmt(node),
+            AstOp::Block        => self.analyze_block_stmt(node),
             AstOp::None 
-            | AstOp::Break       => Some(TyKind::None),
+            | AstOp::Break      => Some(TyKind::None),
             _ => panic!("Operation '{:#?}' not supported!", node.op)
         }
     }
 
-    fn analyze_block_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_block_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let block_stmt = node.expect_block_stmt_mut();
         for s in &mut block_stmt.statements {
             self.analyze_node(s)?;
@@ -264,56 +267,68 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
             );
             return None;
         }
-        let func_detail = self
+        let func_details = self
             .scope
             .lookup_fn_by_name(func_call.symbol_name)
             .unwrap()
             .clone();
-        func_call.id = func_detail.id.get();
-        let func_param_types = func_detail.param_types.clone();
+        func_call.id = func_details.id.get();
+        let func_param_types = func_details.param_types.clone();
+
+        let mut func_call_args: Vec<&mut Expr<'tcx>> = func_call
+            .args
+            .iter_mut()
+            .map(|arg| &mut arg.1)
+            .collect();
 
         self.check_func_call_args(
-            &mut func_call.args[..], 
+            &mut func_call_args, 
             &func_param_types, 
             meta
-        )?;            
+        );            
 
-        func_call.ty = TyKind::Void;
-        Some(TyKind::Void)        
+        func_call.ty = func_details.ty;
+        Some(func_details.ty)        
     }
 
     /// Check if the function arguments match the parameter types
-    fn check_func_call_args(&mut self, args: &mut [(usize, Expr<'tcx>)], param_types: &[TyKind], meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_func_call_args(&mut self, args: &mut [&mut Expr<'tcx>], param_types: &[TyKind], meta: &NodeMeta) {
         if args.len() != param_types.len() {
-            let diag = Diagnostic {
-                code: Some(ErrCode::TYP3001),
-                severity: Severity::Error,
-                primary_span: meta.span,
-                secondary_spans: vec![],
-                message: format!("argument length mismatch: expected '{}' but found '{}'", param_types.len(), args.len()),
-                notes: vec![]
-            };
-            self.diagnostics.push(diag);
-            return None;
-        }
-
-        for (idx, param_type) in param_types.iter().enumerate() {
-            let expr_res = self.analyze_and_mutate_expr(&mut args[idx].1, meta)?;
-            let assignment_ok: bool = true; // expr_res == *param_type || TypeChecker::is_type_coalesciable(expr_res.clone(), param_type.clone());
-            if !assignment_ok {
-                let diag = Diagnostic {
-                    code: Some(ErrCode::TYP3002),
+            self.diagnostics.push(
+                Diagnostic {
+                    code: Some(ErrCode::TYP3001),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
-                    message: format!("'{:#?}' is not compatible with '{:#?}'", param_type, expr_res),
+                    message: format!(
+                        "expected '{}' arguments but found '{}'", 
+                        param_types.len(), 
+                        args.len()
+                    ),
                     notes: vec![]
-                };
-                self.diagnostics.push(diag);
-                return None;
+                }
+            );
+        }
+
+        for (arg, param_type) in args.iter_mut().zip(param_types.iter()) {
+            let Some(expr_res) = self.analyze_and_mutate_expr(arg, meta) else {
+                bug!("Argument's result type cannot be determined. And that's a bug.")
+            };
+            let assignment_ok = (expr_res == *param_type) 
+                || TypeChecker::is_type_coalesciable(expr_res, *param_type);
+            if !assignment_ok {
+                self.diagnostics.push(
+                    Diagnostic {
+                        code: Some(ErrCode::TYP3002),
+                        severity: Severity::Error,
+                        primary_span: meta.span,
+                        secondary_spans: vec![],
+                        message: format!("'{param_type}' is not compatible with '{expr_res}'"),
+                        notes: vec![]
+                    }
+                );
             }
         }
-        Some(TyKind::None) // placeholder; doesn't affect anything
     }
 
     /// There's nothing to be done here, actually. We don't care 
@@ -333,7 +348,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         })
     }
 
-    fn analyze_return_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         if !node.data.is_stmt() {
             panic!("Needed a ReturnStmt--but found {node:#?}");
         }
@@ -389,7 +404,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         panic!("Not a return statement!");
     }
 
-    fn analyze_func_decl_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         if !node.data.is_stmt() {
             panic!("Needed a FuncDecl--but found {:#?}", node);
         }
@@ -435,7 +450,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         panic!("Not a function declaration statement!");
     }
 
-    fn analyze_var_decl_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         if let Some(Stmt::VarDecl(var_decl)) = node.data.as_stmt_mut() {
             let var_value_type: TyKind = self.analyze_expr(node.left.as_mut().unwrap())?;
             if let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) {
@@ -471,7 +486,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     /// type, and ensures the assigned expression's type matches the declared or 
     /// inferred type. If there's a type mismatch that cannot be reconciled, an 
     /// error is returned.
-    pub fn check_and_mutate_var_decl_stmt(&mut self, var_decl_sym: &Sym<'tcx>, expr_type: TyKind<'tcx>, meta: &NodeMeta) -> Option<TyKind<'tcx>> {
+    pub fn check_and_mutate_var_decl_stmt(&mut self, var_decl_sym: &'tcx Sym<'tcx>, expr_type: TyKind<'tcx>, meta: &NodeMeta) -> Option<TyKind<'tcx>> {
         if var_decl_sym.ty.get() != TyKind::None {
             match expr_type {
                 // implicitly convert no-type-annotated byte-type into an integer
@@ -511,7 +526,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         Some(expr_type)
     }
 
-    fn analyze_if_stmt(&mut self, node: &'tcx mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn analyze_if_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         node.expect_if_stmt();
         self.scope.enter(ScopeId(0));
 
