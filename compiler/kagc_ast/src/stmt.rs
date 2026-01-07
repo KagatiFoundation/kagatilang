@@ -206,4 +206,18 @@ impl<'tcx> Stmt<'tcx> {
             _ => None
         }
     }
+
+    pub fn as_var_decl(&self) -> Option<&VarDeclStmt<'tcx>> {
+        match self {
+            Stmt::VarDecl(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+    pub fn as_var_decl_mut(&mut self) -> Option<&mut VarDeclStmt<'tcx>> {
+        match self {
+            Stmt::VarDecl(stmt) => Some(stmt),
+            _ => None
+        }
+    }
 }

@@ -427,67 +427,42 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn check_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
-            let var_value_type: TyKind = self.check_expr(node.left.as_mut().unwrap())?;
-            if let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) {
-                let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
-                
-                if let TyKind::Record{ name } = &var_value_type {
-                    var_sym.sym_ty.replace(SymTy::Record { name });
-                }
+        let var_decl = node.expect_var_decl_stmt();
 
-                // var_sym.func_id = Some(curr_func_id);
-                // var_sym.lit_type = var_type.clone();
-                node.ty = Some(var_type);
-                return Some(var_type);
-            }
-            let diag = Diagnostic {
-                code: Some(ErrCode::SEM2000),
-                severity: Severity::Error,
-                primary_span: node.meta.span,
-                secondary_spans: vec![],
-                message: format!("undefined symbol '{}'", var_decl.sym_name),
-                notes: vec![]
-            };
-            self.diagnostics.push(diag);
+        let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) else {
+            self.diagnostics.push(
+                Diagnostic {
+                    code: Some(ErrCode::SEM2000),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: vec![],
+                    message: format!("undefined symbol '{}'", var_decl.sym_name),
+                    notes: vec![]
+                }
+            );
             return None;
+        };
+
+        let var_value_type = self.check_expr(node.left.as_mut().unwrap())?;
+        let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
+            
+        if let TyKind::Record{ name } = &var_value_type {
+            var_sym.sym_ty.replace(SymTy::Record { name });
         }
-        panic!("Not a var declaration statement");
+
+        var_sym.function_id.replace(self.curr_func_id);
+        node.ty = Some(var_type);
+
+        Some(var_type)
     }
 
-    /// Performs type checking for variable declaration statements.
-    /// 
-    /// This function infers the type of an expression assigned to a variable,
-    /// updates the variable's symbol if it was declared without an explicit 
-    /// type, and ensures the assigned expression's type matches the declared or 
-    /// inferred type. If there's a type mismatch that cannot be reconciled, an 
-    /// error is returned.
-    pub fn check_and_mutate_var_decl_stmt(&mut self, var_decl_sym: &'tcx Sym<'tcx>, expr_type: TyKind<'tcx>, meta: &NodeMeta) -> Option<TyKind<'tcx>> {
-        if var_decl_sym.ty.get() != TyKind::None {
-            match expr_type {
-                // implicitly convert no-type-annotated byte-type into an integer
-                TyKind::U8 => {
-                    // var_decl_sym.lit_type = TyKind::I64;
-                    return Some(TyKind::I64);
-                },
-
-                // TyKind::Str => {
-                    // var_decl_sym.lit_type = TyKind::RawStr;
-                    // return Some(TyKind::Str);
-                // },
-
-                TyKind::Str => {
-                    // var_decl_sym.lit_type = TyKind::PoolStr;
-                    return Some(TyKind::PoolStr);
-                }
-                
-                _ => return Some(expr_type)
-            }
-        }
-        if false
-            // var_decl_sym.lit_type != expr_type 
-            // && !is_type_coalescing_possible(expr_type.clone(), var_decl_sym.lit_type.clone()) 
-        {
+    pub fn check_and_mutate_var_decl_stmt(
+        &mut self, 
+        var_decl_sym: &'tcx Sym<'tcx>, 
+        expr_type: TyKind<'tcx>, 
+        meta: &NodeMeta
+    ) -> Option<TyKind<'tcx>> {
+        if (var_decl_sym.ty.get() != expr_type) && expr_type.is_compatible_with(&var_decl_sym.ty.get()) {
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::TYP3003),
@@ -504,6 +479,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             );
             return None;
         }
+        match expr_type {
+            TyKind::U8 | TyKind::I64 => { var_decl_sym.ty.replace(TyKind::I64); },
+            TyKind::Str => { var_decl_sym.ty.replace(TyKind::Str); },
+            _ => ()
+        };
         Some(expr_type)
     }
 
