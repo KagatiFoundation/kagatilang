@@ -179,6 +179,20 @@ impl<'tcx> Stmt<'tcx> {
         }
     }
 
+    pub fn as_record_decl(&self) -> Option<&RecordDeclStmt<'tcx>> {
+        match self {
+            Stmt::Record(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+    pub fn as_record_decl_mut(&mut self) -> Option<&mut RecordDeclStmt<'tcx>> {
+        match self {
+            Stmt::Record(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
     pub fn as_return(&self) -> Option<&ReturnStmt> {
         match self {
             Stmt::Return(stmt) => Some(stmt),

@@ -44,68 +44,68 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     /// This function panics if it encounters any form of error.
     pub fn check(&mut self, nodes: &mut [AstNode<'tcx>]) {
         for node in nodes {
-            self.analyze_node(node);
+            self.check_node(node);
         }
     }
 
-    fn analyze_node(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_node(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let Some(_) = node.as_stmt() else {
             panic!("Only statement nodes are supported, but found {:#?}!", node);
         };
         match node.op {
-            AstOp::VarDecl      => self.analyze_var_decl_stmt(node),
-            AstOp::Func         => self.analyze_func_decl_stmt(node),
-            AstOp::Return       => self.analyze_return_stmt(node),
-            AstOp::FuncCall     => self.analyze_fn_call(node),
+            AstOp::VarDecl      => self.check_var_decl_stmt(node),
+            AstOp::Func         => self.check_func_decl_stmt(node),
+            AstOp::Return       => self.check_return_stmt(node),
+            AstOp::FuncCall     => self.check_function_call(node),
             AstOp::Loop         => self.check_loop_stmt(node),
-            AstOp::If           => self.analyze_if_stmt(node),
+            AstOp::If           => self.check_if_stmt(node),
             AstOp::Import       => Some(TyKind::Void),
-            AstOp::RecDecl      => self.analyze_record_decl_stmt(node),
-            AstOp::Block        => self.analyze_block_stmt(node),
+            AstOp::RecDecl      => self.check_record_decl_stmt(node),
+            AstOp::Block        => self.check_block_stmt(node),
             AstOp::None 
             | AstOp::Break      => Some(TyKind::None),
             _ => panic!("Operation '{:#?}' not supported!", node.op)
         }
     }
 
-    fn analyze_block_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_block_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let block_stmt = node.expect_block_stmt_mut();
         for s in &mut block_stmt.statements {
-            self.analyze_node(s)?;
+            self.check_node(s)?;
         }
         Some(TyKind::None)
     }
 
-    fn analyze_fn_call(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_function_call(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         // let call_expr = node.expect_function_call_expr_mut();
         // self.analyze_func_call_expr(call_expr, &node.meta)
         if let NodeKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut node.kind {
-            self.analyze_func_call_expr(func_call_expr, &node.meta)
+            self.check_func_call_expr(func_call_expr, &node.meta)
         }
         else {
             panic!()
         }
     }
 
-    fn analyze_expr(&mut self, ast: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_expr(&mut self, ast: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {:#?}", ast);
         }
         if let NodeKind::ExprAST(expr) = &mut ast.kind {
-            ast.ty = self.analyze_and_mutate_expr(expr, &ast.meta);
+            ast.ty = self.check_and_mutate_expr(expr, &ast.meta);
             return ast.ty;
         }
         panic!()
     }
 
-    fn analyze_and_mutate_expr(&mut self, expr: &mut Expr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_and_mutate_expr(&mut self, expr: &mut Expr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         match expr {
-            Expr::LitVal(litexpr) => self.analyze_lit_expr(litexpr),
-            Expr::Binary(binexpr) => self.analyze_bin_expr(binexpr, meta),
-            Expr::Ident(identexpr) => self.analyze_ident_expr(identexpr, meta),
-            Expr::FuncCall(funccallexpr) => self.analyze_func_call_expr(funccallexpr, meta),
-            Expr::RecordCreation(recexpr) => self.analyze_rec_creation_expr(recexpr, meta),
-            Expr::RecordFieldAccess(recfieldexpr) => self.analyze_record_field_access_expr(recfieldexpr, meta),
+            Expr::LitVal(litexpr) => self.check_literal_expr(litexpr),
+            Expr::Binary(binexpr) => self.check_bin_expr(binexpr, meta),
+            Expr::Ident(identexpr) => self.check_ident_expr(identexpr, meta),
+            Expr::FuncCall(funccallexpr) => self.check_func_call_expr(funccallexpr, meta),
+            Expr::RecordCreation(recexpr) => self.check_rec_creation_expr(recexpr, meta),
+            Expr::RecordFieldAccess(recfieldexpr) => self.check_record_field_access_expr(recfieldexpr, meta),
             Expr::Null => Some(TyKind::Null),
             _ => todo!()
         }
@@ -159,15 +159,15 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    fn analyze_bin_expr(&mut self, bin_expr: &mut BinExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        let left_type = self.analyze_and_mutate_expr(&mut bin_expr.left, meta)?;
-        let right_type = self.analyze_and_mutate_expr(&mut bin_expr.right, meta)?;
+    fn check_bin_expr(&mut self, bin_expr: &mut BinExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+        let left_type = self.check_and_mutate_expr(&mut bin_expr.left, meta)?;
+        let right_type = self.check_and_mutate_expr(&mut bin_expr.right, meta)?;
         let result_type = self.are_types_compatible(left_type, right_type, bin_expr.operation, meta).unwrap();
         bin_expr.ty = result_type;
         Some(result_type)
     }
 
-    fn analyze_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         if let Some(rec_sym) = self.scope.lookup_sym(Some(self.current_scope), field_access.rec_alias) {
             if let SymTy::Record { name } = rec_sym.sym_ty.get() {
                 if let Some(rec) = self.scope.lookup_record(name) {
@@ -206,9 +206,9 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         None
     }
 
-    fn analyze_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         for field in &mut rec_expr.fields {
-            let ff = self.analyze_and_mutate_expr(&mut field.value, meta)?;
+            let ff = self.check_and_mutate_expr(&mut field.value, meta)?;
             if ff == TyKind::None {
                 bug!("record's field expression evaluation resulted in type None")
             }
@@ -216,7 +216,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Some(TyKind::Record { name: rec_expr.name })
     }
 
-    fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         if let Some(ident) = self.scope.lookup_sym(Some(self.current_scope), ident_expr.sym_name) {
             ident_expr.ty = ident.ty.get();
             Some(ident_expr.ty)
@@ -236,7 +236,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         let Some(func_symbol) = self.scope.lookup_sym(Some(self.current_scope), func_call.symbol_name) else {
             self.diagnostics.push(
                 Diagnostic {
@@ -307,7 +307,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         for (arg, param_type) in args.iter_mut().zip(param_types.iter()) {
-            let Some(expr_res) = self.analyze_and_mutate_expr(arg, meta) else {
+            let Some(expr_res) = self.check_and_mutate_expr(arg, meta) else {
                 bug!("Argument's result type cannot be determined. And that's a bug.")
             };
             let assignment_ok = (expr_res == *param_type) 
@@ -327,23 +327,18 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    /// There's nothing to be done here, actually. We don't care 
-    /// what type of literal value we get, every literal value is 
-    /// okay. The using expression might restraint from using it.
-    fn analyze_lit_expr(&self, expr: &mut LitValExpr<'tcx>) -> TypeCheckResult<'tcx> {
+    /// There's nothing to be done here, actually. Just return the type.
+    fn check_literal_expr(&self, expr: &LitValExpr<'tcx>) -> TypeCheckResult<'tcx> {
         Some(expr.ty)
     }
 
-    fn analyze_record_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.kind.is_stmt() {
-            panic!("Needed a RecordDeclStmt--but found {node:#?}");
-        }
-
-        Some(TyKind::Record { name: "empty 1" })
+    fn check_record_decl_stmt(&mut self, node: &AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        let record_decl = node.expect_record_decl_stmt();
+        Some(TyKind::Record { name: record_decl.name })
     }
 
-    fn analyze_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        node.expect_return_stmt(); // make sure its a return statment
+    fn check_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        node.expect_return_stmt(); // make sure its a return statement
 
         // 'return' statements can appear only inside functions.
         // Thus, the current function cannot be None. If it is None, then 
@@ -356,7 +351,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             
         // if return statement returns some value
         let found_ret_ty = if let Some(return_expr) = &mut node.left {
-            self.analyze_expr(return_expr)?
+            self.check_expr(return_expr)?
         }
         else {
             TyKind::Void
@@ -390,7 +385,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Some(found_ret_ty)
     }
 
-    fn analyze_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let meta_span = node.meta.span;
         let func_decl = node.expect_func_decl_stmt_mut();
 
@@ -401,15 +396,16 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             .map(|func_sym| func_sym.ty.clone());
 
         if func_ret_type.is_none() {
-            let diag = Diagnostic {
-                code: Some(ErrCode::SEM2000),
-                severity: Severity::Error,
-                primary_span: meta_span,
-                secondary_spans: vec![],
-                message: format!("undefined symbol '{}'", func_decl.name),
-                notes: vec![]
-            };
-            self.diagnostics.push(diag);
+            self.diagnostics.push(
+                Diagnostic {
+                    code: Some(ErrCode::SEM2000),
+                    severity: Severity::Error,
+                    primary_span: meta_span,
+                    secondary_spans: vec![],
+                    message: format!("undefined symbol '{}'", func_decl.name),
+                    notes: vec![]
+                }
+            );
             return None;
         };
         let func_ret_type_shadow = func_ret_type.unwrap();
@@ -422,7 +418,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(scope.id.get()); // enter function's scope
-            self.analyze_node(func_body)?;
+            self.check_node(func_body)?;
             self.scope.pop(); // exit function's scope
         }
 
@@ -430,9 +426,9 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Some(func_ret_type_shadow.get())
     }
 
-    fn analyze_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
-            let var_value_type: TyKind = self.analyze_expr(node.left.as_mut().unwrap())?;
+            let var_value_type: TyKind = self.check_expr(node.left.as_mut().unwrap())?;
             if let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) {
                 let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
                 
@@ -511,7 +507,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Some(expr_type)
     }
 
-    fn analyze_if_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_if_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         node.expect_if_stmt();
         self.scope.enter(ScopeId(0));
 
@@ -519,7 +515,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let Some(expr_node) = node.left.as_mut() else {
             bug!("an If node without an expression node in its left branch is invalid")
         };
-        let cond_res = self.analyze_expr(expr_node)?;
+        let cond_res = self.check_expr(expr_node)?;
 
         if cond_res != TyKind::I64 {
             self.diagnostics.push(
@@ -542,7 +538,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(then_scope.id.get());
-            self.analyze_node(if_body)?;
+            self.check_node(if_body)?;
             self.scope.pop();
         }
 
@@ -555,7 +551,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                 };
 
                 self.scope.enter(else_scope.id.get());
-                self.analyze_node(else_body)?;
+                self.check_node(else_body)?;
                 self.scope.pop();
             }
         }
@@ -572,7 +568,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(loop_scope.id.get());
-            self.analyze_node(loop_body)?;
+            self.check_node(loop_body)?;
             self.scope.pop();
         }
         None
