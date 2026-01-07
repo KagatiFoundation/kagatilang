@@ -137,7 +137,7 @@ pub enum Stmt<'tcx> {
 }
 
 impl<'tcx> Stmt<'tcx> {
-    pub fn as_block(&self) -> Option<&BlockStmt> {
+    pub fn as_block(&self) -> Option<&BlockStmt<'tcx>> {
         match self {
             Stmt::Block(stmt) => Some(stmt),
             _ => None
@@ -168,6 +168,13 @@ impl<'tcx> Stmt<'tcx> {
     pub fn as_if(&self) -> Option<()> {
         match self {
             Stmt::If => Some(()),
+            _ => None
+        }
+    }
+
+    pub fn as_loop(&self) -> Option<()> {
+        match self {
+            Stmt::Loop => Some(()),
             _ => None
         }
     }

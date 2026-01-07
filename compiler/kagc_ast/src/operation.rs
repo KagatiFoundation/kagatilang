@@ -27,6 +27,8 @@ pub enum AstOp {
     Ident,  // a leaf AST node with an identifier name
     LvIdent,
     Assign,
+    
+    #[deprecated]
     Glue,
     If,
     Else,

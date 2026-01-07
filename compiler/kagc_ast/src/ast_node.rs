@@ -35,14 +35,14 @@ pub const INVALID_NODE_ID: usize = 0xFFFFFFFA;
 ///   the AST node (`TyKind`).
 #[derive(Clone, Debug)]
 pub struct AstNode<'tcx> {
-    pub id: NodeId,
-    pub kind: NodeKind<'tcx>,
-    pub op: AstOp,
-    pub left: Option<Box<AstNode<'tcx>>>,
-    pub mid: Option<Box<AstNode<'tcx>>>,
-    pub right: Option<Box<AstNode<'tcx>>>,
-    pub ty: Option<TyKind<'tcx>>,
-    pub meta: NodeMeta,
+    pub id:     NodeId,
+    pub kind:   NodeKind<'tcx>,
+    pub op:     AstOp,
+    pub left:   Option<Box<AstNode<'tcx>>>,
+    pub mid:    Option<Box<AstNode<'tcx>>>,
+    pub right:  Option<Box<AstNode<'tcx>>>,
+    pub ty:     Option<TyKind<'tcx>>,
+    pub meta:   NodeMeta,
 }
 
 impl<'tcx> AstNode<'tcx> {
@@ -200,16 +200,26 @@ impl<'tcx> AstNode<'tcx> {
     pub fn expect_func_decl_stmt_mut(&mut self) -> &mut FuncDeclStmt<'tcx> {
         let stmt = self.as_stmt_mut().expect("expected stmt");
         stmt.as_func_decl_mut().expect("expected function declaration stmt")
-    } 
+    }
 
     pub fn expect_block_stmt_mut(&mut self) -> &mut BlockStmt<'tcx> {
         let stmt = self.as_stmt_mut().expect("expected stmt");
         stmt.as_block_mut().expect("expected block stmt")
     }
 
+    pub fn expect_block_stmt(&self) -> &BlockStmt<'tcx> {
+        let stmt = self.as_stmt().expect("expected stmt");
+        stmt.as_block().expect("expected block stmt")
+    }
+
     pub fn expect_if_stmt(&self) {
         let stmt = self.as_stmt().expect("expected stmt");
         stmt.as_if().expect("expected if stmt");
+    }
+
+    pub fn expect_loop_stmt(&self) {
+        let stmt = self.as_stmt().expect("expected stmt");
+        stmt.as_loop().expect("expected loop stmt")
     }
 
     pub fn expect_func_call_expr_mut(&mut self) -> &mut FuncCallExpr<'tcx> {

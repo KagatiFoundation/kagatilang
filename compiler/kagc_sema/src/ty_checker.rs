@@ -55,7 +55,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             AstOp::Func         => self.analyze_func_decl_stmt(node),
             AstOp::Return       => self.analyze_return_stmt(node),
             AstOp::FuncCall     => self.analyze_fn_call(node),
-            AstOp::Loop         => self.analyze_node(node.left.as_mut().unwrap()),
+            AstOp::Loop         => self.check_loop_stmt(node),
             AstOp::If           => self.analyze_if_stmt(node),
             AstOp::Import       => Some(TyKind::Void),
             AstOp::RecDecl      => self.analyze_record_decl_stmt(node),
@@ -405,7 +405,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn analyze_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        let node_id = node.id;
         let meta_span = node.meta.span;
         let func_decl = node.expect_func_decl_stmt_mut();
 
@@ -429,16 +428,17 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         };
         let func_ret_type_shadow = func_ret_type.unwrap();
 
-        let Some(scope) = self.scope.lookup_node_scope(node_id) else {
-            bug!("No scope found for function!");
-        };
-        self.scope.enter(scope.id.get()); // enter function's scope
-
         if let Some(func_body) = &mut node.left {
+            let node_id = func_body.id;
+            let Some(scope) = self.scope.lookup_node_scope(node_id) else {
+                bug!("No scope attached with node id '{:#?}'!", node_id);
+            };
+
+            self.scope.enter(scope.id.get()); // enter function's scope
             self.analyze_node(func_body)?;
+            self.scope.pop(); // exit function's scope
         }
 
-        self.scope.pop(); // exit function's scope
         self.scope.update_current_func(FuncId(INVALID_FUNC_ID));
         Some(func_ret_type_shadow.get())
     }
@@ -505,15 +505,20 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             // var_decl_sym.lit_type != expr_type 
             // && !is_type_coalescing_possible(expr_type.clone(), var_decl_sym.lit_type.clone()) 
         {
-            let diag = Diagnostic {
-                code: Some(ErrCode::TYP3003),
-                severity: Severity::Error,
-                primary_span: meta.span,
-                secondary_spans: vec![],
-                message: format!("expected type `{:#?}`, found `{:#?}`", var_decl_sym.ty, expr_type),
-                notes: vec![]
-            };
-            self.diagnostics.push(diag);
+            self.diagnostics.push(
+                Diagnostic {
+                    code: Some(ErrCode::TYP3003),
+                    severity: Severity::Error,
+                    primary_span: meta.span,
+                    secondary_spans: vec![],
+                    message: format!(
+                        "expected type `{:#?}`, found `{:#?}`", 
+                        var_decl_sym.ty, 
+                        expr_type
+                    ),
+                    notes: vec![]
+                }
+            );
             return None;
         }
         Some(expr_type)
@@ -523,41 +528,67 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         node.expect_if_stmt();
         self.scope.enter(ScopeId(0));
 
-        // every 'if' has an expression attached with it in its
-        // left branch
+        // every 'if' has an expression attached with it in its left branch
         let Some(expr_node) = node.left.as_mut() else {
             bug!("an If node without an expression node in its left branch is invalid")
         };
         let cond_res = self.analyze_expr(expr_node)?;
+
         if cond_res != TyKind::I64 {
-            let diag = Diagnostic {
-                code: Some(ErrCode::TYP3002),
-                severity: Severity::Error,
-                primary_span: node.meta.span,
-                secondary_spans: vec![],
-                message: format!("'{:#?}' is not compatible with '{:#?}'", cond_res, TyKind::I64),
-                notes: vec![]
-            };
-            self.diagnostics.push(diag);
+            self.diagnostics.push(
+                Diagnostic {
+                    code: Some(ErrCode::TYP3002),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: vec![],
+                    message: format!("'{:#?}' is not compatible with '{:#?}'", cond_res, TyKind::I64),
+                    notes: vec![]
+                }
+            );
             return None;
         }
 
         if let Some(if_body) = &mut node.mid {
+            let node_id = if_body.id;
+            let Some(then_scope) = self.scope.lookup_node_scope(node_id) else {
+                bug!("No scope attached with node id '{:#?}'!", node_id);
+            };
+
+            self.scope.enter(then_scope.id.get());
             self.analyze_node(if_body)?;
+            self.scope.pop();
         }
-        self.scope.pop();
 
         // else-block
         if let Some(right_tree) = &mut node.right {
-            if let Some(else_block_tree) = &mut right_tree.left {
-                if let NodeKind::StmtAST(Stmt::Scoping) = &else_block_tree.kind {
-                    self.scope.enter(ScopeId(0)); // TODO
-                }
-                self.analyze_node(else_block_tree)?;
+            if let Some(else_body) = &mut right_tree.left {
+                let node_id = else_body.id;
+                let Some(else_scope) = self.scope.lookup_node_scope(node_id) else {
+                    bug!("No scope attached with node id '{:#?}'!", node_id);
+                };
+
+                self.scope.enter(else_scope.id.get());
+                self.analyze_node(else_body)?;
                 self.scope.pop();
             }
         }
         Some(TyKind::None)
+    }
+
+    fn check_loop_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        node.expect_loop_stmt();
+
+        if let Some(loop_body) = &mut node.left {
+            let node_id = loop_body.id;
+            let Some(loop_scope) = self.scope.lookup_node_scope(node_id) else {
+                bug!("No scope attached with node id '{:#?}'!", node_id);
+            };
+
+            self.scope.enter(loop_scope.id.get());
+            self.analyze_node(loop_body)?;
+            self.scope.pop();
+        }
+        None
     }
 }
 

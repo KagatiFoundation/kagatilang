@@ -141,7 +141,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::KW_IF => self.parse_if_stmt(),
             TokenKind::KW_WHILE => self.parse_while_stmt(),
             TokenKind::KW_FOR => self.parse_for_stmt(),
-            TokenKind::T_LBRACE => self.parse_compound_stmt(),
+            TokenKind::T_LBRACE => self.parse_block_stmt(),
             TokenKind::KW_LOOP => self.parse_loop_stmt(),
             TokenKind::KW_IMPORT => self.parse_import_stmt(),
             TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
@@ -156,8 +156,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         _ = self.consume(TokenKind::T_SEMICOLON, "expected a ';'");
     }
 
-    // parse compound statement(statement starting with '{' and ending with '}')
-    fn parse_compound_stmt(&mut self) -> ParseOutput<'tcx> {
+    // parse a block statement(statement starting with '{' and ending with '}')
+    fn parse_block_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::T_LBRACE, "'{' expected")?;
         let mut statements = vec![];
         loop {
@@ -375,7 +375,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         // create function body
         if func_storage_class != StorageClass::EXTERN {
-            let function_body_res = self.parse_compound_stmt()?;
+            let function_body_res = self.parse_block_stmt()?;
             function_body = Some(Box::new(function_body_res));
         } 
         else {
@@ -538,7 +538,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_loop_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?;
-        let loop_body: AstNode = self.parse_compound_stmt()?;
+        let loop_body: AstNode = self.parse_block_stmt()?;
         Some(AstNode::binary(
             self.next_node_id(),
             NodeKind::StmtAST(Stmt::Loop),
@@ -571,7 +571,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         self.consume(TokenKind::KW_IN, "'in' expected")?;
 
         let expr_ast = self.parse_record_or_expr(None)?;
-        let body_ast = self.parse_compound_stmt()?;
+        let body_ast = self.parse_block_stmt()?;
         Some(
             AstNode::ternary(
                 self.next_node_id(),
@@ -593,7 +593,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         if self.peek().kind == TokenKind::KW_ELSE {
             self.advance(); // skip 'else'
 
-            let else_block = self.parse_compound_stmt()?;
+            let else_block = self.parse_block_stmt()?;
             if_false_ast = Some(
                 AstNode::binary(
                     self.next_node_id(),
