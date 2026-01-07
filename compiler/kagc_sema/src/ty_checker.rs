@@ -21,6 +21,7 @@ pub(crate) type TypeCheckResult<'t> = Option<TyKind<'t>>;
 pub struct TypeChecker<'t, 'tcx> {
     pub diagnostics: &'t DiagnosticBag,
     pub scope: &'tcx ScopeCtx<'tcx>,
+    curr_func_id: FuncId,
     current_scope: ScopeId
 }
 
@@ -33,6 +34,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             diagnostics: diags,
             scope,
             current_scope: ScopeId(0),
+            curr_func_id: FuncId(INVALID_FUNC_ID)
         }
     }
 
@@ -211,9 +213,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                 bug!("record's field expression evaluation resulted in type None")
             }
         }
-        Some(TyKind::Record {
-            name: rec_expr.name
-        })
+        Some(TyKind::Record { name: rec_expr.name })
     }
 
     fn analyze_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
@@ -236,10 +236,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    /// Analyze the function call expression
-    /// 
-    /// This analysis is done to check if the arguments to this 
-    /// function call are valid.
     fn analyze_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         let Some(func_symbol) = self.scope.lookup_sym(Some(self.current_scope), func_call.symbol_name) else {
             self.diagnostics.push(
@@ -343,65 +339,55 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             panic!("Needed a RecordDeclStmt--but found {node:#?}");
         }
 
-        Some(TyKind::Record {
-            name: "empty 1"
-        })
+        Some(TyKind::Record { name: "empty 1" })
     }
 
     fn analyze_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.kind.is_stmt() {
-            panic!("Needed a ReturnStmt--but found {node:#?}");
-        }
+        node.expect_return_stmt(); // make sure its a return statment
 
-        if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt_mut() {
-            // 'return' statements can appear only inside the functions
-            // thus, the current function cannot be None; it's an error otherwise
-            let current_fn = self.scope.current_fn();
-            let expected_fn_ret_type = self
-                .scope
-                .lookup_fn(current_fn)
-                .unwrap()
-                .ty;
+        // 'return' statements can appear only inside functions.
+        // Thus, the current function cannot be None. If it is None, then 
+        // that's a huge bug.
+        let expected_ret_ty = self
+            .scope
+            .lookup_fn(self.curr_func_id)
+            .unwrap()
+            .ty;
             
-            // if return statement returns some value
-            let found_fn_ret_type = if let Some(return_expr) = &mut node.left {
-                self.analyze_expr(return_expr)?
-            }
-            else {
-                TyKind::Void
-            };
+        // if return statement returns some value
+        let found_ret_ty = if let Some(return_expr) = &mut node.left {
+            self.analyze_expr(return_expr)?
+        }
+        else {
+            TyKind::Void
+        };
 
-            let missing_ret = !expected_fn_ret_type.is_void() && found_fn_ret_type.is_none();
-            let incompatible_ret_chk1 = expected_fn_ret_type != found_fn_ret_type;
-            let incompatible_ret_chk2 = true; 
-            // !TypeChecker::is_type_coalesciable(
-            //     found_fn_ret_type.clone(), 
-            //     expected_fn_ret_type.clone()
-            // );
+        let missing_ret = !expected_ret_ty.is_void() && found_ret_ty.is_none();
+        let incompatible_ret_chk1 = expected_ret_ty != found_ret_ty;
+        let incompatible_ret_chk2 = !found_ret_ty.is_compatible_with(&expected_ret_ty); 
+        let incompatible_ret = incompatible_ret_chk1 && incompatible_ret_chk2;
 
-            let incompatible_ret = incompatible_ret_chk1 && incompatible_ret_chk2;
-            let ret_typ_mismatch = missing_ret || incompatible_ret;
-
-            if ret_typ_mismatch {
-                let diag = Diagnostic {
+        if missing_ret || incompatible_ret {
+            self.diagnostics.push(
+                Diagnostic {
                     code: Some(ErrCode::TYP3002),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
                     message: format!(
                         "'{:#?}' is not compatible with '{:#?}'", 
-                        found_fn_ret_type, 
-                        expected_fn_ret_type
+                        found_ret_ty, 
+                        expected_ret_ty
                     ),
                     notes: vec![]
-                };
-                self.diagnostics.push(diag);
-                return None;
-            }  
-            ret_stmt.func_id = self.scope.current_fn();
-            return Some(found_fn_ret_type);
-        }
-        panic!("Not a return statement!");
+                }
+            );
+            return None;
+        }  
+
+        let return_stmt = node.expect_return_stmt_mut();
+        return_stmt.func_id = self.curr_func_id;
+        Some(found_ret_ty)
     }
 
     fn analyze_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
@@ -427,6 +413,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             return None;
         };
         let func_ret_type_shadow = func_ret_type.unwrap();
+        self.curr_func_id = func_decl.id;
 
         if let Some(func_body) = &mut node.left {
             let node_id = func_body.id;
@@ -439,7 +426,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             self.scope.pop(); // exit function's scope
         }
 
-        self.scope.update_current_func(FuncId(INVALID_FUNC_ID));
+        self.curr_func_id = FuncId(INVALID_FUNC_ID);
         Some(func_ret_type_shadow.get())
     }
 

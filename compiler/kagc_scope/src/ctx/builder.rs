@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use kagc_ast::NodeId;
 use kagc_symbol::Sym;
-use kagc_symbol::function::{FuncId, FuncTable};
+use kagc_symbol::function::FuncTable;
 use kagc_symbol::record::RecordTable;
 
 use crate::ctx::{_ScopeMeta, ScopeCtx};
@@ -15,7 +15,6 @@ use crate::scope_table::ScopeTable;
 
 pub struct ScopeCtxBuilder<'tcx> {
     functions:              Option<FuncTable<'tcx>>,
-    current_function:       Option<FuncId>,
     scope_table:            Option<ScopeTable<'tcx>>,
     current_scope:          Option<_ScopeMeta>,
     previous_scope:         Option<_ScopeMeta>,
@@ -32,7 +31,6 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
     pub fn new() -> Self {
         Self {
             functions:          None,
-            current_function:   None,
             scope_table:        None,
             current_scope:      None,
             previous_scope:     None,
@@ -47,11 +45,6 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
 
     pub fn functions(mut self, functions: FuncTable<'tcx>) -> Self {
         self.functions = Some(functions);
-        self
-    }
-
-    pub fn current_function(mut self, id: FuncId) -> Self {
-        self.current_function = Some(id);
         self
     }
 
@@ -103,7 +96,6 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
     pub fn build(self) -> ScopeCtx<'tcx> {
         ScopeCtx {
             functions: self.functions.unwrap(),
-            current_func_id: Cell::new(self.current_function.unwrap_or(FuncId(0))), // start counting function ids at 0
             scopes: self.scope_table.unwrap(),
             current: Cell::new(self.current_scope.unwrap_or(_ScopeMeta {
                 id: ScopeId::default(),

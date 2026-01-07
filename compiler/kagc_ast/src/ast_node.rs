@@ -4,7 +4,7 @@
 use kagc_span::span::{HasSpan, SourcePos, Span};
 use kagc_types::TyKind;
 
-use crate::{AstOp, BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, Stmt};
+use crate::{AstOp, BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, ReturnStmt, Stmt};
 
 use super::NodeKind;
 
@@ -225,6 +225,16 @@ impl<'tcx> AstNode<'tcx> {
     pub fn expect_func_call_expr_mut(&mut self) -> &mut FuncCallExpr<'tcx> {
         let expr = self.as_expr_mut().expect("expected expression");
         expr.as_func_call_mut().expect("expected function call")
+    }
+
+    pub fn expect_return_stmt(&self) -> &ReturnStmt {
+        let stmt = self.as_stmt().expect("expect statment");
+        stmt.as_return().expect("expected return stmt")
+    }
+
+    pub fn expect_return_stmt_mut(&mut self) -> &mut ReturnStmt {
+        let stmt = self.as_stmt_mut().expect("expect statment");
+        stmt.as_return_mut().expect("expected return stmt")
     }
 }
 

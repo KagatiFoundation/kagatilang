@@ -30,7 +30,6 @@ pub struct ScopeCtx<'tcx> {
     pub(crate) records:             RecordTable<'tcx>,
     pub(crate) scopes:              ScopeTable<'tcx>,
     pub(crate) user_types:          RefCell<HashSet<String>>,
-    pub(crate) current_func_id:     Cell<FuncId>,
     pub(crate) current:             Cell<_ScopeMeta>,
     pub(crate) previous:            Cell<_ScopeMeta>,
     pub(crate) next_id:             Cell<ScopeId>,
@@ -191,14 +190,6 @@ impl<'tcx> ScopeCtx<'tcx> {
 
     pub fn lookup_fn_by_name(&self, name: &str) -> Option<&'tcx Func<'tcx> > {
         self.functions.get(name)
-    }
-
-    pub fn update_current_func(&self, new_fn: FuncId) {
-        self.current_func_id.replace(new_fn);
-    }
-
-    pub fn current_fn(&self) -> FuncId {
-        self.current_func_id.get()
     }
 
     pub fn collect_params(&self, scope_id: ScopeId) -> Vec<&Symbol> {

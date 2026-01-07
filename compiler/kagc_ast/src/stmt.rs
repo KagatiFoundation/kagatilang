@@ -178,4 +178,18 @@ impl<'tcx> Stmt<'tcx> {
             _ => None
         }
     }
+
+    pub fn as_return(&self) -> Option<&ReturnStmt> {
+        match self {
+            Stmt::Return(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+    pub fn as_return_mut(&mut self) -> Option<&mut ReturnStmt> {
+        match self {
+            Stmt::Return(stmt) => Some(stmt),
+            _ => None
+        }
+    }
 }

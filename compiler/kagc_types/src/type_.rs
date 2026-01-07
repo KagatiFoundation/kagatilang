@@ -26,6 +26,22 @@ pub enum TyKind<'tcx> {
     None
 }
 
+impl<'tcx> TyKind<'tcx> {
+    pub fn is_compatible_with(&self, other: &Self) -> bool {
+        use TyKind::*;
+
+        match (self, other) {
+            // types are identical
+            (a, b) if a == b => true,
+
+            (Str, PoolStr) | (PoolStr, Str) => true,
+            (U8, I64) => true,
+
+            _ => false,
+        }
+    }
+}
+
 impl Display for TyKind<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ty_str = match self {
