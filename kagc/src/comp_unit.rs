@@ -12,7 +12,7 @@ impl<'tcx> CompUnit<'tcx> {
         for ast in &self.asts {
             match ast.op {
                 AstOp::Import => {
-                    if let NodeKind::StmtAST(Stmt::Import(import)) = &ast.data {
+                    if let NodeKind::StmtAST(Stmt::Import(import)) = &ast.kind {
                         imports.push(
                             Import { path: import.path }
                         );

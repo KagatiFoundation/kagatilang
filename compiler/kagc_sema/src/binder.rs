@@ -156,7 +156,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     }
 
     fn bind_let_stmt(&self, node: &'tcx AstNode<'tcx>) -> BindingResult {
-        let stmt = match &node.data {
+        let stmt = match &node.kind {
             NodeKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => bug!("Invalid node"),
         };
@@ -252,7 +252,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     */
 
     fn bind_record_decl_stmt(&self, node: &'tcx AstNode<'tcx>) -> BindingResult {
-        if let NodeKind::StmtAST(Stmt::Record(stmt)) = &node.data {
+        if let NodeKind::StmtAST(Stmt::Record(stmt)) = &node.kind {
             let record_entry = RecordType {
                 name: stmt.name,
                 size: 0,

@@ -106,7 +106,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_function(&mut self, ast: &mut AstNode) -> StmtLoweringResult {
-        let (func_id, func_scope) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.data.as_stmt() {
+        let (func_id, func_scope) = if let Some(Stmt::FuncDecl(func_decl)) = &ast.kind.as_stmt() {
             self.scope.enter(ScopeId(0));
             (func_decl.id, 0)
         } else {
@@ -172,7 +172,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_function_call(&mut self, node: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let NodeKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.data {
+        if let NodeKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
             let _ = self.lower_function_call_expr(func_call, fn_ctx)?;
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
@@ -180,7 +180,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_variable_declaration(&mut self, var_ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        let var_decl = var_ast.data.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
+        let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
         if let Stmt::VarDecl(var_decl) = var_decl {
             if var_ast.left.is_none() {
                 bug!("Variable is not assigned a value!");
@@ -211,11 +211,11 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_expression_ast(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        if !ast.data.is_expr() {
+        if !ast.kind.is_expr() {
             bug!("needed an Expr--but found {ast:#?}");
         }
         let expr = ast
-            .data
+            .kind
             .as_expr_mut()
             .unwrap_or_else(|| bug!("cannot lower an expression"));
         self.lower_expression(expr, fn_ctx)
@@ -471,7 +471,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_return(&mut self, ret_stmt: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let Some(Stmt::Return(_)) = &ret_stmt.data.as_stmt() {
+        if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_id_unchecked();
                 let func_exit_block = fn_ctx
@@ -532,7 +532,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let NodeKind::StmtAST(Stmt::If) = &ast.data {
+        if let NodeKind::StmtAST(Stmt::If) = &ast.kind {
             self.scope.enter(ScopeId(0));
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
@@ -607,7 +607,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_else_block(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if let NodeKind::StmtAST(Stmt::Scoping) = &ast.data {
+        if let NodeKind::StmtAST(Stmt::Scoping) = &ast.kind {
             self.scope.enter(ScopeId(0)); // TODO
         }
         else {

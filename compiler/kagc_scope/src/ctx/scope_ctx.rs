@@ -44,11 +44,11 @@ impl<'tcx> ScopeCtx<'tcx> {
         sym_arena: &'tcx typed_arena::Arena<Sym<'tcx>>,
         func_arena: &'tcx typed_arena::Arena<Func<'tcx>>,
         rec_arena: &'tcx typed_arena::Arena<RecordType<'tcx>>,
-        scope_arena: &'tcx typed_arena::Arena<_Scope<'tcx>>
+        scope_arena: &'tcx typed_arena::Arena<Scope<'tcx>>
     ) -> Self {
         let scope_table = ScopeTable::new(scope_arena);
         scope_table.add(
-            _Scope::new(
+            Scope::new(
                 sym_arena,
                 ScopeType::Root,
                 None // root scope has no parent(lol that's sad)
@@ -89,7 +89,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.current.get().id
     }
 
-    pub fn root(&self) -> &'tcx _Scope {
+    pub fn root(&self) -> &'tcx Scope {
         let Some(root_scope) = self.scopes.get(ScopeId(0)) else {
             panic!("A major bug! No root scope set")
         };
@@ -115,7 +115,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         let scope_id = self.next_id.replace(ScopeId(self.next_id.get().0 + 1));
 
         let parent = self.scopes.iter().last().expect("Stack required non-empty").id.get();
-        self.scopes.add(_Scope::new(self.sym_arena, scope_type, Some(parent)));
+        self.scopes.add(Scope::new(self.sym_arena, scope_type, Some(parent)));
         self.node_scope_map.borrow_mut().insert(node_id, scope_id);
 
         self.stack.borrow_mut().push(scope_id);
@@ -247,12 +247,12 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     /// Get scope associated with the ScopeId.
-    pub fn lookup_scope(&self, scope_id: ScopeId) -> Option<&'tcx _Scope> {
+    pub fn lookup_scope(&self, scope_id: ScopeId) -> Option<&'tcx Scope> {
         self.scopes.get(scope_id)
     }
 
     /// Get scope associated with the NodeId.
-    pub fn lookup_node_scope(&self, node_id: NodeId) -> Option<&'tcx _Scope> {
+    pub fn lookup_node_scope(&self, node_id: NodeId) -> Option<&'tcx Scope> {
         let scope_id = *self.node_scope_map.borrow().get(&node_id)?;
         let scope = self.scopes.get(scope_id)?;
         Some(scope)
@@ -266,14 +266,14 @@ mod tests {
     use kagc_types::record::RecordType;
 
     use crate::ctx::ScopeCtx;
-    use crate::scope::{_Scope, ScopeType};
+    use crate::scope::{Scope, ScopeType};
 
     #[test]
     fn test_current_and_previous_pointers_on_push() {
         let sym_arena = typed_arena::Arena::<Sym>::new();
         let rec_arena = typed_arena::Arena::<RecordType>::new();
         let func_arena = typed_arena::Arena::<Func>::new();
-        let scope_arena = typed_arena::Arena::<_Scope>::new();
+        let scope_arena = typed_arena::Arena::<Scope>::new();
         let cx = ScopeCtx::new(
             &sym_arena, 
             &func_arena,
@@ -300,7 +300,7 @@ mod tests {
         let sym_arena = typed_arena::Arena::<Sym>::new();
         let rec_arena = typed_arena::Arena::<RecordType>::new();
         let func_arena = typed_arena::Arena::<Func>::new();
-        let scope_arena = typed_arena::Arena::<_Scope>::new();
+        let scope_arena = typed_arena::Arena::<Scope>::new();
         let cx = ScopeCtx::new(
             &sym_arena, 
             &func_arena,

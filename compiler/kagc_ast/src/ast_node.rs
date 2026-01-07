@@ -36,7 +36,7 @@ pub const INVALID_NODE_ID: usize = 0xFFFFFFFA;
 #[derive(Clone, Debug)]
 pub struct AstNode<'tcx> {
     pub id: NodeId,
-    pub data: NodeKind<'tcx>,
+    pub kind: NodeKind<'tcx>,
     pub op: AstOp,
     pub left: Option<Box<AstNode<'tcx>>>,
     pub mid: Option<Box<AstNode<'tcx>>>,
@@ -49,7 +49,7 @@ impl<'tcx> AstNode<'tcx> {
     pub fn empty() -> Self {
         Self {
             id: NodeId(INVALID_NODE_ID),
-            data: NodeKind::Empty,
+            kind: NodeKind::Empty,
             op: AstOp::None,
             left: None, right: None,
             mid: None, ty: None,
@@ -66,7 +66,7 @@ impl<'tcx> AstNode<'tcx> {
         ty: Option<TyKind<'tcx>>,
     ) -> Self {
         Self {
-            data: kind,
+            kind,
             op: operation,
             left: left.map(Box::new),
             mid: None,
@@ -85,7 +85,7 @@ impl<'tcx> AstNode<'tcx> {
         meta: NodeMeta
     ) -> Self {
         Self {
-            data: kind, op: operation,
+            kind, op: operation,
             left: None, mid: None,
             right: None, ty,
             meta, id
@@ -102,7 +102,7 @@ impl<'tcx> AstNode<'tcx> {
         ty: Option<TyKind<'tcx>>
     ) -> Self {
         Self {
-            data: kind,
+            kind,
             op,
             left: left.map(Box::new),
             mid: mid.map(Box::new),
@@ -165,28 +165,28 @@ impl<'tcx> AstNode<'tcx> {
     }
 
     pub fn as_expr(&self) -> Option<&Expr<'tcx>> {
-        match &self.data {
+        match &self.kind {
             NodeKind::ExprAST(expr) => Some(expr),
             _ => None,
         }
     }
 
     pub fn as_expr_mut(&mut self) -> Option<&mut Expr<'tcx>> {
-        match &mut self.data {
+        match &mut self.kind {
             NodeKind::ExprAST(expr) => Some(expr),
             _ => None,
         }
     }
 
     pub fn as_stmt(&self) -> Option<&Stmt<'tcx>> {
-        match &self.data {
+        match &self.kind {
             NodeKind::StmtAST(stmt) => Some(stmt),
             _ => None,
         }
     }
 
     pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt<'tcx>> {
-        match &mut self.data {
+        match &mut self.kind {
             NodeKind::StmtAST(stmt) => Some(stmt),
             _ => None,
         }

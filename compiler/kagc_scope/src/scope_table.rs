@@ -4,16 +4,16 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use crate::scope::{_Scope, ScopeId};
+use crate::scope::{Scope, ScopeId};
 
 pub struct ScopeTable<'tcx> {
-    arena: &'tcx typed_arena::Arena<_Scope<'tcx>>,
-    scopes: RefCell<HashMap<ScopeId, &'tcx _Scope<'tcx>>>,
+    arena: &'tcx typed_arena::Arena<Scope<'tcx>>,
+    scopes: RefCell<HashMap<ScopeId, &'tcx Scope<'tcx>>>,
     next_id: Cell<usize>
 }
 
 impl<'tcx> ScopeTable<'tcx> {
-    pub fn new(arena: &'tcx typed_arena::Arena<_Scope<'tcx>>) -> Self {
+    pub fn new(arena: &'tcx typed_arena::Arena<Scope<'tcx>>) -> Self {
         Self {
             arena,
             scopes: RefCell::default(),
@@ -25,12 +25,12 @@ impl<'tcx> ScopeTable<'tcx> {
         self.scopes.borrow().contains_key(&id)
     }
 
-    pub fn get(&self, id: ScopeId) -> Option<&'tcx _Scope<'tcx>> {
+    pub fn get(&self, id: ScopeId) -> Option<&'tcx Scope<'tcx>> {
         let scopes = self.scopes.borrow();
         scopes.get(&id).copied()
     }
 
-    pub fn add(&self, scope: _Scope<'tcx>) -> Option<&'tcx _Scope<'tcx>>  {
+    pub fn add(&self, scope: Scope<'tcx>) -> Option<&'tcx Scope<'tcx>>  {
         let mut scopes = self.scopes.borrow_mut();
 
         let scope_id = self.next_id.replace(self.next_id.get() + 1);
@@ -41,7 +41,7 @@ impl<'tcx> ScopeTable<'tcx> {
         Some(alloced)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &'tcx _Scope<'tcx>> {
+    pub fn iter(&self) -> impl Iterator<Item = &'tcx Scope<'tcx>> {
         let scopes = self.scopes.borrow();
         scopes.values().copied().collect::<Vec<_>>().into_iter()
     }

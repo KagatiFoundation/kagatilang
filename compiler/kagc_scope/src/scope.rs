@@ -3,7 +3,7 @@
 
 use std::cell::Cell;
 
-use kagc_symbol::{Sym, SymTable, Symbol, Symtable};
+use kagc_symbol::{Sym, SymTable};
 
 /// Scope ID
 #[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
@@ -22,45 +22,14 @@ pub enum ScopeType {
     Root
 }
 
-#[derive(Debug, Default, Clone)]
 pub struct Scope<'tcx> {
-    pub table: Symtable<Symbol<'tcx>>,
-
-    pub parent_scope: Option<ScopeId>,
-
-    pub typ: ScopeType
-}
-
-impl<'tcx> Scope<'tcx> {
-    pub fn new(parent_scope: ScopeId, typ: ScopeType) -> Self {
-        Self {
-            table: Symtable::default(),
-            parent_scope: Some(parent_scope),
-            typ
-        }
-    }
-
-    pub fn declare(&mut self, sym: Symbol<'tcx>) -> Option<usize> {
-        self.table.declare(sym)
-    }
-
-    pub fn lookup(&self, name: &str) -> Option<&Symbol<'tcx>> {
-        self.table.lookup(&name)
-    }
-
-    pub fn lookup_mut(&mut self, name: &str) -> Option<&mut Symbol<'tcx>> {
-        self.table.lookup_mut(&name)
-    }
-}
-
-pub struct _Scope<'tcx> {
     symt: SymTable<'tcx>,
     pub(crate) parent: Option<ScopeId>,
     pub(crate) ty: ScopeType,
-    pub(crate) id: Cell<ScopeId>
+    pub id: Cell<ScopeId>
 }
 
-impl<'tcx> _Scope<'tcx> {
+impl<'tcx> Scope<'tcx> {
     pub fn new(
         arena: &'tcx typed_arena::Arena<Sym<'tcx>>, 
         ty: ScopeType,

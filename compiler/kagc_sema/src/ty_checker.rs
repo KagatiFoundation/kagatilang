@@ -16,15 +16,15 @@ use kagc_symbol::function::INVALID_FUNC_ID;
 use kagc_types::TyKind;
 use kagc_utils::bug;
 
-pub(crate) type TypeCheckResult<'tcx> = Option<TyKind<'tcx>>;
+pub(crate) type TypeCheckResult<'t> = Option<TyKind<'t>>;
 
-pub struct TypeChecker<'t, 'tcx> where 'tcx: 't {
+pub struct TypeChecker<'t, 'tcx> {
     pub diagnostics: &'t DiagnosticBag,
     pub scope: &'tcx ScopeCtx<'tcx>,
     current_scope: ScopeId
 }
 
-impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
+impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     pub fn new(
         scope: &'tcx ScopeCtx<'tcx>, 
         diags: &'t DiagnosticBag,
@@ -77,7 +77,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     fn analyze_fn_call(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         // let call_expr = node.expect_function_call_expr_mut();
         // self.analyze_func_call_expr(call_expr, &node.meta)
-        if let NodeKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut node.data {
+        if let NodeKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut node.kind {
             self.analyze_func_call_expr(func_call_expr, &node.meta)
         }
         else {
@@ -86,10 +86,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_expr(&mut self, ast: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !ast.data.is_expr() {
+        if !ast.kind.is_expr() {
             panic!("Needed an Expr--but found {:#?}", ast);
         }
-        if let NodeKind::ExprAST(expr) = &mut ast.data {
+        if let NodeKind::ExprAST(expr) = &mut ast.kind {
             ast.ty = self.analyze_and_mutate_expr(expr, &ast.meta);
             return ast.ty;
         }
@@ -339,7 +339,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_record_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.data.is_stmt() {
+        if !node.kind.is_stmt() {
             panic!("Needed a RecordDeclStmt--but found {node:#?}");
         }
 
@@ -349,11 +349,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.data.is_stmt() {
+        if !node.kind.is_stmt() {
             panic!("Needed a ReturnStmt--but found {node:#?}");
         }
 
-        if let Some(Stmt::Return(ret_stmt)) = &mut node.data.as_stmt_mut() {
+        if let Some(Stmt::Return(ret_stmt)) = &mut node.kind.as_stmt_mut() {
             // 'return' statements can appear only inside the functions
             // thus, the current function cannot be None; it's an error otherwise
             let current_fn = self.scope.current_fn();
@@ -405,53 +405,46 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
     }
 
     fn analyze_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !node.data.is_stmt() {
-            panic!("Needed a FuncDecl--but found {:#?}", node);
-        }
+        let node_id = node.id;
+        let meta_span = node.meta.span;
+        let func_decl = node.expect_func_decl_stmt_mut();
 
-        if let Some(Stmt::FuncDecl(func_decl)) = &mut node.data.as_stmt() {
-            let func_ret_type = self
-                .scope
-                .root()
-                .get_sym(func_decl.name)
-                .map(|func_sym| func_sym.ty.clone());
+        let func_ret_type = self
+            .scope
+            .root()
+            .get_sym(func_decl.name)
+            .map(|func_sym| func_sym.ty.clone());
 
-            self.scope.update_current_func(func_decl.id);
-
-            if func_ret_type.is_none() {
-                let diag = Diagnostic {
-                    code: Some(ErrCode::SEM2000),
-                    severity: Severity::Error,
-                    primary_span: node.meta.span,
-                    secondary_spans: vec![],
-                    message: format!("undefined symbol '{}'", func_decl.name),
-                    notes: vec![]
-                };
-                self.diagnostics.push(diag);
-                return None;
+        if func_ret_type.is_none() {
+            let diag = Diagnostic {
+                code: Some(ErrCode::SEM2000),
+                severity: Severity::Error,
+                primary_span: meta_span,
+                secondary_spans: vec![],
+                message: format!("undefined symbol '{}'", func_decl.name),
+                notes: vec![]
             };
+            self.diagnostics.push(diag);
+            return None;
+        };
+        let func_ret_type_shadow = func_ret_type.unwrap();
 
-            // unwrap the return type
-            let func_ret_type: TyKind = TyKind::Void;
+        let Some(scope) = self.scope.lookup_node_scope(node_id) else {
+            bug!("No scope found for function!");
+        };
+        self.scope.enter(scope.id.get()); // enter function's scope
 
-            // switch to function's scope
-            self.scope.enter(ScopeId(0));
-
-            if let Some(func_body) = &mut node.left {
-                self.analyze_node(func_body)?;
-            }
-
-            // exit function's scope
-            self.scope.pop();
-            // invalidate function id
-            self.scope.update_current_func(FuncId(INVALID_FUNC_ID));
-            return Some(func_ret_type);
+        if let Some(func_body) = &mut node.left {
+            self.analyze_node(func_body)?;
         }
-        panic!("Not a function declaration statement!");
+
+        self.scope.pop(); // exit function's scope
+        self.scope.update_current_func(FuncId(INVALID_FUNC_ID));
+        Some(func_ret_type_shadow.get())
     }
 
     fn analyze_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if let Some(Stmt::VarDecl(var_decl)) = node.data.as_stmt_mut() {
+        if let Some(Stmt::VarDecl(var_decl)) = node.kind.as_stmt_mut() {
             let var_value_type: TyKind = self.analyze_expr(node.left.as_mut().unwrap())?;
             if let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) {
                 let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
@@ -557,7 +550,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
         // else-block
         if let Some(right_tree) = &mut node.right {
             if let Some(else_block_tree) = &mut right_tree.left {
-                if let NodeKind::StmtAST(Stmt::Scoping) = &else_block_tree.data {
+                if let NodeKind::StmtAST(Stmt::Scoping) = &else_block_tree.kind {
                     self.scope.enter(ScopeId(0)); // TODO
                 }
                 self.analyze_node(else_block_tree)?;
@@ -565,5 +558,31 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> where 'tcx: 't {
             }
         }
         Some(TyKind::None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use kagc_errors::diagnostic::DiagnosticBag;
+    use kagc_scope::{ctx::ScopeCtx, scope::Scope};
+    use kagc_symbol::{Sym, function::Func};
+    use kagc_types::record::RecordType;
+
+    use crate::TypeChecker;
+
+    #[test]
+    fn test_sth() {
+        let sym_arena = typed_arena::Arena::<Sym>::new();
+        let rec_arena = typed_arena::Arena::<RecordType>::new();
+        let func_arena = typed_arena::Arena::<Func>::new();
+        let scope_arena = typed_arena::Arena::<Scope>::new();
+        let cx = ScopeCtx::new(
+            &sym_arena, 
+            &func_arena,
+            &rec_arena,
+            &scope_arena
+        );
+        let d = DiagnosticBag::default();
+        let tc = TypeChecker::new(&cx, &d);
     }
 }

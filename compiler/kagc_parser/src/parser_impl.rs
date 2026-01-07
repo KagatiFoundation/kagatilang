@@ -82,7 +82,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             return None;
         }
         match self.parse_record_or_expr(None) {
-            Some(ast) => ast.data.expr(),
+            Some(ast) => ast.kind.expr(),
             None => None
         }
     }
@@ -92,7 +92,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             return None;
         }
         match self.parse_single_stmt() {
-            Some(ast) => ast.data.stmt(),
+            Some(ast) => ast.kind.stmt(),
             None => None
         }
     }
@@ -388,7 +388,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         // Return AST for function declaration
         Some(AstNode {
             id: self.next_node_id(),
-            data: NodeKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
+            kind: NodeKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
                 id: FuncId(temp_func_id),
                 name: id_token.lexeme,
                 ty: func_return_type,
@@ -502,7 +502,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 vec![]
             );
             let return_ast = AstNode {
-                data: NodeKind::StmtAST(
+                kind: NodeKind::StmtAST(
                     Stmt::Return(
                         ReturnStmt {
                             func_id: FuncId(self.current_function_id),
@@ -702,7 +702,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             return None;
         } 
         else if let Some(Some(expr_ast)) = &assignment_parse_res {
-            if let NodeKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.data {
+            if let NodeKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.kind {
                 sym_type = SymTy::Record { name: record_create.name }
             }
         }
@@ -864,7 +864,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         _ = self.consume(TokenKind::T_EQUAL, "'=' expected"); // parse '='
         let field_val = self.parse_record_or_expr(None)?;
 
-        if let NodeKind::ExprAST(expr) = field_val.data {
+        if let NodeKind::ExprAST(expr) = field_val.kind {
             return Some(
                 RecordFieldAssignExpr { 
                     name: id_token.lexeme, 
@@ -917,8 +917,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         let ast_op = AstOp::from_token_kind(current_token_kind).unwrap(); // DANGEROUS unwrap CALL
         let right = self.parse_equality()?;
-        let left_expr = left.data.expr().unwrap();
-        let right_expr = right.data.expr().unwrap();
+        let left_expr = left.kind.expr().unwrap();
+        let right_expr = right.kind.expr().unwrap();
 
         // end of the expression
         let span_end = right.meta.span;
@@ -1197,7 +1197,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
             loop {
                 let argu = self.parse_record_or_expr(None)?;
-                func_args.push((arg_pos, argu.data.expr().unwrap()));
+                func_args.push((arg_pos, argu.kind.expr().unwrap()));
 
                 let is_tok_comma: bool = self.peek().kind == TokenKind::T_COMMA;
                 let is_tok_rparen: bool = self.peek().kind == TokenKind::T_RPAREN;
