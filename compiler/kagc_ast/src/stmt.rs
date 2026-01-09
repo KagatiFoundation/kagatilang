@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_symbol::function::FuncId;
+use kagc_symbol::function::{FuncId, FuncParam};
 use kagc_symbol::{StorageClass, SymTy};
 use kagc_types::record::RecordFieldType;
 use kagc_types::TyKind;
@@ -12,23 +12,12 @@ use super::Expr;
 
 #[derive(Clone, Debug)]
 pub struct FuncDeclStmt<'tcx> {
-    /// Function's ID
     pub id: FuncId,
-
-    /// Function's name
     pub name: &'tcx str,
-
-    /// Function's return type
-    pub ty: TyKind<'tcx>,
-
-    /// Function storage class
+    pub ty: TyKind<'tcx>, // return type
     pub storage_class: StorageClass,
-
-    /// Function defined local variables
-    pub locals: Vec<usize>,
-
-    /// Function's parameter types
-    pub func_param_types: Vec<TyKind<'tcx>>
+    pub params: Vec<FuncParam<'tcx>>,
+    pub param_types: Vec<TyKind<'tcx>>
 }
 
 #[derive(Clone, Debug)]

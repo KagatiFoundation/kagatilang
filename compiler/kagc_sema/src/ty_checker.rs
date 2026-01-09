@@ -22,7 +22,6 @@ pub struct TypeChecker<'t, 'tcx> {
     diagnostics: &'t DiagnosticBag,
     scope: &'tcx ScopeCtx<'tcx>,
     curr_func_id: FuncId,
-    current_scope: ScopeId
 }
 
 impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
@@ -33,7 +32,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Self { 
             diagnostics: diags,
             scope,
-            current_scope: ScopeId(0),
             curr_func_id: FuncId(INVALID_FUNC_ID)
         }
     }
@@ -158,10 +156,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn check_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        if let Some(rec_sym) = self.scope.lookup_sym(Some(self.current_scope), field_access.rec_alias) {
+        if let Some(rec_sym) = self.scope.lookup_sym(None, field_access.rec_alias) {
             if let SymTy::Record { name } = rec_sym.sym_ty.get() {
                 if let Some(rec) = self.scope.lookup_record(name) {
-                    if let Some(field) = rec.fields.iter().find(|&field| field.name == field_access.field_chain[0]) {
+                    if let Some(field) = rec.fields.iter().find(|&field| field.name == field_access.field_name) {
                         field_access.rel_stack_off = field.rel_stack_off;
                         field_access.ty = field.ty;
                         field_access.rec_name = rec.name;
@@ -198,8 +196,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 
     fn check_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         for field in &mut rec_expr.fields {
-            let ff = self.check_and_mutate_expr(&mut field.value, meta)?;
-            if ff == TyKind::None {
+            let field_ty = self.check_and_mutate_expr(&mut field.value, meta)?;
+            if field_ty == TyKind::None {
                 bug!("record's field expression evaluation resulted in type None")
             }
         }
@@ -207,11 +205,12 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn check_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        if let Some(ident) = self.scope.lookup_sym(Some(self.current_scope), ident_expr.sym_name) {
+        if let Some(ident) = self.scope.lookup_sym(None, ident_expr.sym_name) {
             ident_expr.ty = ident.ty.get();
             Some(ident_expr.ty)
         }
         else {
+            self.scope.dump();
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),
@@ -227,7 +226,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn check_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        let Some(func_symbol) = self.scope.lookup_sym(Some(self.current_scope), func_call.symbol_name) else {
+        let Some(func_symbol) = self.scope.lookup_sym(None, func_call.symbol_name) else {
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),
@@ -297,7 +296,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         for (arg, param_type) in args.iter_mut().zip(param_types.iter()) {
-            println!("{arg:#?}");
             let Some(expr_res) = self.check_and_mutate_expr(arg, meta) else {
                 bug!("Argument's result type cannot be determined")
             };
@@ -319,8 +317,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     /// There's nothing to be done here, actually. Just return the type.
-    fn check_literal_expr(&self, expr: &LitValExpr<'tcx>) -> TypeCheckResult<'tcx> {
-        Some(expr.ty)
+    fn check_literal_expr(&self, expr: &mut LitValExpr<'tcx>) -> TypeCheckResult<'tcx> {
+        let lit_ty = expr.value.kind();
+        expr.ty = lit_ty;
+        Some(lit_ty)
     }
 
     fn check_record_decl_stmt(&mut self, node: &AstNode<'tcx>) -> TypeCheckResult<'tcx> {
@@ -403,9 +403,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         self.curr_func_id = func_decl.id;
 
         if let Some(func_body) = &mut node.left {
-            let node_id = func_body.id;
-            let Some(scope) = self.scope.lookup_node_scope(node_id) else {
-                bug!("No scope attached with node id '{:#?}'!", node_id);
+            let Some(scope) = self.scope.lookup_node_scope(node.id) else {
+                bug!("No scope attached with node id '{:#?}'!", node.id);
             };
 
             self.scope.enter(scope.id.get()); // enter function's scope
@@ -420,7 +419,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     fn check_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         let var_decl = node.expect_var_decl_stmt();
 
-        let Some(var_sym) = self.scope.lookup_sym(Some(self.current_scope), var_decl.sym_name) else {
+        let Some(var_sym) = self.scope.lookup_sym(None, var_decl.sym_name) else {
+
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),
@@ -568,6 +568,7 @@ mod tests {
             &scope_arena
         );
         let d = DiagnosticBag::default();
-        let tc = TypeChecker::new(&cx, &d);
+        let mut tc = TypeChecker::new(&cx, &d);
+        tc.check(&mut []);
     }
 }

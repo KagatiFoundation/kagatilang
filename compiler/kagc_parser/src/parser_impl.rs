@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use core::panic;
-use std::cell::Cell;
-
 use kagc_ast::record::*;
 use kagc_ast::*;
 use kagc_comp_unit::source_map::FileId;
@@ -332,25 +329,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         _ = self.consume(TokenKind::T_LPAREN, "'(' expected")?;
 
         let mut func_param_types = vec![];
-        let mut func_locals = vec![];
+        let mut func_params = vec![];
 
         if self.peek().kind != TokenKind::T_RPAREN {
             loop {
                 if let Some(param) = self.parse_parameter() {
-                    let mut sym = Sym::new(
-                        param.name, 
-                        param.ty, 
-                        SymTy::Variable, 
-                        StorageClass::PARAM, 
-                        FuncId(self.current_function_id)
-                    );
-                    if let TyKind::Record{ name } = sym.ty.get() {
-                        sym.sym_ty = Cell::new(SymTy::Record { name });
-                    }
-
-                    func_param_types.push(sym.ty.get());
-                    let local_pos = 0; // self.add_symbol_local(sym);
-                    func_locals.push(local_pos);
+                    func_param_types.push(param.ty);
+                    func_params.push(param);
                 }
 
                 let is_tok_comma: bool = self.peek().kind == TokenKind::T_COMMA;
@@ -398,8 +383,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 name: id_token.lexeme,
                 ty: func_return_type,
                 storage_class: func_storage_class,
-                locals: func_locals,
-                func_param_types
+                params: func_params,
+                param_types: func_param_types
             })),
             op: AstOp::Func,
             left: function_body,
@@ -1123,19 +1108,14 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_record_field_access_expr(&mut self, rec_alias: &'tcx str, start_token: &Token) -> ParseOutput<'tcx> {
-        let mut field_chain = vec![];
-        let mut end_pos = SourcePos {
-            line: start_token.pos.line,
-            column: start_token.pos.column
-        };
+        _ = self.consume(TokenKind::T_DOT, "'.' expected");
+        let access = self.consume(TokenKind::T_IDENTIFIER, "expected an identifer")?;
 
-        while self.peek().kind == TokenKind::T_DOT {
-            _ = self.consume(TokenKind::T_DOT, "'.' expected");
-            let access = self.consume(TokenKind::T_IDENTIFIER, "expected an identifer")?;
-            end_pos.line = access.pos.line;
-            end_pos.column = access.pos.column;
-            field_chain.push(access.lexeme);
-        }
+        let end_pos = SourcePos {
+            line: access.pos.line,
+            column: access.pos.column
+        };
+        let field_name = access.lexeme;
 
         let meta = NodeMeta::new(
             Span::new(
@@ -1157,7 +1137,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         RecordFieldAccessExpr { 
                             rec_name: "", // name will be set by the semantic analyser
                             rec_alias, 
-                            field_chain,
+                            field_name,
                             rel_stack_off: 0xFFFFFFFF, // resolver resolves this
                             ty: TyKind::None // will be determined by the semantic analyzer
                         }

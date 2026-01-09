@@ -6,7 +6,7 @@ use kagc_utils::bug;
 use kagc_errors::code::ErrCode;
 use kagc_scope::ctx::ScopeCtx;
 use kagc_scope::scope::ScopeType;
-use kagc_symbol::{Sym, SymId, SymTy};
+use kagc_symbol::{StorageClass, Sym, SymId, SymTy};
 use kagc_symbol::function::{Func, FuncId};
 use kagc_types::record::{RecordFieldType, RecordType};
 use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag, Severity};
@@ -48,15 +48,6 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             AstOp::RecDecl => self.bind_record_decl_stmt(node),
             AstOp::Block => self.bind_block_stmt(node),
             AstOp::Loop => self.bind_loop_stmt(node),
-            AstOp::Glue => {
-                if let Some(left) = node.left.as_ref() {
-                    let _ = self.bind_sym(left)?;
-                }
-                if let Some(right) = node.right.as_ref() {
-                    let _ = self.bind_sym(right)?;
-                } 
-                None
-            }
             _ => None
         }
     }
@@ -120,16 +111,44 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
 
         let sym_id = insert_res.ok().unwrap().id.get(); // safe to unwrap as insert succeeded
 
+        let mut func_params = vec![];
+        for param in &func_decl.params {
+            func_params.push(param.name);
+        }
+
         let func = Func::new(
             func_decl.name,
             func_decl.ty,
             func_decl.storage_class,
-            func_decl.locals.clone(),
-            func_decl.func_param_types.clone()
+            func_params,
+            func_decl.param_types.clone()
         );
 
-        let insert_res = self.scope.declare_fn(func_decl.name, func);
-        if let Err(func) = insert_res {
+        self.scope.push(node.id, ScopeType::Function);
+
+        for param in &func_decl.params {
+            let param_sym = Sym::new(
+                param.name, 
+                param.ty, 
+                SymTy::Variable, 
+                StorageClass::PARAM,
+                func.id.get()
+            );
+            if let Err(sym) = self.scope.declare_sym(param_sym) {
+                self.diagnostics.push(
+                    Diagnostic {
+                        code: Some(ErrCode::SEM2001),
+                        severity: Severity::Error,
+                        primary_span: node.meta.span,
+                        secondary_spans: Vec::with_capacity(0),
+                        message: format!("symbol '{}' already defined", sym.name),
+                        notes: Vec::with_capacity(0)
+                    }
+                );
+            }
+        }
+
+        if let Err(func) = self.scope.declare_fn(func_decl.name, func) {
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2001),
@@ -141,11 +160,14 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                 }
             );
         };
-        self.scope.push(node.id, ScopeType::Function);
 
         // loop through function's body to find new symbols
         if let Some(func_body) = &node.left {
-            let _ = self.bind_block_stmt(func_body)?;
+            let func_body_stmt = func_body.expect_block_stmt();
+            for stmt in &func_body_stmt.statements {
+                self.bind_sym(stmt);
+            }
+            self.scope.pop();
         }
         Some(sym_id)
     }

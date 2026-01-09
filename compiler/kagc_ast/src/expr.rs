@@ -86,9 +86,7 @@ pub struct RecordCreationExpr<'tcx> {
 pub struct RecordFieldAccessExpr<'tcx> {
     pub rec_name: &'tcx str,
     pub rec_alias: &'tcx str,
-    // pub field_name: String,
-
-    pub field_chain: Vec<&'tcx str>,
+    pub field_name: &'tcx str, // the field being accessed
 
     /// Relative stack offset.
     /// 

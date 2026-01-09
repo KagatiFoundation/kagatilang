@@ -12,7 +12,6 @@ use kagc_symbol::function::Func;
 use kagc_symbol::function::FuncId;
 use kagc_symbol::function::FuncTable;
 use kagc_symbol::record::RecordTable;
-use kagc_symbol::Symbol;
 use kagc_types::record::RecordType;
 
 use crate::ctx::builder::ScopeCtxBuilder;
@@ -194,7 +193,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.functions.get(name)
     }
 
-    pub fn collect_params(&self, scope_id: ScopeId) -> Vec<&Symbol> {
+    pub fn collect_params(&self, scope_id: ScopeId) -> Vec<&Sym<'tcx>> {
         vec![]
     }
 

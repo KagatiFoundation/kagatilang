@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_types::{LitTypeVariant, TyKind};
+use kagc_types::TyKind;
 
 pub type Label<'a> = &'a str;
 
@@ -19,25 +19,13 @@ pub enum IRType {
     RawStr
 }
 
-impl From<LitTypeVariant> for IRType {
-    fn from(value: LitTypeVariant) -> Self {
-        match value {
-            LitTypeVariant::I64 => IRType::I64,
-            LitTypeVariant::I32 => IRType::I32,
-            LitTypeVariant::Void => IRType::Void,
-            LitTypeVariant::RawStr => IRType::RawStr,
-            _ => unimplemented!("{value:#?}"),
-        }
-    }
-}
-
 impl From<TyKind<'_>> for IRType {
-    fn from(value: TyKind<'_>) -> Self {
+    fn from(value: TyKind) -> Self {
         match value {
             TyKind::I64 => IRType::I64,
             TyKind::Void => IRType::Void,
             TyKind::Str => IRType::RawStr,
-            _ => unimplemented!("{value:#?}")
+            _ => unimplemented!("{value:#?}"),
         }
     }
 }

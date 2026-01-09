@@ -14,33 +14,6 @@ use std::fmt::Display;
 
 use lazy_static::lazy_static;
 
-/// Trait for types that can be compared based on their variant and equality.
-pub trait BTypeComparable {
-    /// Compares `self` with another instance of the same type for equality.
-    ///
-    /// # Parameters
-    /// - `other`: Another instance of the same type to compare with.
-    ///
-    /// # Returns
-    /// - `true` if the types are equal, `false` otherwise.
-    fn cmp(&self, other: &Self) -> bool;
-
-    /// Returns the variant of the type.
-    ///
-    /// # Returns
-    /// - The `LitTypeVariant` representing the type's variant.
-    fn variant(&self) -> LitTypeVariant;
-}
-
-/// Trait for types that have a defined size.
-pub trait TypeSized {
-    /// Returns the size of the type in bytes.
-    ///
-    /// # Returns
-    /// - The size of the type as a `usize` value.
-    fn type_size(&self) -> usize;
-}
-
 /// Represents literal value types used in the language.
 #[derive(Debug, Clone)]
 pub enum LitValue<'tcx> {
@@ -98,15 +71,32 @@ impl<'tcx> From<LitValue<'tcx>> for String {
     }
 }
 
+impl<'tcx> LitValue<'tcx> {
+    pub fn kind(&self) -> TyKind<'tcx> {
+        match self {
+            LitValue::I64(_) |
+            LitValue::I32(_) |
+            LitValue::U8(_)         => TyKind::I64,
+            LitValue::Void          => TyKind::Void,
+            LitValue::RawStr(_)     => TyKind::Str,
+            LitValue::PoolStr(_)    => TyKind::Str,
+            LitValue::Null          => TyKind::Null,
+            LitValue::Record        => TyKind::Record { name: "undefined" },
+            LitValue::None          => TyKind::None,
+            _                       => todo!()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LitTypeArray {
     items_count: usize,
     item_size: usize,
-    items_type: Box<LitTypeVariant>
+    items_type: Box<LitTypeVariant2>
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub enum LitTypeVariant {
+pub enum LitTypeVariant2 {
     #[default] I32,
     I64,
     I16,
@@ -128,7 +118,7 @@ pub enum LitTypeVariant {
     }
 }
 
-impl LitTypeVariant {
+impl LitTypeVariant2 {
     /// Get the register size for this type of value
     pub fn to_reg_size(&self) -> usize {
         match self {
@@ -159,7 +149,7 @@ impl LitTypeVariant {
     }
 }
 
-impl Display for LitTypeVariant {
+impl Display for LitTypeVariant2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::I32 => write!(f, "integer"),
@@ -186,7 +176,7 @@ macro_rules! check_lit_type_var_fn_impl {
 }
 
 
-impl LitTypeVariant {
+impl LitTypeVariant2 {
     pub fn size(&self) -> usize {
         match self {
             // 8 bytes
@@ -210,7 +200,7 @@ impl LitTypeVariant {
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self, LitTypeVariant::I32 | LitTypeVariant::I16 | LitTypeVariant::I64 | LitTypeVariant::U8)
+        matches!(self, LitTypeVariant2::I32 | LitTypeVariant2::I16 | LitTypeVariant2::I64 | LitTypeVariant2::U8)
     }
 
     check_lit_type_var_fn_impl!(is_void, Void);
@@ -266,27 +256,17 @@ impl<'tcx> LitValue<'tcx> {
     impl_ltype_unwrap!(unwrap_f64, F64, f64);
     impl_ltype_unwrap!(unwrap_f32, F32, f32);
 
-
-    // pub fn unwrap_str(&self) -> Option<&String> {
-        // if let LitType::Str(obj) = self {
-            // Some(&obj.__value)
-        // }
-        // else {
-            // None
-        // }
-    // }
-
-    pub fn variant(&self) -> LitTypeVariant {
+    pub fn variant(&self) -> LitTypeVariant2 {
         match self {
-            Self::I32(_) => LitTypeVariant::I32,
-            Self::I64(_) => LitTypeVariant::I64,
-            Self::I16(_) => LitTypeVariant::I16,
-            Self::U8(_) => LitTypeVariant::U8,
-            Self::F64(_) => LitTypeVariant::F64,
-            Self::F32(_) => LitTypeVariant::F32,
-            Self::PoolStr(_) => LitTypeVariant::PoolStr,
-            Self::Void => LitTypeVariant::Void,
-            Self::Array(_) => LitTypeVariant::Array,
+            Self::I32(_) => LitTypeVariant2::I32,
+            Self::I64(_) => LitTypeVariant2::I64,
+            Self::I16(_) => LitTypeVariant2::I16,
+            Self::U8(_) => LitTypeVariant2::U8,
+            Self::F64(_) => LitTypeVariant2::F64,
+            Self::F32(_) => LitTypeVariant2::F32,
+            Self::PoolStr(_) => LitTypeVariant2::PoolStr,
+            Self::Void => LitTypeVariant2::Void,
+            Self::Array(_) => LitTypeVariant2::Array,
             _ => panic!("not a valid type to calculate variant of!"),
         }
     }
@@ -354,9 +334,9 @@ pub enum TypeConversionError {
     /// depending on the context.
     BigSizeToSmallSize {
         /// The source literal type variant from which the conversion was attempted.
-        from: LitTypeVariant, 
+        from: LitTypeVariant2, 
         /// The target literal type variant to which the conversion was attempted.
-        to: LitTypeVariant
+        to: LitTypeVariant2
     }
 }
 
@@ -371,11 +351,11 @@ lazy_static! {
     };
 }
 
-pub fn is_type_coalescing_possible(src: LitTypeVariant, dest: LitTypeVariant) -> bool {
+pub fn is_type_coalescing_possible(src: LitTypeVariant2, dest: LitTypeVariant2) -> bool {
     match src {
-        LitTypeVariant::U8 => matches!(dest, LitTypeVariant::U8 | LitTypeVariant::I16 | LitTypeVariant::I32 | LitTypeVariant::I64),
-        LitTypeVariant::I16 => matches!(dest, LitTypeVariant::I16 | LitTypeVariant::I32 | LitTypeVariant::I64),
-        LitTypeVariant::I32 => matches!(dest, LitTypeVariant::I32 | LitTypeVariant::I64),
+        LitTypeVariant2::U8 => matches!(dest, LitTypeVariant2::U8 | LitTypeVariant2::I16 | LitTypeVariant2::I32 | LitTypeVariant2::I64),
+        LitTypeVariant2::I16 => matches!(dest, LitTypeVariant2::I16 | LitTypeVariant2::I32 | LitTypeVariant2::I64),
+        LitTypeVariant2::I32 => matches!(dest, LitTypeVariant2::I32 | LitTypeVariant2::I64),
         _ => false
     }
 }
@@ -385,7 +365,7 @@ pub fn is_type_coalescing_possible(src: LitTypeVariant, dest: LitTypeVariant) ->
 mod tests {
     use crate::is_type_coalescing_possible;
 
-    use super::LitTypeVariant;
+    use super::LitTypeVariant2 as LitTypeVariant;
 
     #[test]
     // Trying to conver 1223 into unsigned char. This should fail.

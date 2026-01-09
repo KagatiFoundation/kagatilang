@@ -60,7 +60,7 @@ impl Diagnostic {
         let source_lines: Vec<&str> = source_file.content.lines().collect();
         let line_num = self.primary_span.start.line;   // 1-based
         let col_num = self.primary_span.start.column;  // 0-based
-        let span_len = self.primary_span.end.column - col_num; // length of the token
+        let span_len = self.primary_span.end.column; // length of the token
 
         // print severity and message
         eprintln!("{ANSI_COLOR_RED}{:?}{ANSI_COLOR_RESET}: {}", self.severity, self.message);

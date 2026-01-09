@@ -128,9 +128,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .iter()
             .map(|&sym| {
                 let param_stack_slot = fn_ctx.alloc_local_slot();
-                fn_ctx.var_offsets.insert(sym.name.clone(), param_stack_slot.0);
+                fn_ctx.var_offsets.insert(sym.name.to_string(), param_stack_slot.0);
                 self.ir_builder.create_function_parameter(
-                    IRType::from(sym.lit_type.clone()), 
+                    IRType::from(sym.ty.get()), 
                     param_stack_slot
                 )
             }).collect::<Vec<FunctionParam>>();

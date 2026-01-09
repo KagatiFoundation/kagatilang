@@ -4,7 +4,7 @@
 #![allow(non_camel_case_types)]
 use std::str::FromStr;
 
-use kagc_types::{LitValue, LitTypeVariant};
+use kagc_types::LitValue;
 
 /// Every keyword and token supported by the C standard is listed below.
 #[derive(Copy, Clone, PartialEq, Hash, Eq, Debug)]
@@ -181,20 +181,6 @@ impl TokenKind {
 
 pub trait FromTokenKind<T> {
     fn from_token_kind(tk: TokenKind) -> Option<T>;
-}
-
-impl FromTokenKind<LitTypeVariant> for LitTypeVariant {
-    fn from_token_kind(tk: TokenKind) -> Option<LitTypeVariant> {
-        match tk {
-            TokenKind::KW_VOID => Some(Self::Void),
-            TokenKind::KW_INT => Some(Self::I32),
-            TokenKind::KW_CHAR => Some(Self::U8),
-            TokenKind::KW_LONG => Some(Self::I64),
-            TokenKind::KW_FLOAT => Some(Self::F32),
-            TokenKind::KW_DOUBLE => Some(Self::F64),
-            _ => Some(Self::None),
-        }
-    }
 }
 
 impl<'tcx> FromTokenKind<LitValue<'tcx>> for LitValue<'tcx> {
