@@ -8,7 +8,7 @@ use crate::scope::{Scope, ScopeId};
 
 pub struct ScopeTable<'tcx> {
     arena: &'tcx typed_arena::Arena<Scope<'tcx>>,
-    scopes: RefCell<HashMap<ScopeId, &'tcx Scope<'tcx>>>,
+    pub(crate) scopes: RefCell<HashMap<ScopeId, &'tcx Scope<'tcx>>>,
     next_id: Cell<usize>
 }
 

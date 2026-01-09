@@ -14,6 +14,9 @@ use kagc_parser::Parser;
 use kagc_parser::options::ParserOptions;
 use kagc_scope::ctx::ScopeCtx;
 use kagc_ctx::StringInterner;
+use kagc_sema::TypeChecker;
+use kagc_sema::binder::NameBinder;
+use kagc_utils::bug;
 
 use crate::comp_unit::CompUnit;
 
@@ -52,26 +55,22 @@ impl<'tcx> CompilerPipeline<'tcx> {
     }
 
     pub fn compile(&mut self, entry_file: &str) -> Result<(), std::io::Error> {
-        if self.compilation_units.contains_key(entry_file) {
-           return Ok(());
-        }
+        self.resolve_dependencies(entry_file);
+
+        let mut ty_checker = TypeChecker::new(self.scope_ctx, self.diagnostics);
+
+        for unit_key in &self.compile_order {
+            let Some(unit) = self.compilation_units.get_mut(unit_key) else {
+                bug!("No compilation unit is present with key '{unit_key}'");
+            };
         
-        let Some(unit) = self.compile_path_into_unit(entry_file) else {
-            return Ok(());
-        };
+            let mut name_binder = NameBinder::new(self.scope_ctx, self.diagnostics, &unit.asts);
+            name_binder.bind();
 
-        self.compile_order.push(entry_file.to_string()); // compile 'entry_file' first
-
-        let mut imported_units = vec![];
-        for import in unit.extract_imports() {
-            if let Some(imported_unit) = self.compile_path_into_unit(import.path) {
-                imported_units.push(imported_unit);
-                self.compile_order.push(import.path.to_string());
-            }
+            ty_checker.check(&mut unit.asts);
         }
 
-        // add the 'entry_file' to the compilation queue
-        self.compilation_units.insert(entry_file.to_string(), unit);
+        self.diagnostics.report_all(self.source_map);
         Ok(())
     }
 
@@ -118,12 +117,25 @@ impl<'tcx> CompilerPipeline<'tcx> {
             diagnostics, 
             tokens
         );
-        let asts = parser.parse();
+        Some(CompUnit { asts: parser.parse() })
+    }
 
-        if diagnostics.has_errors() {
-            panic!("{:#?}", diagnostics);
+    fn resolve_dependencies(&mut self, file_path: &str) {
+        // Prevent circular imports and redundant parsing
+        if self.compilation_units.contains_key(file_path) {
+            return;
         }
-        Some(CompUnit { asts })
+
+        let Some(unit) = self.compile_path_into_unit(file_path) else {
+            return;
+        };
+
+        for import in unit.extract_imports() {
+            self.resolve_dependencies(import.path);
+        }
+
+        self.compilation_units.insert(file_path.to_string(), unit);
+        self.compile_order.push(file_path.to_string());
     }
 
     fn _compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {

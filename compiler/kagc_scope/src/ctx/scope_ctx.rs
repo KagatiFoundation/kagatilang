@@ -67,13 +67,15 @@ impl<'tcx> ScopeCtx<'tcx> {
             .build()
     }
 
-    pub fn create_record(&self, name: &'tcx str, record_entry: RecordType<'tcx>) -> Option<&'tcx str> {
+    pub fn create_record(&self, name: &'tcx str, record_entry: RecordType<'tcx>) -> Result<&'tcx str, &'tcx str> {
         let rec_name = record_entry.name;
-        if self.records.declare(name, record_entry).is_some() {
+        if self.records.declare(name, record_entry).is_ok() {
             self.user_types.borrow_mut().insert(rec_name.to_string());
-            Some(rec_name)
+            Ok(rec_name)
         }
-        else { None }
+        else {
+            Err(rec_name)
+        }
     }
 
     pub fn lookup_record(&self, rec_name: &str) -> Option<&'tcx RecordType<'tcx>> {
@@ -247,6 +249,10 @@ impl<'tcx> ScopeCtx<'tcx> {
         let scope_id = *self.node_scope_map.borrow().get(&node_id)?;
         let scope = self.scopes.get(scope_id)?;
         Some(scope)
+    }
+
+    pub fn dump(&self) {
+        println!("{:#?}", self.scopes.scopes.borrow());
     }
 }
 

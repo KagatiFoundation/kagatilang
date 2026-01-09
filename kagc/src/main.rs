@@ -27,5 +27,5 @@ use std::io::Error;
 use kagc::compile_file;
 
 fn main() -> Result<(), Error> {
-    compile_file("/Users/rigelstar/Desktop/KagatiFoundation/kagatilang/examples/std.kag")
+    compile_file("/Users/rigelstar/Desktop/KagatiFoundation/kagatilang/examples/ex1.kag")
 }

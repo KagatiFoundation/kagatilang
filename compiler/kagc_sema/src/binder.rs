@@ -24,7 +24,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     pub fn new(
         scope: &'tcx ScopeCtx<'tcx>,
         diags: &'r DiagnosticBag,
-        asts: &'r mut Vec<AstNode<'tcx>>
+        asts: &'r Vec<AstNode<'tcx>>
     ) -> Self {
         Self {
             diagnostics: diags,
@@ -268,14 +268,14 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                     }
                 }).collect::<Vec<RecordFieldType>>()
             };
-            if self.scope.create_record(stmt.name, record_entry).is_none() {
+            if self.scope.create_record(stmt.name, record_entry).is_err() {
                 self.diagnostics.push(
                     Diagnostic {
                         code: Some(ErrCode::SEM2001),
                         severity: Severity::Error,
                         primary_span: node.meta.span,
                         secondary_spans: Vec::with_capacity(0),
-                        message: "symbol already defined".to_string(),
+                        message: format!("symbol '{}' already defined", stmt.name),
                         notes: Vec::with_capacity(0)
                     }
                 );

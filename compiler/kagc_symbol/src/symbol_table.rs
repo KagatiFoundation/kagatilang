@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::{cell::{Cell, RefCell}, collections::HashMap, slice::{Iter, IterMut}};
+use std::{cell::{Cell, RefCell}, collections::HashMap, fmt::Debug, slice::{Iter, IterMut}};
 use crate::{STableLookupKey, Sym, SymId, sym::SymbolTrait};
 
 /// Maximum number of symbols that can be stored in the symbol table.
@@ -117,6 +117,12 @@ pub struct SymTable<'tcx> {
     arena: &'tcx typed_arena::Arena<Sym<'tcx>>,
     pub symbols: RefCell<HashMap<&'tcx str, &'tcx Sym<'tcx>>>,
     pub next_id: Cell<usize>,
+}
+
+impl Debug for SymTable<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SymTable").field("symbols", &self.symbols).field("next_id", &self.next_id).finish()
+    }
 }
 
 impl<'tcx> SymTable<'tcx> {

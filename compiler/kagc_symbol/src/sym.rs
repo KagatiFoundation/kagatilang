@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::cell::Cell;
+use std::{cell::Cell, fmt::Debug};
 
 use kagc_types::*;
 
@@ -181,6 +181,7 @@ pub enum SymTy<'tcx> {
     Record { name: &'tcx str }
 }
 
+#[derive(Debug)]
 pub struct Sym<'tcx> {
     pub id: Cell<SymId>,
     pub name: &'tcx str,

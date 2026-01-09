@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::cell::Cell;
+use std::{cell::Cell, fmt::Debug};
 
 use kagc_symbol::{Sym, SymTable};
 
@@ -23,10 +23,16 @@ pub enum ScopeType {
 }
 
 pub struct Scope<'tcx> {
-    symt: SymTable<'tcx>,
+    pub(crate) symt: SymTable<'tcx>,
     pub(crate) parent: Option<ScopeId>,
     pub(crate) ty: ScopeType,
     pub id: Cell<ScopeId>
+}
+
+impl Debug for Scope<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scope").field("symt", &self.symt).field("parent", &self.parent).field("ty", &self.ty).field("id", &self.id).finish()
+    }
 }
 
 impl<'tcx> Scope<'tcx> {

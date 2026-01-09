@@ -19,8 +19,8 @@ use kagc_utils::bug;
 pub(crate) type TypeCheckResult<'t> = Option<TyKind<'t>>;
 
 pub struct TypeChecker<'t, 'tcx> {
-    pub diagnostics: &'t DiagnosticBag,
-    pub scope: &'tcx ScopeCtx<'tcx>,
+    diagnostics: &'t DiagnosticBag,
+    scope: &'tcx ScopeCtx<'tcx>,
     curr_func_id: FuncId,
     current_scope: ScopeId
 }
@@ -49,9 +49,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn check_node(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        let Some(_) = node.as_stmt() else {
-            panic!("Only statement nodes are supported, but found {:#?}!", node);
-        };
         match node.op {
             AstOp::VarDecl      => self.check_var_decl_stmt(node),
             AstOp::Func         => self.check_func_decl_stmt(node),
@@ -77,25 +74,18 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     }
 
     fn check_function_call(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        // let call_expr = node.expect_function_call_expr_mut();
-        // self.analyze_func_call_expr(call_expr, &node.meta)
-        if let NodeKind::ExprAST(Expr::FuncCall(func_call_expr)) = &mut node.kind {
-            self.check_func_call_expr(func_call_expr, &node.meta)
-        }
-        else {
-            panic!()
-        }
+        let meta = node.meta.clone();
+        let call_expr = node.expect_func_call_expr_mut();
+        self.check_func_call_expr(call_expr, &meta)
     }
 
-    fn check_expr(&mut self, ast: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        if !ast.kind.is_expr() {
-            panic!("Needed an Expr--but found {:#?}", ast);
-        }
-        if let NodeKind::ExprAST(expr) = &mut ast.kind {
-            ast.ty = self.check_and_mutate_expr(expr, &ast.meta);
-            return ast.ty;
-        }
-        panic!()
+    fn check_expr(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+        let meta = node.meta.clone();
+        let Some(expr) = node.as_expr_mut() else {
+            bug!("expected expr")
+        };
+        node.ty = self.check_and_mutate_expr(expr, &meta);
+        node.ty
     }
 
     fn check_and_mutate_expr(&mut self, expr: &mut Expr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
@@ -307,8 +297,9 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         for (arg, param_type) in args.iter_mut().zip(param_types.iter()) {
+            println!("{arg:#?}");
             let Some(expr_res) = self.check_and_mutate_expr(arg, meta) else {
-                bug!("Argument's result type cannot be determined. And that's a bug.")
+                bug!("Argument's result type cannot be determined")
             };
             let assignment_ok = (expr_res == *param_type) 
                 || TypeChecker::is_type_coalesciable(expr_res, *param_type);
@@ -456,7 +447,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Some(var_type)
     }
 
-    pub fn check_and_mutate_var_decl_stmt(
+    fn check_and_mutate_var_decl_stmt(
         &mut self, 
         var_decl_sym: &'tcx Sym<'tcx>, 
         expr_type: TyKind<'tcx>, 

@@ -24,10 +24,14 @@ impl<'tcx> RecordTable<'tcx> {
         records.get(name).copied()
     }
 
-    pub fn declare(&self, name: &'tcx str, entry: RecordType<'tcx>) -> Option<&'tcx RecordType<'tcx>> {
+    pub fn declare(&self, name: &'tcx str, entry: RecordType<'tcx>) -> Result<&'tcx RecordType<'tcx>, &'tcx RecordType<'tcx>> {
         let mut records = self.records.borrow_mut();
+        if let Some(existing) = records.get(name) {
+            return Err(*existing);
+        }
         let allocated = self.arena.alloc(entry);
-        records.insert(name, allocated)
+        records.insert(name, allocated);
+        Ok(allocated)
     }
 
     pub fn count(&self) -> usize {

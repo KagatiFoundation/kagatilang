@@ -45,6 +45,8 @@ pub struct Parser<'p, 'tcx> where 'tcx: 'p {
     /// function.
     current_function_id: usize,
 
+    parsing_function: bool,
+
     /// Position of next local symbol.
     next_local_sym_pos: usize,
 
@@ -73,6 +75,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             current_file: FileId(0),
             options,
             diagnostics: diags,
+            parsing_function: false,
             next_node_id: 0 // start counting at zero
         }
     }
@@ -153,7 +156,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn expect_semicolon(&mut self) {
-        _ = self.consume(TokenKind::T_SEMICOLON, "expected a ';'");
+        _ = self.consume(TokenKind::T_SEMICOLON, "';' expected");
     }
 
     // parse a block statement(statement starting with '{' and ending with '}')
@@ -375,11 +378,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         // create function body
         if func_storage_class != StorageClass::EXTERN {
+            self.parsing_function = true;
             let function_body_res = self.parse_block_stmt()?;
+            self.parsing_function = false;
             function_body = Some(Box::new(function_body_res));
         } 
         else {
-            _ = self.consume(TokenKind::T_SEMICOLON, "';' expected")?;
+            self.expect_semicolon();
         }
 
         let temp_func_id = self.current_function_id;
@@ -454,7 +459,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_return_stmt(&mut self) -> ParseOutput<'tcx> {
         // check whether parser's parsing a function or not
-        let inside_func = false;
+        let inside_func = self.parsing_function;
         if !inside_func {
             self.report_unexpected_token();
             return None;
@@ -467,6 +472,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         };
 
         if self.peek().kind == TokenKind::T_SEMICOLON {
+            self.expect_semicolon();
             let meta = NodeMeta::new(
                 Span::new(
                     self.current_file.0,
@@ -517,6 +523,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 meta,
                 id: self.next_node_id()
             };
+            self.expect_semicolon();
             Some(return_ast)
         }
     }
@@ -551,6 +558,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_break_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_BREAK, "'break' expected")?;
+        self.expect_semicolon();
         Some(
             AstNode::binary(
                 self.next_node_id(),
@@ -636,15 +644,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     /// Parses a variable declaration statement.
-    ///
-    /// This function processes the tokens and constructs an abstract syntax tree (AST)
-    /// node representing a variable declaration statement. It handles parsing the variable
-    /// type, name, and optionally, the initial value assignment.
-    ///
-    /// # Returns
-    ///
-    /// A `ParseResult` containing either the AST node for the variable declaration statement
-    /// or a `ParseError` if the parsing fails.
     fn parse_var_decl_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_LET, "'let' expected'")?;
 
@@ -686,25 +685,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             }
         }
 
+        self.consume(TokenKind::T_EQUAL, "'=' expected");
+
         // Stores the RHS value of this variable (if defined)
-        let mut assignment_parse_res: Option<ParseOutput> = None;
+        let assigned_value = self.parse_record_or_expr(Some(id_token.lexeme))?;
 
-        // Checking whether variable is assigned at the time of its declaration.
-        // If identifier name is followed by an equal sign, then it is assigned 
-        // at the time of declaration.
-        if self.peek().kind == TokenKind::T_EQUAL {
-            _ = self.consume(TokenKind::T_EQUAL, "'=' expected")?; // match and ignore '=' sign
-            assignment_parse_res = Some(self.parse_record_or_expr(Some(id_token.lexeme)));
-        }
-
-        // if there is some error during expression parsing
-        if let Some(None) = assignment_parse_res {
-            return None;
-        } 
-        else if let Some(Some(expr_ast)) = &assignment_parse_res {
-            if let NodeKind::ExprAST(Expr::RecordCreation(record_create)) = &expr_ast.kind {
-                sym_type = SymTy::Record { name: record_create.name }
-            }
+        if let NodeKind::ExprAST(Expr::RecordCreation(record_create)) = &assigned_value.kind {
+            sym_type = SymTy::Record { name: record_create.name }
         }
 
         let local_off = if inside_func {
@@ -719,28 +706,23 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             0
         };
 
-        if let Some(assign_ast_node_res) = assignment_parse_res {
-            self.expect_semicolon();
-            Some(AstNode::binary(
-                self.next_node_id(),
-                NodeKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
-                    symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
-                    symbol_type: sym_type,
-                    class: var_class,
-                    sym_name: id_token.lexeme,
-                    ty: var_type,
-                    local_offset: local_off,
-                    func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
-                })),
-                AstOp::VarDecl,
-                Some(assign_ast_node_res?),
-                None,
-                Some(var_type),
-            ))
-        } 
-        else {
-            panic!("Variable declared without any assignment!")
-        }
+        self.expect_semicolon();
+        Some(AstNode::binary(
+            self.next_node_id(),
+            NodeKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
+                symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
+                symbol_type: sym_type,
+                class: var_class,
+                sym_name: id_token.lexeme,
+                ty: var_type,
+                local_offset: local_off,
+                func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
+            })),
+            AstOp::VarDecl,
+            Some(assigned_value),
+            None,
+            Some(var_type),
+        ))
     }
 
     fn _next_str_label(&mut self) -> usize {
@@ -777,7 +759,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         if tok_kind_after_id_tok != TokenKind::T_LPAREN {
             panic!("Cannot parse an assignment statement right now!");
         } else {
-            self.parse_func_call_expr(id_token.lexeme, &id_token)
+            let assignment = self.parse_func_call_expr(id_token.lexeme, &id_token);
+            self.expect_semicolon();
+            assignment
         }
     }
 
