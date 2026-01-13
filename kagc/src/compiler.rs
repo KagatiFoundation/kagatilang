@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use kagc_ast_lowering::AstToMirLowerer;
 use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
 use kagc_comp_unit::ImportResolver;
 use kagc_comp_unit::source_map::{FileId, SourceMap};
@@ -58,6 +59,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         self.resolve_dependencies(entry_file);
 
         let mut ty_checker = TypeChecker::new(self.scope_ctx, self.diagnostics);
+        let mut ast_lowerer = AstToMirLowerer::new(self.scope_ctx, self.const_pool);
 
         for unit_key in &self.compile_order {
             let Some(unit) = self.compilation_units.get_mut(unit_key) else {
@@ -68,7 +70,11 @@ impl<'tcx> CompilerPipeline<'tcx> {
             name_binder.bind();
 
             ty_checker.check(&mut unit.asts);
+            ast_lowerer.lower(&mut unit.asts);
         }
+        
+        let mir_mod = ast_lowerer.ir_builder.build2();
+        self._compile_mir_modules_into_asm(&[mir_mod]);
 
         self.diagnostics.report_all(self.source_map);
         Ok(())

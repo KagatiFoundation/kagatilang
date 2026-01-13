@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use kagc_ast::NodeId;
+use kagc_symbol::StorageClass;
 use kagc_symbol::Sym;
 use kagc_symbol::function::Func;
 use kagc_symbol::function::FuncId;
@@ -194,7 +195,18 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn collect_params(&self, scope_id: ScopeId) -> Vec<&Sym<'tcx>> {
-        vec![]
+        let Some(scope) = self.scopes.get(scope_id) else {
+            panic!("Scope with id '{:#?}' not found", scope_id);
+        };
+        let symt = scope.symt.symbols.borrow();
+        
+        let mut params = vec![];
+        for sym in symt.values() {
+            if sym.class == StorageClass::PARAM {
+                params.push(*sym);
+            }
+        }
+        params
     }
 
     pub fn is_inside_scope_type(&self, mut scope_id: ScopeId, target: ScopeType) -> bool {
