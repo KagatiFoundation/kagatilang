@@ -380,13 +380,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let meta_span = node.meta.span;
         let func_decl = node.expect_func_decl_stmt_mut();
 
-        let func_ret_type = self
-            .scope
-            .root()
-            .get_sym(func_decl.name)
-            .map(|func_sym| func_sym.ty.clone());
-
-        if func_ret_type.is_none() {
+        let Some(func) = self.scope.lookup_fn_by_name(func_decl.name) else {
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),
@@ -399,8 +393,9 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             );
             return None;
         };
-        let func_ret_type_shadow = func_ret_type.unwrap();
-        self.curr_func_id = func_decl.id;
+
+        let func_ty = func.ty;
+        self.curr_func_id = func.id.get();
 
         if let Some(func_body) = &mut node.left {
             let Some(scope) = self.scope.lookup_node_scope(node.id) else {
@@ -418,7 +413,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         self.curr_func_id = FuncId(INVALID_FUNC_ID);
-        Some(func_ret_type_shadow.get())
+        Some(func_ty)
     }
 
     fn check_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
