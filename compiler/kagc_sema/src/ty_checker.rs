@@ -408,7 +408,12 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(scope.id.get()); // enter function's scope
-            self.check_node(func_body)?;
+
+            let body_block = func_body.expect_block_stmt_mut();
+            for stmt in &mut body_block.statements {
+                self.check_node(stmt);
+            }
+
             self.scope.pop(); // exit function's scope
         }
 

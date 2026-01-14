@@ -73,8 +73,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
             ast_lowerer.lower(&mut unit.asts);
         }
         
-        let mir_mod = ast_lowerer.ir_builder.build2();
-        self._compile_mir_modules_into_asm(&[mir_mod]);
+        let mir_mod = ast_lowerer.ir_builder.build();
+        self.compile_mir_modules_into_asm(&[mir_mod]);
 
         self.diagnostics.report_all(self.source_map);
         Ok(())
@@ -144,7 +144,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         self.compile_order.push(file_path.to_string());
     }
 
-    fn _compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
+    fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
         let mut cg = Aarch64CodeGenerator::new(self.const_pool);
         for module in modules.iter() {
             cg.generate_module_code(module);

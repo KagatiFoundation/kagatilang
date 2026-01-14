@@ -135,6 +135,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.current_function = Some(func.clone());
         let storage_class = func.storage_class;
 
+        self.scope.enter(func_scope.id.get()); // enter the function's scope
         let mut fn_ctx = FunctionContext::new();
 
         let func_ir_params = self
@@ -189,8 +190,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
 
         self.current_function = None;
-        // exit function's scope
-        self.scope.pop();
+        self.scope.pop(); // exit function's scope
         Ok(current_block_id)
     }
 
@@ -451,8 +451,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
         match lit_expr.ty {
             TyKind::I64 => {
-                let const_value = *lit_expr.value.unwrap_i64().expect("No i64 value!");
-                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
+                let const_value = *lit_expr.value.unwrap_i32().expect("No i64 value!");
+                Ok(self.ir_builder.create_move(IRValue::Constant(const_value as i64)))
             },
             TyKind::U8 => {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;

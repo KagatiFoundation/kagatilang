@@ -57,8 +57,11 @@ impl<'tcx> ScopeCtx<'tcx> {
         let rec_table = RecordTable::new(rec_arena);
         let func_table = FuncTable::new(func_arena);
 
+        let scope_stack = vec![ScopeId(0)];
+
         ScopeCtxBuilder::new()
             .scopes(scope_table)
+            .stack(scope_stack)
             .records(rec_table)
             .functions(func_table)
             .sym_arena(sym_arena)
@@ -98,15 +101,18 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn enter(&self, scope_id: ScopeId) -> Option<ScopeId> {
-        let scopes = &self.scopes;
-        if scopes.contains(scope_id) {
-            let curr_scope = self.current.get();
-            self.current.replace(_ScopeMeta { id: scope_id, typ: curr_scope.typ });
-            Some(curr_scope.id)
-        }
-        else {
-            None
-        }
+        let scope = self.scopes.get(scope_id)?;
+        let old_meta = self.current.get();
+    
+        let mut stack = self.stack.borrow_mut();
+        stack.push(scope_id);
+
+        self.previous.replace(old_meta);
+        self.current.replace(_ScopeMeta { 
+            id: scope_id, 
+            typ: scope.ty 
+        });
+        Some(old_meta.id)
     }
 
     /// Creates a new scope with the given type.
@@ -130,7 +136,7 @@ impl<'tcx> ScopeCtx<'tcx> {
     /// 
     /// Returns the ID of the popped scope.
     pub fn pop(&self) -> ScopeId {
-        if self.stack.borrow().len() <= 1 {
+        if self.stack.borrow().len() == 1 {
             panic!("Attempted to pop the root scope!");
         }
 
