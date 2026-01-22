@@ -349,7 +349,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     // returns the id of value and the value's size
     fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         match expr.value {
-            LitValue::PoolStr(pool_idx) => {
+            Literal::PoolStr(pool_idx) => {
                 let const_value = self.ir_builder.occupy_value_id();
                 let const_size = self
                     .const_pool
@@ -443,7 +443,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        if let LitValue::PoolStr(_) = &lit_expr.value {
+        if let Literal::PoolStr(_) = &lit_expr.value {
             let str_stack_slot = self.load_str_from_const_pool(lit_expr, fn_ctx)?;
             return Ok(self.ir_builder.create_load(
                 IRAddress::StackSlot(str_stack_slot)

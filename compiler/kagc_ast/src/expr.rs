@@ -2,8 +2,9 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_symbol::function::FuncId;
-use kagc_types::LitValue;
 use kagc_types::TyKind;
+
+use crate::Literal;
 
 use super::{AstOp, AstNode};
 
@@ -35,7 +36,7 @@ pub struct IdentExpr<'tcx> {
 
 #[derive(Clone, Debug)]
 pub struct LitValExpr<'tcx> {
-    pub value: LitValue<'tcx>,
+    pub value: Literal<'tcx>,
     pub ty: TyKind<'tcx>
 }
 

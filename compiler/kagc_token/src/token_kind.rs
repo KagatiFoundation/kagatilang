@@ -4,8 +4,6 @@
 #![allow(non_camel_case_types)]
 use std::str::FromStr;
 
-use kagc_types::LitValue;
-
 /// Every keyword and token supported by the C standard is listed below.
 #[derive(Copy, Clone, PartialEq, Hash, Eq, Debug)]
 pub enum TokenKind {
@@ -181,20 +179,6 @@ impl TokenKind {
 
 pub trait FromTokenKind<T> {
     fn from_token_kind(tk: TokenKind) -> Option<T>;
-}
-
-impl<'tcx> FromTokenKind<LitValue<'tcx>> for LitValue<'tcx> {
-    fn from_token_kind(tk: TokenKind) -> Option<LitValue<'tcx>> {
-        match tk {
-            TokenKind::T_INT_NUM => Some(LitValue::I32(0)),
-            TokenKind::T_CHAR => Some(LitValue::U8(0)),
-            TokenKind::T_DOUBLE_NUM => Some(LitValue::F64(0.0)),
-            TokenKind::T_LONG_NUM => Some(LitValue::I64(0)),
-            TokenKind::T_STRING => Some(LitValue::PoolStr(0)),
-            TokenKind::KW_VOID => Some(LitValue::Void),
-            _ => None,
-        }
-    }
 }
 
 impl FromStr for TokenKind {

@@ -14,7 +14,7 @@ use kagc_symbol::*;
 use kagc_token::*;
 use kagc_types::TyKind;
 use kagc_types::record::RecordFieldType;
-use kagc_types::LitValue;
+use kagc_ast::Literal;
 
 use crate::options::ParserOptions;
 
@@ -944,7 +944,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
-                        LitValue::I32(current_token.lexeme.parse::<i32>().unwrap()),
+                        Literal::I32(current_token.lexeme.parse::<i32>().unwrap()),
                         AstOp::IntLit,
                         single_token_meta
                     )
@@ -954,7 +954,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
-                        LitValue::U8(current_token.lexeme.parse::<u8>().unwrap()),
+                        Literal::U8(current_token.lexeme.parse::<u8>().unwrap()),
                         AstOp::IntLit,
                         single_token_meta
                     )
@@ -964,7 +964,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
-                        LitValue::I64(current_token.lexeme.parse::<i64>().unwrap()),
+                        Literal::I64(current_token.lexeme.parse::<i64>().unwrap()),
                         AstOp::IntLit,
                         single_token_meta
                     )
@@ -974,7 +974,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
-                        LitValue::F64(current_token.lexeme.parse::<f64>().unwrap()),
+                        Literal::F64(current_token.lexeme.parse::<f64>().unwrap()),
                         AstOp::IntLit,
                         single_token_meta
                     )
@@ -986,7 +986,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     NodeKind::ExprAST(
                         Expr::LitVal(
                             LitValExpr {
-                                value: LitValue::RawStr(current_token.lexeme),
+                                value: Literal::RawStr(current_token.lexeme),
                                 ty: TyKind::Str,
                             }
                         )
@@ -1090,7 +1090,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         ))
     }
 
-    fn create_expr_ast(node_id: NodeId, value: LitValue<'tcx>, operation: AstOp, meta: NodeMeta) -> AstNode<'tcx> {
+    fn create_expr_ast(node_id: NodeId, value: Literal<'tcx>, operation: AstOp, meta: NodeMeta) -> AstNode<'tcx> {
         AstNode::leaf(
             node_id,
             NodeKind::ExprAST(
