@@ -22,7 +22,6 @@ Cargo.lock
 **/*.S
 **/*.so
 out
-examples/
 build/
 **/main.dSYM
 **/*.a

@@ -1,0 +1,8 @@
+def main() -> void {
+    let a = 12345;
+    let name = "ramesh poudel";
+    loop {
+        let num = 1000; 
+        return;
+    }
+}

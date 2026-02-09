@@ -1,0 +1,27 @@
+import "std/net";
+
+record Socket {
+    family: integer;
+    port: integer;
+    addr: integer;
+}
+
+def main() -> void {
+    let server = Socket {
+        family = 2, // IPv4
+        port = 12345,
+        addr = 0
+    };
+
+    let fd = create_socket(server.port); 
+    listen_socket(fd, 5);
+    loop {
+        let client = accept_socket(fd);
+        println("a new client");
+        let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 38\r\nConnection: close\r\n\r\n<html><body>Hello World</body></html>";
+        write_socket(client, resp, 130);
+        close_socket(client);
+        println("client closed");
+    }
+    close_socket(fd);
+}

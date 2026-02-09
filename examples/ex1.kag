@@ -1,0 +1,43 @@
+import "std/io";
+import "internal/gc";
+
+def println(x: string) -> void {
+    print(x);
+    print("\n");
+}
+
+record String {
+    value: string;
+}
+
+record Person {
+    name: string;
+    age: integer;
+    address: string;
+    parents_name: string;
+}
+
+def main() -> integer {
+    let int = "hello world";
+    println(int);
+    print(int);
+    println("this is cool");
+    print("okay but not this");
+
+    let a = "ramesh poudel";
+    print(a);
+
+    let aa = String {
+        value = "hello world"
+    };
+
+    let p = Person {
+        name = aa.value,
+        age = 12,
+        address = "waling",
+        parents_name = "fathers name"
+    };
+    println(p.name);
+    println(p.address);
+    println(aa.value);
+}
