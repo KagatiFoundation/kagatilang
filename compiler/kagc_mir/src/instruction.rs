@@ -117,6 +117,7 @@ impl IRInstruction {
             IRInstruction::CondJump     { result, .. } => Some(*result),
             IRInstruction::Call         { result, .. } |
             IRInstruction::CallBuiltin  { result, .. } => *result,
+            IRInstruction::LoadConst    { result, .. } => Some(*result),
             _ => None
         }
     }

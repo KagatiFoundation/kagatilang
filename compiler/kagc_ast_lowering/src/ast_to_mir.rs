@@ -7,8 +7,9 @@ use std::vec;
 use kagc_ast::*;
 use kagc_symbol::*;
 use kagc_backend::reg::*;
+use kagc_types::builtins::obj::KObjType;
 use kagc_types::*;
-use kagc_const::pool::{ConstPool, PoolIdx};
+use kagc_const::pool::{ConstPool, KagcConst, PoolIdx};
 use kagc_scope::ctx::ScopeCtx;
 use kagc_scope::scope::ScopeId;
 
@@ -39,7 +40,7 @@ pub struct AstToMirLowerer<'a, 'tcx> {
     /// compiler context. Holds shared state like symbol tables, 
     /// type info, and other data needed during IR lowering.
     scope: &'tcx ScopeCtx<'tcx>,
-    const_pool: &'a ConstPool,
+    const_pool: &'a mut ConstPool,
 
     /// Public MIR builder used to generate MIR instructions, manage
     /// basic blocks, and keep track of the current insertion point.
@@ -50,7 +51,7 @@ pub struct AstToMirLowerer<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
-    pub fn new(scope: &'tcx ScopeCtx<'tcx>, const_pool: &'a ConstPool) -> Self {
+    pub fn new(scope: &'tcx ScopeCtx<'tcx>, const_pool: &'a mut ConstPool) -> Self {
         Self {
             scope,
             const_pool,
@@ -203,34 +204,26 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_variable_declaration(&mut self, var_ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        let var_decl = var_ast.kind.as_stmt().unwrap_or_else(|| panic!("Requires a VarDeclStmt"));
-        if let Stmt::VarDecl(var_decl) = var_decl {
-            if var_ast.left.is_none() {
-                bug!("Variable is not assigned a value!");
-            }
-
-            fn_ctx.change_parent_ast_kind(AstOp::VarDecl);
-            let var_decl_value = self.lower_expression_ast(var_ast.left.as_mut().unwrap(), fn_ctx)?;
-
-            if !var_ast.ty.unwrap().is_gc_alloced() { // unsafe unwrap call
-                let var_stack_off = fn_ctx.alloc_local_slot();
-                self.ir_builder.inst(
-                    IRInstruction::Store { 
-                        src: var_decl_value, 
-                        address: IRAddress::StackSlot(var_stack_off) 
-                    }
-                );
-                fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
-            }
-            else {
-                let var_stack_off = fn_ctx.alloc_local_slot() - StackSlotId(1);
-                // Subtract 1 from the slot ID because a heap-allocated variable occupies
-                // one stack slot for the object’s base pointer
-                fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
-            }
-            return Ok(self.ir_builder.current_block_id_unchecked());
+        if var_ast.left.is_none() { // sanity check
+            bug!("Variable is not assigned a value!");
         }
-        bug!("required VarDeclStmt--but found {var_ast:#?}");
+
+		fn_ctx.change_parent_ast_kind(AstOp::VarDecl);
+		let assigned_expr = var_ast.left.as_mut().unwrap(); // safe to unwrap
+		let assigned_expr_value_id = self.lower_expression_ast(assigned_expr, fn_ctx)?;
+
+		let var_decl = var_ast.expect_var_decl_stmt_mut();
+
+        let var_stack_off = fn_ctx.alloc_local_slot();
+        self.ir_builder.inst(
+            IRInstruction::Store { 
+                src: assigned_expr_value_id, 
+                address: IRAddress::StackSlot(var_stack_off) 
+            }
+        );
+        fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
+
+        Ok(self.ir_builder.current_block_id_unchecked())
     }
 
     fn lower_expression_ast(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -443,11 +436,29 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        if let Literal::PoolStr(_) = &lit_expr.value {
-            let str_stack_slot = self.load_str_from_const_pool(lit_expr, fn_ctx)?;
-            return Ok(self.ir_builder.create_load(
-                IRAddress::StackSlot(str_stack_slot)
-            ));
+        if let Literal::RawStr(str_value) = &lit_expr.value {
+            let const_value = self.ir_builder.occupy_value_id();
+            let pool_index = self.const_pool.insert(KagcConst::Str(str_value.to_string()), KObjType::KStr, None);
+            let const_size = self.const_pool.size(pool_index).unwrap_or_else(|| bug!("cannot find const entry"));
+
+            self.ir_builder.inst(
+                IRInstruction::LoadConst { 
+                    label_id: pool_index,
+                    result: const_value
+                }
+            );
+
+            let const_size_value = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
+            let call_result_value = self.ir_builder.occupy_value_id();
+
+            self.ir_builder.inst(
+                IRInstruction::CallBuiltin { 
+                    builtin: BuiltinFn::AllocStr, 
+                    args: vec![const_value, const_size_value],
+                    result: Some(call_result_value)
+                }
+            );
+            return Ok(call_result_value);
         }
         match lit_expr.ty {
             TyKind::I64 => {
@@ -458,6 +469,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
                 Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
+            TyKind::Str => {
+                panic!()
+            }
             _ => unimplemented!("{lit_expr:#?}")
         }
     }

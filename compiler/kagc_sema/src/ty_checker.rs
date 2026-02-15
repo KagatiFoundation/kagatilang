@@ -210,7 +210,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             Some(ident_expr.ty)
         }
         else {
-            self.scope.dump();
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),
@@ -297,11 +296,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 
         for (arg, param_type) in args.iter_mut().zip(param_types.iter()) {
             let Some(expr_res) = self.check_and_mutate_expr(arg, meta) else {
-                bug!("Argument's result type cannot be determined")
+                panic!("Argument's result type cannot be determined")
             };
-            let assignment_ok = (expr_res == *param_type) 
-                || TypeChecker::is_type_coalesciable(expr_res, *param_type);
-            if !assignment_ok {
+            let assignable = (expr_res == *param_type) || TypeChecker::is_type_coalesciable(expr_res, *param_type);
+            if !assignable {
                 self.diagnostics.push(
                     Diagnostic {
                         code: Some(ErrCode::TYP3002),
@@ -316,7 +314,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    /// There's nothing to be done here, actually. Just return the type.
     fn check_literal_expr(&self, expr: &mut LitValExpr<'tcx>) -> TypeCheckResult<'tcx> {
         let lit_ty = expr.value.kind();
         expr.ty = lit_ty;
@@ -420,7 +417,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let var_decl = node.expect_var_decl_stmt();
 
         let Some(var_sym) = self.scope.lookup_sym(None, var_decl.sym_name) else {
-
             self.diagnostics.push(
                 Diagnostic {
                     code: Some(ErrCode::SEM2000),

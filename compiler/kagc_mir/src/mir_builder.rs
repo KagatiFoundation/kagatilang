@@ -232,6 +232,12 @@ impl MirBuilder {
             .expect("create_move: no value ID created")
     }
 
+    pub fn create_load_const(&mut self, pool_index: usize) -> IRValueId {
+        let result = self.next_value_id();
+        self.inst(IRInstruction::LoadConst { label_id: pool_index, result })
+            .expect("create_load_const: no value ID created")
+    }
+
     pub fn build(&mut self) -> MirModule {
         let mut module = MirModule::new();
 

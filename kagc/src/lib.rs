@@ -27,7 +27,7 @@ pub fn compile_file(file_name: &str) -> Result<(), Error> {
     let rec_arena = typed_arena::Arena::<RecordType<'_>>::new();
     let scope_ctx = ScopeCtx::new(&sym_arena, &fun_arena, &rec_arena, &scp_arena);
 
-    let const_pool = ConstPool::default();
+    let mut const_pool = ConstPool::default();
     let diags = DiagnosticBag::default();
     
     let source_map = SourceMap::new(&file_arena);
@@ -38,7 +38,7 @@ pub fn compile_file(file_name: &str) -> Result<(), Error> {
         &str_interner,
         &diags,
         &source_map,
-        &const_pool
+        &mut const_pool
     );
     compiler.compile(file_name)
 }

@@ -121,7 +121,7 @@ impl<'tcx> ScopeCtx<'tcx> {
     pub fn push(&self, node_id: NodeId, scope_type: ScopeType) -> ScopeId {
         let scope_id = self.next_id.replace(ScopeId(self.next_id.get().0 + 1));
 
-        let parent = self.scopes.iter().last().expect("Stack required non-empty").id.get();
+		let parent = *self.stack.borrow().last().unwrap();
         self.scopes.add(Scope::new(self.sym_arena, scope_type, Some(parent)));
         self.node_scope_map.borrow_mut().insert(node_id, scope_id);
 
@@ -163,15 +163,21 @@ impl<'tcx> ScopeCtx<'tcx> {
     }
 
     pub fn lookup_sym(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym> {
-        if let Some(scope) = self.scopes.get(scope_id.unwrap_or(self.current.get().id)) {
+		let scope_id = scope_id.unwrap_or(self.current.get().id);
+        if let Some(scope) = self.scopes.get(scope_id) {
             if let Some(sym) = scope.get_sym(name) {
-                return Some(sym);
+                Some(sym)
             }
             else if let Some(parent_scope) = scope.parent {
                 return self.lookup_sym(Some(parent_scope), name);
             }
+			else {
+				return None;
+			}
         }
-        None
+		else {
+			panic!("Scope with ID '{scope_id:#?}' not found");
+		}
     }
 
     pub fn declare_sym_in_scope(&self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {

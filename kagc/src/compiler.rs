@@ -27,7 +27,7 @@ pub struct CompilerPipeline<'tcx> {
     
     // Shared global compiler state
     diagnostics: &'tcx DiagnosticBag,
-    const_pool: &'tcx ConstPool,
+    const_pool: &'tcx mut ConstPool,
     scope_ctx: &'tcx ScopeCtx<'tcx>,
     source_map: &'tcx SourceMap<'tcx>,
     
@@ -41,7 +41,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         str_interner: &'tcx StringInterner<'tcx>,
         diagnostics: &'tcx DiagnosticBag,
         source_map: &'tcx SourceMap<'tcx>,
-        const_pool: &'tcx ConstPool
+        const_pool: &'tcx mut ConstPool
     ) -> Self {
         Self {
             compile_order: vec![],
@@ -69,7 +69,15 @@ impl<'tcx> CompilerPipeline<'tcx> {
             let mut name_binder = NameBinder::new(self.scope_ctx, self.diagnostics, &unit.asts);
             name_binder.bind();
 
+			if self.diagnostics.has_errors() {
+				self.diagnostics.report_all(self.source_map);
+			}
+
             ty_checker.check(&mut unit.asts);
+
+			if self.diagnostics.has_errors() {
+				self.diagnostics.report_all(self.source_map);
+			}
             ast_lowerer.lower(&mut unit.asts);
         }
         
