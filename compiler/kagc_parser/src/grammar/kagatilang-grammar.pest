@@ -1,0 +1,132 @@
+LET 	= @{ "let" }
+IF 		= @{ "if" }
+AND 	= @{ "and" }
+OR 		= @{ "or" }
+EITHER 	= @{ "either" }
+BOTH 	= @{ "both" }
+ARE 	= @{ "are" }
+IS 		= @{ "is" }
+NOT 	= @{ "not" }
+
+KEYWORD = {
+	LET
+	| IF
+	| AND
+	| OR
+	| EITHER
+	| BOTH
+	| ARE
+	| IS
+	| NOT
+}
+
+WHITESPACE 		= _{ " " | "\t" | "\n" | "\r" }
+
+COMMENT 		= _{ "//" ~ (!("\n" | "\r") ~ ANY)* }
+
+COMMA 			= @{ "," }
+
+SEMICOLON 		= @{ ";" }
+
+EQUAL 			= @{ "=" }
+
+BIT_OPERATOR = @{
+	"~" 
+	| "^"
+	| "<<"
+	| ">>"
+	| "|"
+	| "&"
+}
+
+STANDARD_COMPARISION_OPERATOR = @{
+	"&&" 
+	| "||" 
+	| ">" 
+	| "<" 
+	| "<=" 
+	| ">=" 
+	| "==" 
+	| "!="
+}
+
+VERBAL_OPERATOR 	= @{ IS }
+
+ADD_OPERATOR 		= @{ "+" | "-" }
+
+MULTIPLY_OPERATOR 	= @{ "*" | "/" }
+
+ARITHMETIC_OPERATOR = @{
+	ADD_OPERATOR 
+	| MULTIPLY_OPERATOR
+}
+
+BINARY_OPERATOR = @{ 
+	BIT_OPERATOR 
+	| ARITHMETIC_OPERATOR 
+	| STANDARD_COMPARISION_OPERATOR
+	| VERBAL_OPERATOR
+}
+
+BOOLEAN_LITERAL 	= @{ "true" | "false" }
+
+INTEGER_LITERAL 	= @{ '0'..'9'+ }
+
+NUMBER_LITERAL 		= @{ INTEGER_LITERAL }
+
+STRING_LITERAL 		= @{ "\"" ~ (!("\n" | "\r" | "\"") ~ ANY)* ~ "\"" }
+
+IDENTIFIER 			= @{ !KEYWORD ~ ('a'..'z' | 'A'..'Z' | "_") ~ ('a'..'z' | 'A'..'Z' | '0'..'9' | "_")* }
+
+// verbal comparision expressions
+
+EITHER_COMPARISION_EXPRESSION 	= { EITHER ~ PRIMARY_EXPRESSION ~ OR ~ PRIMARY_EXPRESSION ~ IS ~ PRIMARY_EXPRESSION }
+
+BOTH_COMPARISION_EXPRESSION 	= { BOTH ~ PRIMARY_EXPRESSION ~ AND ~ PRIMARY_EXPRESSION ~ ARE ~ PRIMARY_EXPRESSION }
+
+// EITHER_TAIL 						= { EITHER ~ PRIMARY_EXPRESSION ~ OR ~ PRIMARY_EXPRESSION }
+
+// BOTH_TAIL 						= { BOTH ~ PRIMARY_EXPRESSION ~ AND ~ PRIMARY_EXPRESSION }
+
+// COMPARISION_LIST_TAIL 			= { PRIMARY_EXPRESSION ~ (COMMA ~ PRIMARY_EXPRESSION)* ~ COMMA? ~ OR ~ PRIMARY_EXPRESSION? }
+
+VERBOSE_COMPARISION_EXPRESSION = {
+	EITHER_COMPARISION_EXPRESSION
+	| BOTH_COMPARISION_EXPRESSION
+}
+
+PRIMARY_EXPRESSION = {
+	NUMBER_LITERAL 
+	| BOOLEAN_LITERAL
+	| STRING_LITERAL 
+	| IDENTIFIER 
+	| VERBOSE_COMPARISION_EXPRESSION
+	| GROUP_EXPRESSION
+}
+
+BINARY_EXPRESSION = { PRIMARY_EXPRESSION ~ (BINARY_OPERATOR ~ PRIMARY_EXPRESSION)+ }
+
+GROUP_EXPRESSION = { "(" ~ EXPRESSION ~ ")" }
+
+EXPRESSION = {
+	BINARY_EXPRESSION
+	| PRIMARY_EXPRESSION 
+}
+
+ASSIGNMENT_STATEMENT = {
+	LET
+	~ IDENTIFIER
+	~ EQUAL
+	~ EXPRESSION
+	~ SEMICOLON
+}
+
+BLOCK_STATEMENT = { "{" ~ STATEMENT* ~ "}"}
+
+IF_STATEMENT = { "if" ~ "(" ~ EXPRESSION ~ ")" ~ BLOCK_STATEMENT }
+
+STATEMENT = {
+	ASSIGNMENT_STATEMENT 
+	| IF_STATEMENT
+	| BLOCK_STATEMENT
+}
