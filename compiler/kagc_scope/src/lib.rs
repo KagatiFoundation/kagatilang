@@ -1,3 +1,5 @@
-pub mod scope_table;
-pub mod scope;
-pub mod ctx;
+mod scope;
+mod ctx;
+
+pub use scope::*;
+pub use ctx::*;

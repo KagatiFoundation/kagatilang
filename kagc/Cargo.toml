@@ -30,6 +30,7 @@ kagc_scope = { path = "../compiler/kagc_scope" }
 kagc_utils = { path = "../compiler/kagc_utils" }
 kagc_errors = { path = "../compiler/kagc_errors" }
 kagc_const = { path = "../compiler/kagc_const" }
+kagc_optimization = { path = "../compiler/kagc_optimization" }
 runtime = { path = "../runtime" }
 
 [build-dependencies]

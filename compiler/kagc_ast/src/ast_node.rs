@@ -171,6 +171,13 @@ impl<'tcx> AstNode<'tcx> {
         }
     }
 
+	pub fn as_expr_owned(self) -> Option<Expr<'tcx>> {
+        match self.kind {
+            NodeKind::ExprAST(expr) => Some(expr),
+            _ => None,
+        }
+	}
+
     pub fn as_expr_mut(&mut self) -> Option<&mut Expr<'tcx>> {
         match &mut self.kind {
             NodeKind::ExprAST(expr) => Some(expr),
@@ -184,6 +191,13 @@ impl<'tcx> AstNode<'tcx> {
             _ => None,
         }
     }
+
+	pub fn as_stmt_owned(self) -> Option<Stmt<'tcx>> {
+        match self.kind {
+            NodeKind::StmtAST(stmt) => Some(stmt),
+            _ => None,
+        }
+	}
 
     pub fn as_stmt_mut(&mut self) -> Option<&mut Stmt<'tcx>> {
         match &mut self.kind {

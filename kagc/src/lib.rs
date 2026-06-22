@@ -11,11 +11,11 @@ use kagc_comp_unit::source::SourceFile;
 use kagc_comp_unit::source_map::SourceMap;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
-use kagc_scope::ctx::ScopeCtx;
-use kagc_scope::scope::Scope;
+use kagc_scope::ScopeCtx;
 use kagc_symbol::Sym;
 use kagc_symbol::function::Func;
 use kagc_types::record::RecordType;
+use kagc_scope::{Scope, ScopeDatabase};
 use kagc_ctx::StringInterner;
 
 pub fn compile_file(file_name: &str) -> Result<(), Error> {
@@ -26,6 +26,8 @@ pub fn compile_file(file_name: &str) -> Result<(), Error> {
     let sym_arena = typed_arena::Arena::<Sym<'_>>::new();
     let rec_arena = typed_arena::Arena::<RecordType<'_>>::new();
     let scope_ctx = ScopeCtx::new(&sym_arena, &fun_arena, &rec_arena, &scp_arena);
+
+	let scope_db = ScopeDatabase::new(&scp_arena);
 
     let mut const_pool = ConstPool::default();
     let diags = DiagnosticBag::default();
@@ -38,7 +40,8 @@ pub fn compile_file(file_name: &str) -> Result<(), Error> {
         &str_interner,
         &diags,
         &source_map,
-        &mut const_pool
+        &mut const_pool,
+		&scope_db
     );
     compiler.compile(file_name)
 }

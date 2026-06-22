@@ -9,15 +9,15 @@ use kagc_symbol::Sym;
 use kagc_symbol::function::FuncTable;
 use kagc_symbol::record::RecordTable;
 
-use crate::ctx::{_ScopeMeta, ScopeCtx};
-use crate::scope::{ScopeId, ScopeType};
-use crate::scope_table::ScopeTable;
+use crate::ScopeDatabase;
+use crate::ctx::{ScopeMeta, ScopeCtx};
+use crate::scope::ScopeId;
 
 pub struct ScopeCtxBuilder<'tcx> {
     functions:              Option<FuncTable<'tcx>>,
-    scope_table:            Option<ScopeTable<'tcx>>,
-    current_scope:          Option<_ScopeMeta>,
-    previous_scope:         Option<_ScopeMeta>,
+    scope_db:            	Option<ScopeDatabase<'tcx>>,
+    current_scope:          Option<ScopeMeta>,
+    previous_scope:         Option<ScopeMeta>,
     scope_id_counter:       Option<ScopeId>,
     records:                Option<RecordTable<'tcx>>,
     user_types:             Option<HashSet<String>>,
@@ -31,7 +31,7 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
     pub fn new() -> Self {
         Self {
             functions:          None,
-            scope_table:        None,
+            scope_db:        None,
             current_scope:      None,
             previous_scope:     None,
             scope_id_counter:   None,
@@ -48,17 +48,17 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
         self
     }
 
-    pub fn scopes(mut self, table: ScopeTable<'tcx>) -> Self {
-        self.scope_table = Some(table);
+    pub fn scopes(mut self, table: ScopeDatabase<'tcx>) -> Self {
+        self.scope_db = Some(table);
         self
     }
 
-    pub fn current_scope(mut self, current_scope: _ScopeMeta) -> Self {
+    pub fn current_scope(mut self, current_scope: ScopeMeta) -> Self {
         self.current_scope = Some(current_scope);
         self
     }
 
-    pub fn previous_scope(mut self, p: _ScopeMeta) -> Self {
+    pub fn previous_scope(mut self, p: ScopeMeta) -> Self {
         self.previous_scope = Some(p);
         self
     }
@@ -96,15 +96,7 @@ impl<'tcx> ScopeCtxBuilder<'tcx> {
     pub fn build(self) -> ScopeCtx<'tcx> {
         ScopeCtx {
             functions: self.functions.unwrap(),
-            scopes: self.scope_table.unwrap(),
-            current: Cell::new(self.current_scope.unwrap_or(_ScopeMeta {
-                id: ScopeId::default(),
-                typ: ScopeType::default(),
-            })),
-            previous: Cell::new(self.previous_scope.unwrap_or(_ScopeMeta {
-                id: ScopeId::default(),
-                typ: ScopeType::default(),
-            })),
+            scope_db: self.scope_db.unwrap(),
             next_id: Cell::new(self.scope_id_counter.unwrap_or(ScopeId(0))),
             records: self.records.unwrap(), // unsafe unwrap call
             user_types: RefCell::new(self.user_types.unwrap_or_default()),

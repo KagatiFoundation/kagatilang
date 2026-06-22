@@ -10,3 +10,5 @@ typed-arena = "2.0.2"
 kagc_symbol = { path = "../kagc_symbol" }
 kagc_types = { path = "../kagc_types" }
 kagc_ast = { path = "../kagc_ast" }
+kagc_errors = { path = "../kagc_errors" }
+kagc_utils = { path = "../kagc_utils" }

@@ -25,7 +25,7 @@ pub(crate) type ParseOutput<'tcx> = Option<AstNode<'tcx>>;
 /// This constant is used to indicate that a function ID is not valid or
 /// not set, serving as a sentinel value during parsing and code generation
 /// to detect error states and invalid contexts.
-const INVALID_FUNC_ID: usize = 0xFFFFFFFF;
+const INVALID_ID: usize = 0xFFFFFFFF;
 
 pub type StringLabel = usize;
 
@@ -440,7 +440,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     NodeKind::StmtAST(
                         Stmt::Return(
                             ReturnStmt {
-                                func_id: FuncId(0xFFFFFFFF),
+                                func_id: FuncId(INVALID_ID),
                             }
                         )
                     ),
@@ -464,7 +464,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 kind: NodeKind::StmtAST(
                     Stmt::Return(
                         ReturnStmt {
-                            func_id: FuncId(0xFFFFFFFF),
+                            func_id: FuncId(INVALID_ID),
                         }
                     )
                 ),
@@ -648,7 +648,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         Some(AstNode::binary(
             self.next_node_id(),
             NodeKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
-                symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
+                symtbl_pos: INVALID_ID, // this value will be set by the resolver
                 symbol_type: sym_type,
                 sym_name: id_token.lexeme,
                 ty: var_type
@@ -766,7 +766,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         RecordCreationExpr { 
                             name: id_token.lexeme, 
                             fields,
-                            pool_idx: 0xFFFFFFFF, // this value will be set by the Resolver
+                            pool_idx: INVALID_ID, // this value will be set by the Resolver
                             rec_alias,
                         }
                     )
@@ -1088,7 +1088,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                             rec_name: "", // name will be set by the semantic analyser
                             rec_alias, 
                             field_name,
-                            rel_stack_off: 0xFFFFFFFF, // resolver resolves this
+                            rel_stack_off: INVALID_ID, // resolver resolves this
                             ty: TyKind::None // will be determined by the semantic analyzer
                         }
                     )
@@ -1149,7 +1149,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                         ty: TyKind::None,
                         symbol_name: called_symbol,
                         args: func_args,
-                        id: FuncId(INVALID_FUNC_ID) // resolver sets this value
+                        id: FuncId(INVALID_ID) // resolver sets this value
                     }
                 )
             ),

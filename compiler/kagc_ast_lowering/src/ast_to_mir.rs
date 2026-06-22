@@ -9,8 +9,8 @@ use kagc_symbol::*;
 use kagc_types::builtins::obj::KObjType;
 use kagc_types::*;
 use kagc_const::pool::{ConstPool, KagcConst, PoolIdx};
-use kagc_scope::ctx::ScopeCtx;
-use kagc_scope::scope::ScopeId;
+use kagc_scope::ScopeCtx;
+use kagc_scope::ScopeId;
 
 use kagc_mir::value::{IRValue, IRValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};

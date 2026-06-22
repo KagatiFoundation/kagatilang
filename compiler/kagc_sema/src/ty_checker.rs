@@ -6,8 +6,8 @@ use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
 use kagc_errors::diagnostic::Diagnostic;
-use kagc_scope::ctx::ScopeCtx;
-use kagc_scope::scope::ScopeId;
+use kagc_scope::ScopeCtx;
+use kagc_scope::ScopeId;
 use kagc_symbol::Sym;
 use kagc_symbol::SymTy;
 use kagc_symbol::function::FuncId;
@@ -545,7 +545,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 #[cfg(test)]
 mod tests {
     use kagc_errors::diagnostic::DiagnosticBag;
-    use kagc_scope::{ctx::ScopeCtx, scope::Scope};
+    use kagc_scope::{ScopeCtx, Scope};
     use kagc_symbol::{Sym, function::Func};
     use kagc_types::record::RecordType;
 

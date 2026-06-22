@@ -13,7 +13,8 @@ use kagc_mir::module::MirModule;
 use kagc_lexer::Tokenizer;
 use kagc_parser::Parser;
 use kagc_parser::options::ParserOptions;
-use kagc_scope::ctx::ScopeCtx;
+use kagc_scope::ScopeDatabase;
+use kagc_scope::ScopeCtx;
 use kagc_ctx::StringInterner;
 use kagc_sema::TypeChecker;
 use kagc_sema::binder::NameBinder;
@@ -32,7 +33,8 @@ pub struct CompilerPipeline<'tcx> {
     source_map: &'tcx SourceMap<'tcx>,
     
     str_interner: &'tcx StringInterner<'tcx>,
-    str_arena: &'tcx typed_arena::Arena<String>
+    str_arena: &'tcx typed_arena::Arena<String>,
+	scope_db: &'tcx ScopeDatabase<'tcx>
 }
 
 impl<'tcx> CompilerPipeline<'tcx> {
@@ -41,7 +43,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
         str_interner: &'tcx StringInterner<'tcx>,
         diagnostics: &'tcx DiagnosticBag,
         source_map: &'tcx SourceMap<'tcx>,
-        const_pool: &'tcx mut ConstPool
+        const_pool: &'tcx mut ConstPool,
+		scope_db: &'tcx ScopeDatabase<'tcx>
     ) -> Self {
         Self {
             compile_order: vec![],
@@ -51,7 +54,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
             scope_ctx,
             source_map,
             str_interner,
-            str_arena: str_interner.arena
+            str_arena: str_interner.arena,
+			scope_db
         }
     }
 
@@ -66,8 +70,21 @@ impl<'tcx> CompilerPipeline<'tcx> {
                 bug!("No compilation unit is present with key '{unit_key}'");
             };
         
-            let mut name_binder = NameBinder::new(self.scope_ctx, self.diagnostics, &unit.asts);
+            let mut name_binder = NameBinder::new(
+				self.scope_ctx, 
+				self.diagnostics,
+				&unit.asts,
+				self.scope_db
+			);
+
             name_binder.bind();
+
+			// for node in unit.asts {
+				// let folded_node = kagc_optimization::constant_folding::fold_constants(
+				// 	node,
+				// 	sym_table
+				// );
+			// }
 
 			if self.diagnostics.has_errors() {
 				self.diagnostics.report_all(self.source_map);
@@ -78,7 +95,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
 			if self.diagnostics.has_errors() {
 				self.diagnostics.report_all(self.source_map);
 			}
-            ast_lowerer.lower(&mut unit.asts);
+
+            let _ = ast_lowerer.lower(&mut unit.asts);
         }
         
         let mir_mod = ast_lowerer.ir_builder.build();

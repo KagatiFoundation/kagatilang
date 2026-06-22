@@ -4,8 +4,9 @@
 use kagc_ast::*;
 use kagc_utils::bug;
 use kagc_errors::code::ErrCode;
-use kagc_scope::ctx::ScopeCtx;
-use kagc_scope::scope::ScopeType;
+use kagc_scope::ScopeCtx;
+use kagc_scope::ScopeType;
+use kagc_scope::ScopeDatabase;
 use kagc_symbol::{StorageClass, Sym, SymId, SymTy};
 use kagc_symbol::function::{Func, FuncId};
 use kagc_types::record::{RecordFieldType, RecordType};
@@ -16,7 +17,8 @@ pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
     diagnostics: &'r DiagnosticBag,
     scope: &'tcx ScopeCtx<'tcx>,
     ast_nodes: &'r Vec<AstNode<'tcx>>,
-	current_function_id: Option<FuncId>
+	current_function_id: Option<FuncId>,
+	scope_db: &'tcx ScopeDatabase<'tcx>
 }
 
 pub type BindingResult = Option<SymId>;
@@ -25,14 +27,16 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     pub fn new(
         scope: &'tcx ScopeCtx<'tcx>,
         diags: &'r DiagnosticBag,
-        asts: &'r Vec<AstNode<'tcx>>
+        asts: &'r Vec<AstNode<'tcx>>,
+		scope_db: &'tcx ScopeDatabase<'tcx>
     ) -> Self {
         Self {
             diagnostics: diags,
             scope,
             _local_offset: 0,
             ast_nodes: asts,
-			current_function_id: None
+			current_function_id: None,
+			scope_db
         }
     }
 
@@ -48,17 +52,17 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             AstOp::VarDecl => self.bind_let_stmt(node),
             AstOp::Func => self.bind_func_decl_stmt(node),
             AstOp::RecDecl => self.bind_record_decl_stmt(node),
-            AstOp::Block => self.bind_block_stmt(node),
+            AstOp::Block => self.bind_block_stmt(node, ScopeType::Block),
             AstOp::Loop => self.bind_loop_stmt(node),
             _ => None
         }
     }
 
-    fn bind_block_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
+    fn bind_block_stmt(&mut self, node: &AstNode<'tcx>, scope_type: ScopeType) -> BindingResult {
         let node_id = node.id;
         let block_stmt = node.expect_block_stmt();
 
-        self.scope.push(node_id, ScopeType::Function); // create a new scope and enter
+        self.scope.push(node_id, scope_type); // create a new scope and enter
 
         for stmt in &block_stmt.statements {
             let _ = self.bind_sym(stmt);
@@ -72,12 +76,12 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         node.expect_if_stmt();
 
         if let Some(mid_tree) = &node.mid {
-            self.bind_block_stmt(mid_tree);
+            self.bind_block_stmt(mid_tree, ScopeType::If);
         }
         if let Some(right_tree) = &node.right {
             // right tree is the 'else' block
             if let Some(else_block_tree) = &right_tree.left {
-                self.bind_block_stmt(else_block_tree);
+                self.bind_block_stmt(else_block_tree, ScopeType::If);
             }
         }
         None
@@ -186,7 +190,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     fn bind_loop_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
         node.expect_loop_stmt();
         if let Some(left) = &node.left {
-            return self.bind_block_stmt(left);
+            return self.bind_block_stmt(left, ScopeType::Loop);
         }
         None
     }
@@ -225,70 +229,6 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             None
         }
     }
-
-    /*
-    /// These function should be in TypeChecker
-    /// 
-    fn validate_record_let_binding(&self, rec_name: &'tcx str, value_node: &AST) -> BindingResult {
-        let rec = self.scope.lookup_record(rec_name).ok_or_else(|| {
-            Diagnostic {
-                code: Some(ErrCode::SEM2000),
-                severity: Severity::Error,
-                primary_span: value_node.meta.span,
-                secondary_spans: Vec::with_capacity(0),
-                message: "record not found".to_string(),
-                notes: Vec::with_capacity(0)
-            }
-        })?;
-        if let ASTKind::ExprAST(Expr::RecordCreation(rec_create)) = &value_node.kind {
-            for field in &rec_create.fields {
-                let found = rec.fields.iter().find(|ac_field| ac_field.name == field.name);
-                if found.is_none() {
-                    self.diagnostics.push(
-                        Diagnostic {
-                            code: Some(ErrCode::REC4000),
-                            severity: Severity::Error,
-                            primary_span: value_node.meta.span,
-                            secondary_spans: Vec::with_capacity(0),
-                            message: "unknown record field".to_string(),
-                            notes: Vec::with_capacity(0)
-                        }
-                    );
-                }
-            }
-            for field in &rec.fields {
-                let found = rec_create.fields.iter().find(|ac_field| ac_field.name == field.name);
-                if found.is_none() {
-                    self.diagnostics.push(
-                        Diagnostic {
-                            code: Some(ErrCode::REC4001),
-                            severity: Severity::Error,
-                            primary_span: value_node.meta.span,
-                            secondary_spans: Vec::with_capacity(0),
-                            message: "missing record field".to_string(),
-                            notes: Vec::with_capacity(0)
-                        }
-                    );
-                }
-            }
-        }
-        None
-    }
-
-    fn require_symbol_exists(&self, symbol_name: &'tcx str, meta: &NodeMeta) -> Result<(), Diagnostic> {
-        if self.scope.deep_lookup(None, symbol_name).is_none() {
-            return Err(Diagnostic {
-                code: Some(ErrCode::SEM2000),
-                severity: Severity::Error,
-                primary_span: meta.span,
-                secondary_spans: Vec::with_capacity(0),
-                message: "symbol not found".to_string(),
-                notes: Vec::with_capacity(0)
-            });
-        }
-        Ok(())
-    }
-    */
 
     fn bind_record_decl_stmt(&self, node: &AstNode<'tcx>) -> BindingResult {
         if let NodeKind::StmtAST(Stmt::Record(stmt)) = &node.kind {
