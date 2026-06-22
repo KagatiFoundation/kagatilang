@@ -2,10 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 pub mod regalloc;
-pub mod reg;
-// pub mod codegen;
 pub mod codegen_asm;
-// pub mod codegen_lsvm;
 
 use std::collections::HashMap;
 

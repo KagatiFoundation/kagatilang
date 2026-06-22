@@ -6,7 +6,6 @@ use std::vec;
 
 use kagc_ast::*;
 use kagc_symbol::*;
-use kagc_backend::reg::*;
 use kagc_types::builtins::obj::KObjType;
 use kagc_types::*;
 use kagc_const::pool::{ConstPool, KagcConst, PoolIdx};
@@ -483,7 +482,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .get(ident_expr.sym_name)
             .unwrap_or_else(|| bug!("undefined symbol '{name}'", name = ident_expr.sym_name));
 
-        let reg_sz: RegSize = sym.ty.get().to_reg_size();
+        let reg_sz = sym.ty.get().to_reg_size();
         assert_ne!(reg_sz, 0);
         let load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(sym_off)));
         Ok(load_value_id)
