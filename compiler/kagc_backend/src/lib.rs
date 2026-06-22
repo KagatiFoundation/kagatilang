@@ -3,6 +3,7 @@
 
 pub mod regalloc;
 pub mod codegen_asm;
+pub mod codegen_wasm;
 
 use std::collections::HashMap;
 

@@ -160,7 +160,7 @@ impl<'tcx> AstNode<'tcx> {
         self.children().any(|child| check_node_for_operation(child, op))
     }
 
-    fn children(&self) -> impl Iterator<Item = &Option<Box<AstNode>>> {
+    fn children(&self) -> impl Iterator<Item = &Option<Box<AstNode<'tcx>>>> {
         [&self.left, &self.mid, &self.right].into_iter()
     }
 

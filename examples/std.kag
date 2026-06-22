@@ -1,12 +1,8 @@
 import "std/io";
 
 def main() -> void {
-    let name = "ramesh";
-	let surname = "poudel";
-    loop {
-        print(name);
-		print(" ");
-		print(surname);
-		print("\n");
-    }
+	let num = 1024;
+	loop {
+		print_int(num + 2);
+	}
 }

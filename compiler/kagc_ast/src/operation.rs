@@ -28,7 +28,6 @@ pub enum AstOp {
     LvIdent,
     Assign,
     
-    #[deprecated]
     Glue,
     If,
     Else,

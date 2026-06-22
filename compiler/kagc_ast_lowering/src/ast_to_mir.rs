@@ -461,8 +461,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
         match lit_expr.ty {
             TyKind::I64 => {
-                let const_value = *lit_expr.value.unwrap_i32().expect("No i64 value!");
-                Ok(self.ir_builder.create_move(IRValue::Constant(const_value as i64)))
+                let const_value = *lit_expr.value.unwrap_i64().expect("No i64 value!");
+                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
             TyKind::U8 => {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;

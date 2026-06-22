@@ -944,7 +944,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
-                        Literal::I32(current_token.lexeme.parse::<i32>().unwrap()),
+                        Literal::I64(current_token.lexeme.parse::<i64>().unwrap()),
                         AstOp::IntLit,
                         single_token_meta
                     )
@@ -954,7 +954,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
-                        Literal::U8(current_token.lexeme.parse::<u8>().unwrap()),
+                        Literal::I64(current_token.lexeme.parse::<i64>().unwrap()),
                         AstOp::IntLit,
                         single_token_meta
                     )
