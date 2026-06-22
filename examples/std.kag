@@ -1,8 +1,12 @@
 import "std/io";
 
 def main() -> void {
-    let name111 = 12345;
+    let name = "ramesh";
+	let surname = "poudel";
     loop {
-        print_int(name111);
+        print(name);
+		print(" ");
+		print(surname);
+		print("\n");
     }
 }

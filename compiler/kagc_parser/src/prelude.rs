@@ -1,58 +1,37 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_ast::Expr;
+use kagc_ast::{Expr, Stmt};
 use kagc_errors::diagnostic::DiagnosticBag;
-use kagc_lexer::Tokenizer;
-use kagc_ctx::StringInterner;
+use kagc_token::Token;
 
 use crate::Parser;
 use crate::options::ParserOptions;
 
-pub fn parse_expression<'tcx>(
-    source: &'tcx str, 
+pub fn parse_expr<'tcx>(
+    options: ParserOptions,
     diagnostics: &'tcx DiagnosticBag, 
-    str_interner: &'tcx StringInterner<'tcx>,
+    tokens: Vec<Token<'tcx>>,
 ) -> Option<Expr<'tcx>> {
-    let mut lexer = Tokenizer::new(
-        diagnostics, 
-        str_interner
-    );
-    let tokens = lexer.tokenize(source);
-
     let mut parser = Parser::new(
-        ParserOptions { }, 
+        options, 
         diagnostics, 
         tokens
     );
-    let expr = parser.parse_expression();
-
-    if diagnostics.has_errors() {
-        panic!("{:#?}", diagnostics);
-    }
-    expr
+    
+    parser.parse_expression()
 }
 
-pub fn parse_statement<'tcx>(
-    source: &'tcx str, 
+pub fn parse_stmt<'tcx>(
+    options: ParserOptions,
     diagnostics: &'tcx DiagnosticBag, 
-    str_interner: &'tcx StringInterner<'tcx>,
-) -> Option<Expr<'tcx>> {
-    let mut lexer = Tokenizer::new(
-        diagnostics, 
-        str_interner
-    );
-    let tokens = lexer.tokenize(source);
-
+    tokens: Vec<Token<'tcx>>,
+) -> Option<Stmt<'tcx>> {
     let mut parser = Parser::new(
-        ParserOptions { }, 
+        options, 
         diagnostics, 
         tokens
     );
-    let expr = parser.parse_expression();
-
-    if diagnostics.has_errors() {
-        panic!("{:#?}", diagnostics);
-    }
-    expr
+    
+    parser.parse_statement()
 }
