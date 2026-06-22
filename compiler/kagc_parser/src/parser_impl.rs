@@ -37,16 +37,6 @@ pub struct Parser<'p, 'tcx> where 'tcx: 'p {
     /// Counter which points to the current token index.
     current: usize,
 
-    /// ID of a function that is presently being parsed. This field's
-    /// value is ```INVALID_FUNC_ID``` if the parser is not inside a
-    /// function.
-    current_function_id: usize,
-
-    parsing_function: bool,
-
-    /// Position of next local symbol.
-    next_local_sym_pos: usize,
-
     /// Label generator that is going to be used by string literals only.
     _str_label_: usize,
 
@@ -66,13 +56,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         Self {
             tokens,
             current: 0,
-            current_function_id: INVALID_FUNC_ID,
-            next_local_sym_pos: 0,
             _str_label_: 0,
             current_file: FileId(0),
             options,
             diagnostics: diags,
-            parsing_function: false,
             next_node_id: 0 // start counting at zero
         }
     }
@@ -363,23 +350,18 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         // create function body
         if func_storage_class != StorageClass::EXTERN {
-            self.parsing_function = true;
             let function_body_res = self.parse_block_stmt()?;
-            self.parsing_function = false;
             function_body = Some(Box::new(function_body_res));
         } 
         else {
             self.expect_semicolon();
         }
 
-        let temp_func_id = self.current_function_id;
-        self.current_function_id = INVALID_FUNC_ID; 
-
         // Return AST for function declaration
         Some(AstNode {
             id: self.next_node_id(),
             kind: NodeKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
-                id: FuncId(temp_func_id),
+                id: None, // id will be decided later in the binding stage
                 name: id_token.lexeme,
                 ty: func_return_type,
                 storage_class: func_storage_class,
@@ -425,31 +407,17 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         let param_name = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         let _ = self.consume(TokenKind::T_COLON, "':' expected")?;
         let param_type = self.parse_id_type()?;
-        let param_loc_off: i32 = self.gen_next_local_offset() as i32;
         _ = self.advance();
         Some(
             FuncParam {
                 ty: param_type,
                 name: param_name.lexeme,
-                offset: param_loc_off
+                offset: -1
             }
         )
     }
 
-    fn gen_next_local_offset(&mut self) -> usize {
-        let idx = self.next_local_sym_pos;
-        self.next_local_sym_pos += 1;
-        idx
-    }
-
     fn parse_return_stmt(&mut self) -> ParseOutput<'tcx> {
-        // check whether parser's parsing a function or not
-        let inside_func = self.parsing_function;
-        if !inside_func {
-            self.report_unexpected_token();
-            return None;
-        }
-
         let ret_tok = self.consume(TokenKind::KW_RETURN, "'return' expected")?;
         let pos = SourcePos {
             line: ret_tok.pos.line,
@@ -472,7 +440,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     NodeKind::StmtAST(
                         Stmt::Return(
                             ReturnStmt {
-                                func_id: FuncId(self.current_function_id),
+                                func_id: FuncId(0xFFFFFFFF),
                             }
                         )
                     ),
@@ -496,7 +464,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 kind: NodeKind::StmtAST(
                     Stmt::Return(
                         ReturnStmt {
-                            func_id: FuncId(self.current_function_id),
+                            func_id: FuncId(0xFFFFFFFF),
                         }
                     )
                 ),
@@ -620,8 +588,15 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         if let Some(cond_ast) = &cond_ast {
             if (cond_ast.op < AstOp::EqEq) || (cond_ast.op > AstOp::LThan) {
-                // if operation kind is not "relational operation"
-                panic!("'{:?}' is not allowed in {kind:?}'s condition.", cond_ast.op);
+				let diag = Diagnostic {
+					code: Some(kagc_errors::code::ErrCode::SYN1002),
+					severity: Severity::Error,
+					primary_span: *kagc_span::span::HasSpan::span(cond_ast),
+					secondary_spans: vec![],
+					message: "invalid values for a relational operator".to_string(),
+					notes: vec![]
+				};
+				self.diagnostics.push(diag);
             }
         }
         _ = self.consume(TokenKind::T_RPAREN, "')' expected")?; // match and ignore ')'
@@ -631,16 +606,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     /// Parses a variable declaration statement.
     fn parse_var_decl_stmt(&mut self) -> ParseOutput<'tcx> {
         self.consume(TokenKind::KW_LET, "'let' expected'")?;
-
-        // Being "inside" a function means that we are currently parsing a function's body.
-        let inside_func: bool = true; // self.scope.live_scope_id().0 != 0;
-
-        // Track the storage class for this variable.
-        let mut var_class: StorageClass = StorageClass::GLOBAL;
-
-        if inside_func {
-            var_class = StorageClass::LOCAL;
-        }
 
         // Track the type of this variable.
         //
@@ -679,29 +644,14 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             sym_type = SymTy::Record { name: record_create.name }
         }
 
-        let local_off = if inside_func {
-            if let SymTy::Record { .. } = sym_type {
-                0
-            } 
-            else {
-                self.gen_next_local_offset()
-            }
-        }
-        else {
-            0
-        };
-
         self.expect_semicolon();
         Some(AstNode::binary(
             self.next_node_id(),
             NodeKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
                 symtbl_pos: 0xFFFFFFFF, // this value will be set by the resolver
                 symbol_type: sym_type,
-                class: var_class,
                 sym_name: id_token.lexeme,
-                ty: var_type,
-                local_offset: local_off,
-                func_id: if inside_func { self.current_function_id } else { 0xFFFFFFFF },
+                ty: var_type
             })),
             AstOp::VarDecl,
             Some(assigned_value),

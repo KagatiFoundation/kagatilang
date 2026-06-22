@@ -15,7 +15,8 @@ pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
     _local_offset: usize,
     diagnostics: &'r DiagnosticBag,
     scope: &'tcx ScopeCtx<'tcx>,
-    ast_nodes: &'r Vec<AstNode<'tcx>>
+    ast_nodes: &'r Vec<AstNode<'tcx>>,
+	current_function_id: Option<FuncId>
 }
 
 pub type BindingResult = Option<SymId>;
@@ -30,7 +31,8 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             diagnostics: diags,
             scope,
             _local_offset: 0,
-            ast_nodes: asts
+            ast_nodes: asts,
+			current_function_id: None
         }
     }
 
@@ -40,7 +42,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn bind_sym(&self, node: &AstNode<'tcx>) -> BindingResult  {
+    fn bind_sym(&mut self, node: &AstNode<'tcx>) -> BindingResult  {
         match node.op {
             AstOp::If => self.bind_if_stmt(node),
             AstOp::VarDecl => self.bind_let_stmt(node),
@@ -52,7 +54,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         }
     }
 
-    fn bind_block_stmt(&self, node: &AstNode<'tcx>) -> BindingResult {
+    fn bind_block_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
         let node_id = node.id;
         let block_stmt = node.expect_block_stmt();
 
@@ -66,7 +68,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         None
     }
 
-    fn bind_if_stmt(&self, node: &AstNode<'tcx>) -> BindingResult {
+    fn bind_if_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
         node.expect_if_stmt();
 
         if let Some(mid_tree) = &node.mid {
@@ -81,14 +83,14 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         None
     }
 
-    fn bind_func_decl_stmt(&self, node: &AstNode<'tcx>) -> BindingResult {
+    fn bind_func_decl_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
         let func_decl = node.expect_func_decl_stmt();
         let sym = Sym::new(
             func_decl.name, 
             func_decl.ty, 
             SymTy::Function, 
             func_decl.storage_class, 
-            func_decl.id
+			FuncId(0xFFFFFFFF)
         );
 
         let insert_res = self
@@ -109,7 +111,13 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             );
         };
 
+		if let Ok(sym) = insert_res {
+			sym.function_id.replace(FuncId(insert_res.ok().unwrap().id.get().0));
+		}
+
         let sym_id = insert_res.ok().unwrap().id.get(); // safe to unwrap as insert succeeded
+
+		self.current_function_id = Some(FuncId(sym_id.0));
 
         let mut func_params = vec![];
         for param in &func_decl.params {
@@ -169,10 +177,13 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             }
             self.scope.pop();
         }
+
+		self.current_function_id = None; // done with the function
+
         Some(sym_id)
     }
 
-    fn bind_loop_stmt(&self, node: &AstNode<'tcx>) -> BindingResult {
+    fn bind_loop_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
         node.expect_loop_stmt();
         if let Some(left) = &node.left {
             return self.bind_block_stmt(left);
@@ -185,12 +196,15 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             NodeKind::StmtAST(Stmt::VarDecl(stmt)) => stmt,
             _ => bug!("Invalid node"),
         };
+
+		let func_id = self.current_function_id.expect("current function id must not be None");
+
         let sym = Sym::new(
             stmt.sym_name, 
             stmt.ty, 
             stmt.symbol_type, 
-            stmt.class, 
-            FuncId(stmt.func_id)
+            StorageClass::LOCAL, 
+            func_id
         );
         let id = self.scope.declare_sym(sym);
 

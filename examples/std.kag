@@ -1,8 +1,5 @@
 import "std/io";
 
 def main() -> void {
-	let num = 1024;
-	loop {
-		print_int(num + 2);
-	}
+	let num = 1024 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2;
 }

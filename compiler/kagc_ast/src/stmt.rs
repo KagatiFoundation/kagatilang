@@ -12,7 +12,7 @@ use super::Expr;
 
 #[derive(Clone, Debug)]
 pub struct FuncDeclStmt<'tcx> {
-    pub id: FuncId,
+    pub id: Option<FuncId>,
     pub name: &'tcx str,
     pub ty: TyKind<'tcx>, // return type
     pub storage_class: StorageClass,
@@ -34,14 +34,7 @@ pub struct VarDeclStmt<'tcx> {
     /// Name of the symbol.
     pub sym_name: &'tcx str,
 
-    /// Storage class of the symbol.
-    pub class: StorageClass,
-
     pub ty: TyKind<'tcx>,
-
-    pub local_offset: usize,
-
-    pub func_id: usize,
 
     pub symbol_type: SymTy<'tcx>
 }

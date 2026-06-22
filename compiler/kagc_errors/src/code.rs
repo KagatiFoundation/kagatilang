@@ -6,6 +6,9 @@ pub enum ErrCode {
     /// Invalid numeric type
     SYN1001     = 1001,
 
+	/// Invalid syntax
+	SYN1002		= 1002,
+
     /// Symbol not found
     SEM2000     = 2000,
 
