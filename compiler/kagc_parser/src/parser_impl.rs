@@ -244,7 +244,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                                 RecordFieldType {
                                     name: field.name,
                                     ty: field.typ,
-                                    rel_stack_off: idx
+                                    rel_stack_off: idx as i64
                                 }
                             }).collect::<Vec<RecordFieldType>>() 
                         }
@@ -1088,7 +1088,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                             rec_name: "", // name will be set by the semantic analyser
                             rec_alias, 
                             field_name,
-                            rel_stack_off: INVALID_ID, // resolver resolves this
+                            rel_stack_off: 0xFFFFFFFF, // resolver resolves this
                             ty: TyKind::None // will be determined by the semantic analyzer
                         }
                     )

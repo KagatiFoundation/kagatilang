@@ -115,10 +115,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .iter()
             .map(|&sym| {
                 let param_stack_slot = fn_ctx.alloc_local_slot();
-                fn_ctx.var_offsets.insert(sym.name.to_string(), param_stack_slot.0);
+                fn_ctx.var_offsets.insert(sym.name.to_string(), param_stack_slot);
                 self.ir_builder.create_function_parameter(
                     IrType::from(sym.ty.get()), 
-                    param_stack_slot
+                    StackSlotId(param_stack_slot)
                 )
             }).collect::<Vec<FunctionParam>>();
 
@@ -185,10 +185,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.ir_builder.inst(
             IrInstruction::Store { 
                 src: assigned_expr_value_id, 
-                address: IrAddress::StackSlot(var_stack_off) 
+                address: IrAddress::StackSlot(StackSlotId(var_stack_off))
             }
         );
-        fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
+        fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off);
 
         Ok(self.ir_builder.current_block_id_unchecked())
     }
@@ -255,10 +255,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 self.ir_builder.inst(
                     IrInstruction::Store { 
                         src: eval_value_id, 
-                        address: IrAddress::StackSlot(stack_slot) 
+                        address: IrAddress::StackSlot(StackSlotId(stack_slot))
                     }
                 );
-                Ok(stack_slot)
+                Ok(StackSlotId(stack_slot))
             },
             TyKind::PoolStr => {
                 let lit_val_expr = expr.value.as_litval().unwrap_or_else(|| {
@@ -272,10 +272,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 self.ir_builder.inst(
                     IrInstruction::Store { 
                         src: eval_value_id, 
-                        address: IrAddress::StackSlot(stack_slot) 
+                        address: IrAddress::StackSlot(StackSlotId(stack_slot))
                     }
                 );
-                Ok(stack_slot)
+                Ok(StackSlotId(stack_slot))
             }
             _ => unimplemented!("cannot assign {typ:#?} to a record's field", typ = expr.value.result_type())
         }
@@ -291,13 +291,13 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let data_pointer_value = self.ir_builder.create_load(
             IrAddress::BaseOffset(
                 base_pointer_value, 
-                StackSlotId(unsafe { runtime::GC_OFFSET_CHILDREN as usize })
+                unsafe { runtime::GC_OFFSET_CHILDREN as i64 }
             )
         );
         Ok(self.ir_builder.create_load(
             IrAddress::BaseOffset(
                 data_pointer_value, 
-                StackSlotId(access.rel_stack_off)
+                access.rel_stack_off
             )
         ))
     }
@@ -330,10 +330,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 self.ir_builder.inst(
                     IrInstruction::Store { 
                         src: call_result_value, 
-                        address: IrAddress::StackSlot(stack_slot) 
+                        address: IrAddress::StackSlot(StackSlotId(stack_slot))
                     }
                 );
-                Ok(stack_slot)
+                Ok(StackSlotId(stack_slot))
             },
             _ => bug!("expected a PoolStr but found '{:#?}'", expr)
         }
@@ -361,10 +361,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.ir_builder.inst(
             IrInstruction::Store { 
                 src: call_result_value_id, 
-                address: IrAddress::StackSlot(stack_slot) 
+                address: IrAddress::StackSlot(StackSlotId(stack_slot))
             }
         );
-        Ok(stack_slot)
+        Ok(StackSlotId(stack_slot))
     }
 
     fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {

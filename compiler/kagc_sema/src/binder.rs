@@ -236,7 +236,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                     RecordFieldType {
                         name: field.name,
                         ty: field.ty,
-                        rel_stack_off: idx
+                        rel_stack_off: idx as i64
                     }
                 }).collect::<Vec<RecordFieldType>>()
             };

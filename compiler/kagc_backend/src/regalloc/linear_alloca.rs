@@ -12,7 +12,7 @@ use crate::regalloc::VRegAllocations;
 
 pub struct LinearScanAllocator {
     pub register_file: RegisterFile,
-    stack_slot: usize
+    stack_slot: i64
 }
 
 impl LinearScanAllocator {

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::ops::{Add, Sub};
-
 use kagc_const::pool::PoolIdx;
 
 use crate::{builtin::BuiltinFn, value::*};

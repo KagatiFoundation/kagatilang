@@ -33,5 +33,5 @@ impl<'tcx> RecordType<'tcx> {
 pub struct RecordFieldType<'tcx> {
     pub name: &'tcx str,
     pub ty: TyKind<'tcx>,
-    pub rel_stack_off: usize
+    pub rel_stack_off: i64
 }

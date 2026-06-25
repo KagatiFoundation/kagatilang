@@ -26,13 +26,13 @@ pub trait CodeGenerator {
 /// A utility struct which helps generate offsets.
 #[derive(Debug, Clone, Default)]
 pub struct OffsetGenerator {
-    pub next_off: usize,
-    off_map: HashMap<StackSlotId, usize>,
-    off_size: usize
+    pub next_off: i64,
+    off_map: HashMap<StackSlotId, i64>,
+    off_size: i64
 }
 
 impl OffsetGenerator {
-    pub fn new(off_size: usize) -> Self {
+    pub fn new(off_size: i64) -> Self {
         Self {
             next_off: 0,
             off_map: HashMap::new(),
@@ -41,31 +41,31 @@ impl OffsetGenerator {
     }
 
     /// Get the current offset without incrementing the counter.
-    pub fn current(&self) -> usize {
+    pub fn current(&self) -> i64 {
         self.next_off
     }
 
     /// Get the next offset value.
-    pub fn next(&mut self, slot_id: StackSlotId) -> usize {
+    pub fn next(&mut self, slot_id: StackSlotId) -> i64 {
         let off = self.next_off;
         self.off_map.insert(slot_id, off);
         self.next_off += 1;
         off * self.off_size + 8
     }
 
-    pub fn total_space_used(&self) -> usize {
+    pub fn total_space_used(&self) -> i64 {
         self.next_off * self.off_size
     }
 
-    pub fn get_offset(&self, slot_id: StackSlotId) -> Option<&usize> {
+    pub fn get_offset(&self, slot_id: StackSlotId) -> Option<&i64> {
         self.off_map.get(&slot_id)
     }
 
-    pub fn get_offset_unchecked(&self, slot_id: StackSlotId) -> usize {
+    pub fn get_offset_unchecked(&self, slot_id: StackSlotId) -> i64 {
         (*self.off_map.get(&slot_id).unwrap() * self.off_size) + 8
     }
 
-    pub fn get_or_create_offset(&mut self, slot_id: StackSlotId) -> usize {
+    pub fn get_or_create_offset(&mut self, slot_id: StackSlotId) -> i64 {
         if let Some(off) = self.off_map.get(&slot_id) {
             *off + 8
         }

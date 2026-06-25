@@ -85,7 +85,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         self.current_function_state = Some(CurrentFunctionState {
             is_leaf,
             id: lir_func.id,
-            computed_stack_size: stack_size
+            computed_stack_size: stack_size as i64
         });
 
         // manage function's stack
@@ -219,7 +219,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     }
 
     /// WARNING: Use this function with caution.
-    fn emit_store_reg_by_name(&mut self, reg: &str, off: usize) {
+    fn emit_store_reg_by_name(&mut self, reg: &str, off: i64) {
         let is_leaf = self.get_current_fn_state().is_leaf;
         let stack_size = self.get_current_fn_state().computed_stack_size;
         let r = Register {
@@ -430,7 +430,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     } 
 
     /// Spill register to stack pointer (SP)
-    fn emit_str_relative_sp(&mut self, reg: &Register, stack_size: usize, off: usize) {
+    fn emit_str_relative_sp(&mut self, reg: &Register, stack_size: i64, off: i64) {
         let stack_off = stack_size - off;
         let dest_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
             format!("[sp, #{stack_off}]")
@@ -442,7 +442,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     }
 
     /// Load register from stack pointer (SP)
-    fn emit_ldr_relative_sp(&mut self, reg: &Register, stack_size: usize, off: usize) {
+    fn emit_ldr_relative_sp(&mut self, reg: &Register, stack_size: i64, off: i64) {
         let stack_off = stack_size - off;
         let src_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
             format!("[sp, #{stack_off}]")
@@ -454,7 +454,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     }
 
     /// Spill register to frame pointer (x29)
-    fn emit_str_relative_fp(&mut self, reg: &Register, off: usize) {
+    fn emit_str_relative_fp(&mut self, reg: &Register, off: i64) {
         let dest_addr = if off != 0 { // if not at the beginning of the frame pointer
             format!("[x29, #-{off}]")
         }
@@ -465,7 +465,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     }
 
     /// Load register from frame pointer (x29)
-    fn emit_ldr_relative_fp(&mut self, reg: &Register, off: usize) {
+    fn emit_ldr_relative_fp(&mut self, reg: &Register, off: i64) {
         let src_addr = if off != 0 { // if not at the beginning of the frame pointer
             format!("[x29, #-{off}]")
         }
@@ -620,8 +620,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                 let loc = self.current_allocations().get(&vreg).unwrap_or_else(|| bug!("no allocation found for {vreg:#?}"));
                 match loc {
                     Location::Reg(register) => {
-                        let addr_off = off.0;
-                        self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{addr_off}]\n", d = r1.name, b = register.name));
+                        self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{off}]\n", d = r1.name, b = register.name));
                     },
                     Location::StackSlot(_) => todo!(),
                 }
@@ -642,7 +641,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                 }
             },
             LirAddress::BaseOffset(vreg, off) => {
-                let addr_off = self.offset_generator.off_map.insert(off, off.0 * 8).unwrap_or_else(|| bug!("cannot create an offset"));
+                let addr_off = self.offset_generator.off_map.insert(StackSlotId(off), off * 8).unwrap_or_else(|| bug!("cannot create an offset"));
                 let loc = self.current_allocations().get(&vreg).unwrap();
                 match loc {
                     Location::Reg(register) => self.current_function_code.push_str(&format!("str {s}, [{b}, #{addr_off}]\n", s = r1.name, b = register.name)),

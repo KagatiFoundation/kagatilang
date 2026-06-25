@@ -93,7 +93,7 @@ pub struct RecordFieldAccessExpr<'tcx> {
     /// 
     /// This feild is filled up by the pass `analyzer`.
     /// This field is assigned the value 0(zero) while initializing.
-    pub rel_stack_off: usize,
+    pub rel_stack_off: i64,
 
     pub ty: TyKind<'tcx>
 }

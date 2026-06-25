@@ -10,7 +10,7 @@ pub struct IrValueId(pub usize);
 pub struct ParamPosition(pub usize);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct StackSlotId(pub usize);
+pub struct StackSlotId(pub i64);
 
 impl Add for StackSlotId {
     type Output = Self;
@@ -29,27 +29,13 @@ impl Sub for StackSlotId {
 #[derive(Debug, Clone, Copy)]
 pub enum IrAddress {
 	StackSlot(StackSlotId),
-	BaseOffset(IrValueId, StackSlotId)
-}
-
-impl Add for IrAddress {
-    type Output = IrAddress;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (IrAddress::StackSlot(lhs), IrAddress::StackSlot(rhs)) => IrAddress::StackSlot(StackSlotId(lhs.0 + rhs.0)),
-            (IrAddress::BaseOffset(base, lhs, ), IrAddress::StackSlot(rhs))
-            | (IrAddress::StackSlot(lhs), IrAddress::BaseOffset(base, rhs)) => IrAddress::BaseOffset(base, StackSlotId(lhs.0 + rhs.0)),
-            _ => unreachable!(),
-        }
-    }
+	BaseOffset(IrValueId, i64)
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum IrValue {
     Constant(i64),
     Register(IrValueId), // virtual register
-	Address(IrAddress),
 }
 
 impl IrValue {

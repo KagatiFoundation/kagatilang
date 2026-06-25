@@ -75,5 +75,5 @@ pub enum LirInstruction {
 #[derive(Debug, Clone, Copy)]
 pub enum LirAddress {
     Offset(StackSlotId),
-    BaseOffset(VReg, StackSlotId)
+    BaseOffset(VReg, i64)
 }

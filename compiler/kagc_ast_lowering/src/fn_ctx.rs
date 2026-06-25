@@ -4,7 +4,6 @@ use kagc_ast::AstOp;
 use kagc_mir::block::BlockId;
 use kagc_mir::value::IrValueId;
 use kagc_mir::LabelId;
-use kagc_mir::value::StackSlotId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use crate::loop_ctx::LoopContext;
@@ -16,7 +15,7 @@ pub struct FunctionContext {
     /// Next available stack slot for local variables.
     /// NOTE: The offsets generated using this field are not
     /// the physical slots. They are just placeholders.
-    pub stack_slot_id: usize,
+    pub stack_slot_id: i64,
 
     /// Counter for generating fresh temporary variable IDs.
     pub temp_counter: TempCounter,
@@ -37,7 +36,7 @@ pub struct FunctionContext {
     pub force_label_use: LabelId,
 
     /// Maps variable names to their stack offsets.
-    pub var_offsets: HashMap<String, StackOffset>,
+    pub var_offsets: HashMap<String, i64>,
 
     value_id: usize,
 
@@ -108,13 +107,13 @@ impl FunctionContext {
         self.force_label_use = INVALID_FUNC_ID;
     }
 
-    pub fn alloc_local_slot(&mut self) -> StackSlotId {
+    pub fn alloc_local_slot(&mut self) -> i64 {
         let so = self.stack_slot_id;
         self.stack_slot_id += 1;
-        StackSlotId(so)
+        so
     }
 
-    pub fn current_local_slot(&self) -> StackSlotId {
-        StackSlotId(self.stack_slot_id)
+    pub fn current_local_slot(&self) -> i64 {
+        self.stack_slot_id
     }
 }

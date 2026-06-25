@@ -4,5 +4,5 @@ use kagc_mir::function::FunctionId;
 pub(crate) struct CurrentFunctionState {
     pub id: FunctionId,
     pub is_leaf: bool,
-    pub computed_stack_size: usize
+    pub computed_stack_size: i64
 }

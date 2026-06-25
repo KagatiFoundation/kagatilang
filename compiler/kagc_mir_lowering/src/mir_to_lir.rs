@@ -253,8 +253,7 @@ impl MirToLirLowerer {
             IrValue::Register(irvalue_id) => {
                 let vreg = self.vreg_mapper.get_or_create(irvalue_id);
                 LirOperand::VReg(vreg)
-            },
-            _ => unimplemented!()
+            }
         }
     }
 }
