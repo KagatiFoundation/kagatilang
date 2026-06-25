@@ -510,13 +510,18 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
+		let loop_head_id = self.ir_builder.create_block("loop_head");
         let loop_body_id = self.ir_builder.create_block("loop_body");
         let loop_tail_id = self.ir_builder.create_block("loop_exit"); // Utilizing create_block hierarchy mapping
 
         fn_ctx.enter_loop(LoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
 
-        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_body_id));
-        self.ir_builder.link_blocks(prev_block_id, loop_body_id);
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_head_id));
+        self.ir_builder.link_blocks(prev_block_id, loop_head_id);
+
+        self.ir_builder.switch_to_block(loop_head_id);
+        self.ir_builder.set_terminator(loop_head_id, Terminator::Jump(loop_body_id));
+        self.ir_builder.link_blocks(loop_head_id, loop_body_id);
 
         self.ir_builder.switch_to_block(loop_body_id);
 
@@ -524,8 +529,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let active_tail_block = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
 
         if !self.ir_builder.has_terminator(active_tail_block) {
-            self.ir_builder.set_terminator(active_tail_block, Terminator::Jump(loop_body_id));
-            self.ir_builder.link_blocks(active_tail_block, loop_body_id);
+            self.ir_builder.set_terminator(active_tail_block, Terminator::Jump(loop_head_id));
+            self.ir_builder.link_blocks(active_tail_block, loop_head_id);
         }
 
         fn_ctx.exit_loop();

@@ -274,10 +274,9 @@ impl MirBuilder {
         	let mut finalized_blocks = IndexMap::new();
 
         	for (block_id, b_block) in b_func.blocks {
-            	let terminator = b_block.terminator.unwrap_or(Terminator::Return {
-                	value: None,
-                	target: b_func.anchor.exit_block,
-            	});
+            	let terminator = b_block.terminator.unwrap_or(
+					Terminator::Jump(b_func.anchor.exit_block)
+				);
 
             	let ir_block = IRBasicBlock {
                 	id: block_id,
