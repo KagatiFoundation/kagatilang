@@ -19,7 +19,7 @@ use std::collections::HashMap;
 #[derive(Default, Debug, Hash, Eq, PartialEq, Clone, Copy)]
 pub struct FunctionId(pub usize);
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct FunctionParam {
     pub id: IRValueId,
     pub ty: IRType,
@@ -44,7 +44,7 @@ pub struct IRFunction {
     pub is_leaf: bool
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FunctionAnchor {
     pub id: FunctionId,
     pub entry_block: BlockId,

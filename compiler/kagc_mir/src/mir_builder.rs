@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use indexmap::IndexMap;
@@ -22,24 +21,28 @@ pub struct MirBuilder {
     current_function: Option<FunctionId>,
     current_block: Option<BlockId>,
 
-    function_signatures: HashMap<FunctionId, FunctionSignature>,
-    function_blocks: IndexMap<FunctionId, IndexMap<BlockId, IRBasicBlock>>,
-    function_anchors: IndexMap<FunctionId, FunctionAnchor>,
-
-    block_instructions: HashMap<(FunctionId, BlockId), Vec<IRInstruction>>,
-    block_terminators: HashMap<BlockId, Terminator>,
-
-    block_successors: HashMap<BlockId, HashSet<BlockId>>,
-    block_predecessors: HashMap<BlockId, HashSet<BlockId>>,
-
-    block_names: HashMap<BlockId, &'static str>,
-    function_names: HashMap<FunctionId, String>,
-
-    block_owner: HashMap<BlockId, FunctionId>,
+    pub functions: IndexMap<FunctionId, BuilderFunction>,
 
     function_id: usize,
     block_id: usize,
     value_id: usize,
+}
+
+#[derive(Debug)]
+pub struct BuilderFunction {
+    pub name: String,
+    pub signature: FunctionSignature,
+    pub anchor: FunctionAnchor,
+    pub blocks: IndexMap<BlockId, BuilderBlock>,
+}
+
+#[derive(Debug)]
+pub struct BuilderBlock {
+    pub name: String,
+    pub instructions: Vec<IRInstruction>,
+    pub terminator: Option<Terminator>,
+    pub successors: HashSet<BlockId>,
+    pub predecessors: HashSet<BlockId>,
 }
 
 impl MirBuilder {
@@ -50,64 +53,114 @@ impl MirBuilder {
         return_type: IRType,
         class: StorageClass
     ) -> FunctionAnchor {
-        let id = self.next_function_id();
-        let func_signature = FunctionSignature { 
-            params, 
-            return_type,
-            class
-        }; 
-        self.function_names.insert(id, name);
-        self.function_signatures.insert(id, func_signature); 
-        self.function_blocks.insert(id, IndexMap::new()); 
-        self.current_function = Some(id); 
+        let fid = self.next_function_id();
+        self.current_function = Some(fid);
 
-        // function's entry block
-        let entry_block = self.create_block("function-entry"); 
-        // function's exit block
-        let exit_block = self.create_block("function-exit");
-        self.function_anchors.insert(id, FunctionAnchor::new(id, entry_block, exit_block));
+        let signature = FunctionSignature { params, return_type, class };
         
-        self.switch_to_block(entry_block);
-        FunctionAnchor::new(id, entry_block, exit_block)
+        let mut blocks = IndexMap::new();
+        let entry_block = self.next_block_id();
+        let exit_block = self.next_block_id();
+        
+        blocks.insert(entry_block, BuilderBlock::new("function-entry"));
+        blocks.insert(exit_block, BuilderBlock::new("function-exit"));
+
+        let anchor = FunctionAnchor::new(fid, entry_block, exit_block);
+        
+        let builder_func = BuilderFunction {
+            name,
+            signature,
+            anchor,
+            blocks,
+        };
+
+        self.functions.insert(fid, builder_func);
+        self.current_block = Some(entry_block);
+
+        anchor
     }
 
-    pub fn create_block(&mut self, name: &'static str) -> BlockId {
-        if self.current_function.is_some() {
-            let bid = self.next_block_id();
-            self.current_block = Some(bid);
-            self.block_owner.insert(bid, self.current_function.unwrap());
-            self.block_instructions.insert((self.current_function.unwrap(), bid), vec![]);
-            self.block_successors.insert(bid, HashSet::new());
-            self.block_predecessors.insert(bid, HashSet::new());
-            self.block_names.insert(bid, name);
-            bid
-        }
-        else {
-            bug!("cannot create a block outside function")
-        }
+    pub fn create_block(&mut self, name: &str) -> BlockId {
+        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let bid = self.next_block_id();
+        
+        let func = self.functions.get_mut(&fid).unwrap();
+        func.blocks.insert(bid, BuilderBlock::new(name));
+        
+        self.current_block = Some(bid);
+        bid
     }
 
-    pub fn switch_to_block(&mut self, block_id: BlockId) {
-        assert_ne!(self.current_function, None);
+    pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
+        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let bid = self.current_block.unwrap_or_else(|| bug!("No active block context"));
+        
+        let func = self.functions.get_mut(&fid).unwrap();
+        let block = func.blocks.get_mut(&bid).unwrap();
 
-        if !self.block_instructions.contains_key(&(self.current_function.unwrap(), block_id)) {
-            bug!("cannot switch to a non-existing block");
+        if block.terminator.is_some() {
+            bug!("Cannot append instructions to block ({:?}) after terminator is set", bid);
         }
-        self.current_block = Some(block_id);
+
+        let value_id = instruction.get_value_id();
+        block.instructions.push(instruction);
+        value_id
     }
 
     pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
-        assert_ne!(self.current_function, None);
+        let fid = self.current_function.expect("No active function context");
+        let func = self.functions.get_mut(&fid).unwrap();
+        let block = func.blocks.get_mut(&bid).unwrap();
+        block.terminator = Some(term);
+    }
 
-        if !self.block_instructions.contains_key(&(self.current_function.unwrap(), bid)) {
-            bug!("cannot set a terminator for a non-existing block");
+	pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
+        let fid = self.current_function.expect("No active function context");
+        let func = self.functions.get_mut(&fid).unwrap();
+
+        func.blocks.get_mut(&from).unwrap().successors.insert(to);
+        func.blocks.get_mut(&to).unwrap().predecessors.insert(from);
+    }
+}
+
+impl BuilderBlock {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            instructions: Vec::new(),
+            terminator: None,
+            successors: HashSet::new(),
+            predecessors: HashSet::new(),
         }
-        self.block_terminators.insert(bid, term);
     }
+}
 
-    pub fn has_terminator(&self, bid: BlockId) -> bool {
-        self.block_terminators.contains_key(&bid)
-    }
+impl BuilderBlock {
+	pub fn has_terminator(&self) -> bool {
+		self.terminator.is_some()
+	}
+}
+
+impl MirBuilder {
+   	pub fn switch_to_block(&mut self, block_id: BlockId) {
+    	let fid = self.current_function.unwrap_or_else(|| bug!("cannot switch blocks outside a function"));
+
+    	let func = self.functions.get(&fid).unwrap_or_else(|| bug!("active function not found in builder"));
+
+    	if !func.blocks.contains_key(&block_id) {
+        	bug!("cannot switch to a non-existing block ({:?}) in function {:?}", block_id, fid);
+    	}
+
+    	self.current_block = Some(block_id);
+	}	
+
+	pub fn has_terminator(&self, block_id: BlockId) -> bool {
+    	let fid = self.current_function.unwrap_or_else(|| bug!("cannot switch blocks outside a function"));
+    	let func = self.functions.get(&fid).unwrap_or_else(|| bug!("active function not found in builder"));
+
+		let block = func.blocks.iter().find(|b| *b.0 == block_id).expect("block not found");
+		block.1.has_terminator()
+	}
 
     /// Ensures that control flow can continue from the given block.
     ///
@@ -127,51 +180,27 @@ impl MirBuilder {
     /// while others don't. It guarantees that lowering always has a valid,
     /// “active” block to continue emitting into.
     pub fn ensure_continuation_block(&mut self, continuation: BlockId) -> BlockId {
-        if !self.has_terminator(continuation) {
-            // The block is still open — safe to keep emitting instructions.
+        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let func = self.functions.get(&fid).unwrap_or_else(|| bug!("Active function missing"));
+        let block = func.blocks.get(&continuation).unwrap_or_else(|| {
+            bug!("Continuation block {:?} does not exist in function {:?}", continuation, fid)
+        });
+
+        if block.terminator.is_none() {
             continuation
         } 
         else {
-            // The block is already terminated — create a new block so that
-            // subsequent lowering has a valid place to insert new instructions.
             let new_block = self.create_block("continuation block");
             self.link_blocks(continuation, new_block);
+            self.current_block = Some(new_block);
             new_block
         }
-    }
-
-    pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
-        assert_ne!(self.current_function, None);
-
-        if !self.block_instructions.contains_key(&(self.current_function.unwrap(), from)) 
-            || !self.block_instructions.contains_key(&(self.current_function.unwrap(), to)) {
-            bug!("cannot link non-existing blocks");
-        }
-        self.block_successors.get_mut(&from).unwrap().insert(to);
-        self.block_predecessors.get_mut(&to).unwrap().insert(from);
     }
 
     pub fn link_blocks_multiple(&mut self, from: BlockId, tos: Vec<BlockId>) {
         for to in tos {
             self.link_blocks(from, to);
         }
-    }
-
-    pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
-        assert_ne!(self.current_function, None);
-        let block_id = self.current_block.unwrap_or_else(|| bug!("no active block to insert into"));
-
-        if self.block_terminators.contains_key(&block_id) {
-            bug!("cannot add instructions after a terminator is set in the block({})", block_id.0);
-        }
-
-        let value_id = instruction.get_value_id();
-        self.block_instructions
-            .get_mut(&(self.current_function.unwrap(), block_id))
-            .unwrap_or_else(|| bug!("block not found"))
-            .push(instruction);
-
-        value_id
     }
 
     pub fn occupy_value_id(&mut self) -> IRValueId {
@@ -238,199 +267,44 @@ impl MirBuilder {
             .expect("create_load_const: no value ID created")
     }
 
-    pub fn build(&mut self) -> MirModule {
-        let mut module = MirModule::new();
+    pub fn build(self) -> MirModule {
+    	let mut module = MirModule::new();
 
-        for (func_id, func_anchor) in &mut self.function_anchors {
-            let mut blocks_for_func: IndexMap<BlockId, IRBasicBlock> = IndexMap::new();
+    	for (func_id, b_func) in self.functions {
+        	let mut finalized_blocks = IndexMap::new();
 
-            for (&block_id, &owner_func) in self.block_owner.iter() {
-                if owner_func != *func_id {
-                    continue;
-                }
+        	for (block_id, b_block) in b_func.blocks {
+            	let terminator = b_block.terminator.unwrap_or(Terminator::Return {
+                	value: None,
+                	target: b_func.anchor.exit_block,
+            	});
 
-                let block_instrs = self.block_instructions
-                    .get(&(owner_func, block_id))
-                    .cloned()
-                    .unwrap_or_else(Vec::new);
+            	let ir_block = IRBasicBlock {
+                	id: block_id,
+                	instructions: b_block.instructions,
+                	successors: b_block.successors,
+                	predecessors: b_block.predecessors,
+                	terminator,
+                	name: b_block.name,
+            	};
+            	finalized_blocks.insert(block_id, ir_block);
+        	}
 
-                let block_terminator = self
-                    .block_terminators
-                    .get(&block_id)
-                    .cloned()
-                    .unwrap_or({
-                        Terminator::Return {
-                            value: None,
-                            target: func_anchor.exit_block,
-                        }
-                    });
+        	let function = IRFunction {
+            	signature: b_func.signature,
+            	id: func_id,
+            	name: b_func.name.clone(),
+            	blocks: finalized_blocks,
+            	entry_block: b_func.anchor.entry_block,
+            	exit_block: b_func.anchor.exit_block,
+            	is_leaf: false,
+        	};
 
-                let ir_block = IRBasicBlock {
-                    id: block_id,
-                    instructions: block_instrs,
-                    successors: self.block_successors
-                        .get(&block_id)
-                        .cloned()
-                        .unwrap_or_else(HashSet::new),
-                    predecessors: self.block_predecessors
-                        .get(&block_id)
-                        .cloned()
-                        .unwrap_or_else(HashSet::new),
-                    terminator: block_terminator,
-                    name: self.block_names
-                        .get(&block_id)
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| format!("block_{}", block_id.0)),
-                };
+        	module.add_function(function);
+    	}
 
-                blocks_for_func.insert(block_id, ir_block);
-            }
-
-            if let Some(signature) = self.function_signatures.get(func_id) {
-                let function = IRFunction {
-                    signature: signature.clone(),
-                    id: *func_id,
-                    name: self.function_names.get(func_id).unwrap().clone(),
-                    blocks: blocks_for_func,
-                    entry_block: func_anchor.entry_block,
-                    exit_block: func_anchor.exit_block,
-                    is_leaf: false,
-                };
-
-				println!("{function:#?}");
-
-				// MirBuilder::_run_register_allocation(&function);
-
-                module.add_function(function);
-            }
-        }
-        module
-    }
-
-	fn _run_register_allocation(func: &IRFunction) {
-		let analyzer = crate::function::LivenessAnalyzer::new(func);
-		let global_liveness = analyzer.compute_global_liveness();
-
-		let graph = crate::interference_graph::InterferenceGraph::build(func, &global_liveness);
-
-		let target_regs = vec![
-			"r0".to_string(), "r1".to_string(), 
-			"r2".to_string(), "r3".to_string()
-		];
-		let allocator = crate::graph_allocator::GraphColoringAllocator::new(target_regs);
-		let result = allocator.allocate(graph);
-
-		println!("Allocated Registers: {:?}", result.mapping);
+    	module
 	}
-
-    pub fn build2(&mut self) -> MirModule {
-        assert_ne!(self.current_function, None);
-
-        let mut module = MirModule::new();
-        for (func_id, func_blocks) in &mut self.function_blocks {
-            let func_anchor = self
-                .function_anchors
-                .get(func_id)
-                .unwrap_or_else(|| bug!("function is not anchored"));
-
-            let function_block_ids: Vec<BlockId> = func_blocks.iter().map(|fb| *fb.0).collect();
-            for block_id in function_block_ids {
-                if let Some(block_instrs) = self.block_instructions.get(&(*func_id, block_id)) {
-                    let block_terminator = self
-                        .block_terminators
-                        .get(&block_id)
-                        .cloned()
-                        .unwrap_or({ 
-                            Terminator::Return { 
-                                    value: None, 
-                                    target: func_anchor.exit_block
-                                }
-                            }
-                        );
-                    
-                    let ir_block = IRBasicBlock { 
-                        id: block_id, 
-                        instructions: block_instrs.clone(), 
-                        successors: self.block_successors.get(&block_id).unwrap().clone(), 
-                        predecessors: self.block_predecessors.get(&block_id).unwrap().clone(),
-                        terminator: block_terminator.clone(),
-                        name: self.block_names.get(&block_id).unwrap().to_string()
-                    };
-                    func_blocks.insert(
-                        block_id,
-                        ir_block
-                    );
-
-                    if let (Some(signature), Some(anchor)) = (
-                        self.function_signatures.get(func_id),
-                        self.function_anchors.get(func_id)
-                    ) {
-                        let function = IRFunction {
-                            signature: signature.clone(),
-                            id: *func_id,
-                            name: self.function_names.get(func_id).unwrap().clone(),
-                            blocks: func_blocks.clone(),
-                            entry_block: anchor.entry_block,
-                            exit_block: anchor.exit_block,
-                            is_leaf: false
-                        };
-                        module.add_function(function);
-                    }
-                }
-                else {
-                    bug!("no instructions found for given function id and block id pair: ({fid:#?}, {bid:#?})", fid = func_id, bid = block_id);
-                }
-            }
-        }
-        module
-    }
-
-    pub fn get_block(&self, block_id: BlockId) -> Option<&IRBasicBlock> {
-        let curr_func_id = self.current_function.unwrap_or_else(|| bug!("not active function"));
-        let func_blocks = self.function_blocks.get(&curr_func_id).unwrap();
-        func_blocks.get(&block_id)
-    }
-
-    pub fn get_block_unchecked(&self, block_id: BlockId) -> &IRBasicBlock {
-        self.get_block(block_id).unwrap_or_else(|| bug!("no block found in current function with the ID {block_id:?}"))
-    }
-
-    pub fn get_block_mut(&mut self, block_id: BlockId) -> Option<&mut IRBasicBlock> {
-        let curr_func_id = self.current_function.unwrap_or_else(|| bug!("not active function"));
-        let func_blocks = self.function_blocks.get_mut(&curr_func_id).unwrap();
-        func_blocks.get_mut(&block_id)
-    }
-
-    pub fn get_block_mut_unchecked(&mut self, block_id: BlockId) -> &mut IRBasicBlock {
-        self.get_block_mut(block_id).unwrap_or_else(|| bug!("no block found in current function with the ID {block_id:?}"))
-    }
-
-    pub fn current_block_id(&self) -> Option<BlockId> {
-        assert_ne!(self.current_function, None);
-
-        let curr_block = self.current_block.unwrap_or_else(|| bug!("no active block"));
-        if self.block_instructions.contains_key(&(self.current_function.unwrap(), curr_block)) {
-            Some(curr_block)
-        }
-        else {
-            None
-        }
-    }
-
-    pub fn current_block_id_unchecked(&self) -> BlockId {
-        self.current_block_id().unwrap_or_else(|| bug!("no current block set"))
-    }
-
-    pub fn current_block_mut(&mut self) -> Option<&mut IRBasicBlock> {
-        let curr_func_id = self.current_function.unwrap_or_else(|| bug!("not active function"));
-        let func_blocks = self.function_blocks.get_mut(&curr_func_id).unwrap();
-        let curr_block = self.current_block.unwrap_or_else(|| bug!("no active block"));
-        func_blocks.get_mut(&curr_block)
-    }
-
-    pub fn current_block_mut_unchecked(&mut self) -> &mut IRBasicBlock {
-        self.current_block_mut().unwrap_or_else(|| bug!("no current block set"))
-    }
 
     fn next_function_id(&mut self) -> FunctionId {
         let fid = self.function_id;
@@ -449,93 +323,41 @@ impl MirBuilder {
         self.value_id += 1;
         IRValueId(vid)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use kagc_symbol::StorageClass;
-
-    use crate::block::{BlockId, Terminator};
-    use crate::mir_builder::MirBuilder;
-    use crate::instruction::IRInstruction;
-    use crate::types::IRType;
-    use crate::value::{IRValue, IRValueId};
-
-    #[test]
-    fn test_builder() {
-        let mut b = MirBuilder::default();
-        let fn_ctx = b.create_function("add".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL);
-        b.inst(
-            IRInstruction::Add {
-                result: IRValueId(0),
-                lhs: IRValue::Constant(32),
-                rhs: IRValue::Constant(32)
-            }
-        );
-        b.inst(
-            IRInstruction::Mov { 
-                result: IRValueId(1), 
-                src: IRValue::Var(IRValueId(0)) 
-            }
-        );
-
-        b.set_terminator(
-            fn_ctx.entry_block, 
-            Terminator::Return {
-                value: Some(IRValueId(3)),
-                target: fn_ctx.exit_block
-            }
-        );
-
-        assert_eq!(b.block_terminators.len(), 1);
-
-        let module = b.build();
-        assert!(module.functions.contains_key(&fn_ctx.id));
-
-        let func = module.functions.get(&fn_ctx.id).unwrap();
-        assert_eq!(func.blocks.len(), 1);
-        assert_eq!(func.entry_block, BlockId(0));
+    pub fn current_block_id(&self) -> Option<BlockId> {
+        let fid = self.current_function?;
+        let bid = self.current_block?;
         
-        assert!(func.blocks.contains_key(&fn_ctx.entry_block));
-
-        let e_block = func.blocks.get(&fn_ctx.entry_block).unwrap();
-        assert_eq!(
-            e_block.terminator, 
-            Terminator::Return {
-                value: Some(IRValueId(3)),
-                target: fn_ctx.exit_block
-            }
-        );
-
-        assert_eq!(e_block.instructions.len(), 2);
+        let func = self.functions.get(&fid)?;
+        if func.blocks.contains_key(&bid) {
+            Some(bid)
+        } else {
+            None
+        }
     }
 
-    #[test]
-    fn test_blocks_linking() {
-        let mut builder = MirBuilder::default();
-        let fn_ctx = builder.create_function("test_fn".to_owned(), vec![], IRType::Void, StorageClass::GLOBAL);
-        let f_bid = fn_ctx.entry_block;
-        let _ = builder.create_move(IRValue::Constant(12345)); // variable, maybe?
+    pub fn current_block_id_unchecked(&self) -> BlockId {
+        self.current_block_id()
+            .unwrap_or_else(|| bug!("No active basic block set in the current context"))
+    }
 
-        let loop_id = builder.create_block("loop-test-block");
-        builder.link_blocks(f_bid, loop_id);
+    pub fn current_block_mut(&mut self) -> Option<&mut BuilderBlock> {
+        let fid = self.current_function?;
+        let bid = self.current_block?;
+        
+        let func = self.functions.get_mut(&fid)?;
+        func.blocks.get_mut(&bid)
+    }
 
-        assert!(builder.block_successors.contains_key(&f_bid));
-        assert!(builder.block_predecessors.contains_key(&loop_id));
+    pub fn current_block_mut_unchecked(&mut self) -> &mut BuilderBlock {
+        let fid = self.current_function
+            .unwrap_or_else(|| bug!("No active function context"));
+        let bid = self.current_block
+            .unwrap_or_else(|| bug!("No active block context"));
 
-        // function's entry block has no predecessors
-        assert_eq!(builder.block_predecessors.get(&f_bid).unwrap(), &HashSet::new());
-        assert_eq!(builder.block_successors.get(&f_bid).unwrap().len(), 1);
-
-        assert_eq!(
-            vec![&f_bid],
-            builder.block_predecessors
-                .get(&loop_id)
-                .unwrap()
-                .iter()
-                .collect::<Vec<&BlockId>>()
-        );
+        self.functions
+            .get_mut(&fid)
+            .and_then(|func| func.blocks.get_mut(&bid))
+            .unwrap_or_else(|| bug!("Active block {:?} not found inside function {:?}", bid, fid))
     }
 }

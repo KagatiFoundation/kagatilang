@@ -95,12 +95,6 @@ impl FunctionContext {
         id
     }
 
-	#[deprecated(note = "This function should not be used as it is. This needs a refactor to use a list to track all previous AST kinds.")]
-    pub fn change_parent_ast_kind(&mut self, new_op: AstOp) {
-        self.prev_ast_kind = Some(self.parent_ast_kind);
-        self.parent_ast_kind = new_op;
-    }
-
     pub fn reset_parent_ast_kind(&mut self) {
         if self.prev_ast_kind.is_some() {
             self.parent_ast_kind = self.prev_ast_kind.unwrap();

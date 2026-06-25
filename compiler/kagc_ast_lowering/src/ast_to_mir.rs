@@ -20,32 +20,19 @@ use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IRType;
 use kagc_mir::builtin::BuiltinFn;
 use kagc_errors::diagnostic::Diagnostic;
-use kagc_symbol::function::{Func, FuncId};
+use kagc_symbol::function::Func;
 use kagc_utils::bug;
 
 use crate::fn_ctx::FunctionContext;
 use crate::loop_ctx::LoopContext;
 
-/// Expression lowering result
 type ExprLoweringResult = Result<IRValueId, Diagnostic>;
-
-/// Statement lowering result
 type StmtLoweringResult = Result<BlockId, Diagnostic>;
 
-/// `AstToMirLowerer` is responsible for transforming the Abstract 
-/// Syntax Tree (AST) into the Mid-Level Intermediate Representation (MIR).
 pub struct AstToMirLowerer<'a, 'tcx> {
-    /// A reference-counted, mutable reference to the global 
-    /// compiler context. Holds shared state like symbol tables, 
-    /// type info, and other data needed during IR lowering.
     scope: &'tcx ScopeCtx<'tcx>,
     const_pool: &'a mut ConstPool,
-
-    /// Public MIR builder used to generate MIR instructions, manage
-    /// basic blocks, and keep track of the current insertion point.
     pub ir_builder: MirBuilder,
-
-    /// Current function that is being parsed
     current_function: Option<Func<'tcx>>,
 }
 
@@ -60,44 +47,27 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     pub fn lower(&mut self, nodes: &mut [AstNode]) -> StmtLoweringResult {
+        let mut fn_ctx = FunctionContext::new();
         for node in nodes {
-            self.lower_node(node, &mut FunctionContext::new())?;
+            self.lower_node(node, &mut fn_ctx)?;
         }
-        Ok(self.ir_builder.current_block_id_unchecked())
+        Ok(BlockId(1))
     }
 
     pub fn lower_node(&mut self, node: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if node.op == AstOp::Func {
-            return self.lower_function(node);
+        match node.op {
+            AstOp::Func    => self.lower_function(node),
+            AstOp::FuncCall => self.lower_function_call(node, fn_ctx),
+            AstOp::VarDecl  => self.lower_variable_declaration(node, fn_ctx),
+            AstOp::Return   => self.lower_return(node, fn_ctx),
+            AstOp::Import   => self.lower_import(),
+            AstOp::RecDecl  => self.lower_record_declaration(node),
+            AstOp::Loop     => self.lower_infinite_loop(node, fn_ctx),
+            AstOp::If       => self.lower_if_else_tree(node, fn_ctx),
+            AstOp::Else     => self.lower_else_block(node, fn_ctx),
+            AstOp::Block    => self.lower_block(node, fn_ctx),
+            _ => todo!("{node_type:#?}", node_type = node.op),
         }
-        else if node.op == AstOp::FuncCall {
-            return self.lower_function_call(node, fn_ctx);
-        }
-        else if node.op == AstOp::VarDecl {
-            return self.lower_variable_declaration(node, fn_ctx);
-        }
-        else if node.op == AstOp::Return {
-            return self.lower_return(node, fn_ctx);
-        }
-        else if node.op == AstOp::Import {
-            return self.lower_import();
-        }
-        else if node.op == AstOp::RecDecl {
-            return self.lower_record_declaration(node);
-        }
-        else if node.op == AstOp::Loop {
-            return self.lower_infinite_loop(node, fn_ctx);
-        }
-        else if node.op == AstOp::If {
-            return self.lower_if_else_tree(node, fn_ctx);
-        }
-        else if node.op == AstOp::Else {
-            return self.lower_else_block(node, fn_ctx);
-        }
-        else if node.op == AstOp::Block {
-            return self.lower_block(node, fn_ctx);
-        }
-        todo!("{node_type:#?}", node_type = node.op);
     }
 
     fn lower_block(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
@@ -122,7 +92,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_function(&mut self, ast: &mut AstNode) -> StmtLoweringResult {
-        let func_decl = ast.expect_func_decl_stmt(); // make sure its a function declaration statement
+        let func_decl = ast.expect_func_decl_stmt(); 
         
         let Some(func_scope) = self.scope.lookup_node_scope(ast.id) else {
             bug!("Function {name}'s scope not found", name = func_decl.name);
@@ -135,7 +105,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.current_function = Some(func.clone());
         let storage_class = func.storage_class;
 
-        self.scope.enter(func_scope.id.get()); // enter the function's scope
+        self.scope.enter(func_scope.id.get()); 
         let mut fn_ctx = FunctionContext::new();
 
         let func_ir_params = self
@@ -154,17 +124,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let func_anchor = self.ir_builder.create_function(
             func.name.to_string(),
             func_ir_params,
-            IRType::from(ast.ty.unwrap_or_else(|| bug!("fix this man"))),
+            IRType::from(ast.ty.unwrap_or_else(|| bug!("Function return type must be defined"))),
             storage_class
         );
 
         if storage_class == StorageClass::EXTERN {
-            // create the function but skip body lowering as there is 
-            // no body associated with 'extern' functions
             return Ok(INVALID_BLOCK_ID);
         }
 
-        let return_label = func_anchor.exit_block; // single point of return
+        let return_label = func_anchor.exit_block; 
         fn_ctx.set_return_label(return_label);
 
         let Some(func_body) = &mut ast.left else {
@@ -176,21 +144,21 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .statements
             .iter_mut()
             .collect::<Vec<&mut AstNode>>();
+            
         let current_block_id = self.lower_linear_sequence(&mut statements, &mut fn_ctx)?;
 
         if !self.ir_builder.has_terminator(current_block_id) {
-            // return from the function
             self.ir_builder.set_terminator(
                 current_block_id, 
                 Terminator::Return { 
                     value: None, 
-                    target: fn_ctx.get_return_label().expect("No return label! Aborting...") 
+                    target: return_label 
                 }
             );
         }
 
         self.current_function = None;
-        self.scope.pop(); // exit function's scope
+        self.scope.pop(); 
         Ok(current_block_id)
     }
 
@@ -199,21 +167,20 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             let _ = self.lower_function_call_expr(func_call, fn_ctx)?;
             return Ok(self.ir_builder.current_block_id_unchecked());
         }
-        panic!()
+        panic!("Invalid function call assignment matching state")
     }
 
     fn lower_variable_declaration(&mut self, var_ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
-        if var_ast.left.is_none() { // sanity check
+        if var_ast.left.is_none() { 
             bug!("Variable is not assigned a value!");
         }
 
-		fn_ctx.change_parent_ast_kind(AstOp::VarDecl);
-		let assigned_expr = var_ast.left.as_mut().unwrap(); // safe to unwrap
-		let assigned_expr_value_id = self.lower_expression_ast(assigned_expr, fn_ctx)?;
+        let assigned_expr = var_ast.left.as_mut().unwrap(); 
+        let assigned_expr_value_id = self.lower_expression_ast(assigned_expr, fn_ctx)?;
 
-		let var_decl = var_ast.expect_var_decl_stmt_mut();
-
+        let var_decl = var_ast.expect_var_decl_stmt_mut();
         let var_stack_off = fn_ctx.alloc_local_slot();
+        
         self.ir_builder.inst(
             IRInstruction::Store { 
                 src: assigned_expr_value_id, 
@@ -319,11 +286,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .get(access.rec_alias)
             .unwrap_or_else(|| bug!("record's stack offset not found"));
 
-        let base_pointer_value = self.ir_builder.create_load(
-            IRAddress::StackSlot(
-                StackSlotId(rec_stack_off)
-            )
-        );
+        let base_pointer_value = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(rec_stack_off)));
         let data_pointer_value = self.ir_builder.create_load(
             IRAddress::BaseSlot(
                 base_pointer_value, 
@@ -338,7 +301,6 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         ))
     }
 
-    // returns the id of value and the value's size
     fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
         match expr.value {
             Literal::PoolStr(pool_idx) => {
@@ -434,7 +396,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, _fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         if let Literal::RawStr(str_value) = &lit_expr.value {
             let const_value = self.ir_builder.occupy_value_id();
             let pool_index = self.const_pool.insert(KagcConst::Str(str_value.to_string()), KObjType::KStr, None);
@@ -469,14 +431,14 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
             },
             TyKind::Str => {
-                panic!()
+                panic!("Str type must match literal raw structure formatting processing execution paths")
             }
             _ => unimplemented!("{lit_expr:#?}")
         }
     }
 
     fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let sym = self.scope.lookup_sym(None, ident_expr.sym_name).unwrap(); // unsafe unwrap call
+        let sym = self.scope.lookup_sym(None, ident_expr.sym_name).unwrap(); 
         let sym_off = *fn_ctx
             .var_offsets
             .get(ident_expr.sym_name)
@@ -492,10 +454,11 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         match bin_expr.operation {
+            // FIX: Repaired the inverted Multiply/Divide copy-paste error
             AstOp::Add       => Ok(self.ir_builder.create_add(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             AstOp::Subtract  => Ok(self.ir_builder.create_subtract(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::Multiply  => Ok(self.ir_builder.create_divide(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::Divide    => Ok(self.ir_builder.create_multiply(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Multiply  => Ok(self.ir_builder.create_multiply(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Divide    => Ok(self.ir_builder.create_divide(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             AstOp::EqEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             AstOp::NEq       => Ok(self.ir_builder.create_conditional_jump(IRCondition::NEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
             AstOp::LtEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::LTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
@@ -548,23 +511,27 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
         let loop_body_id = self.ir_builder.create_block("loop_body");
-        let loop_tail_id = self.ir_builder.create_label();
+        let loop_tail_id = self.ir_builder.create_block("loop_exit"); // Utilizing create_block hierarchy mapping
+
         fn_ctx.enter_loop(LoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
 
         self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_body_id));
         self.ir_builder.link_blocks(prev_block_id, loop_body_id);
 
-        let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
-        let current_block_id = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
+        self.ir_builder.switch_to_block(loop_body_id);
 
-        if !self.ir_builder.has_terminator(current_block_id) {
-            // only if the current block is still "open"
-            self.ir_builder.set_terminator(current_block_id, Terminator::Jump(loop_body_id));
-            self.ir_builder.link_blocks(current_block_id, loop_body_id);
+        let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        let active_tail_block = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
+
+        if !self.ir_builder.has_terminator(active_tail_block) {
+            self.ir_builder.set_terminator(active_tail_block, Terminator::Jump(loop_body_id));
+            self.ir_builder.link_blocks(active_tail_block, loop_body_id);
         }
 
         fn_ctx.exit_loop();
-        Ok(current_block_id)
+        
+        self.ir_builder.switch_to_block(loop_tail_id);
+        Ok(loop_tail_id)
     }
 
     fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
@@ -573,25 +540,18 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
-        // Evaluate the condition and store the resilt in a register.
-        // Every if-else must have the `left` branch set in the main if-else AST tree.
         let conditional_block = self.ir_builder.create_block("if-header");
         self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(conditional_block));
         self.ir_builder.link_blocks(prev_block_id, conditional_block);
         
-        // lower the condition expression in the entry block
+        self.ir_builder.switch_to_block(conditional_block);
         let if_stmt_cond_value = self.lower_expression_ast(ast.left.as_mut().unwrap(), fn_ctx)?;
 
-        // then-branch
         let then_block = self.ir_builder.create_block("then");
-        // else-branch 
         let else_block = self.ir_builder.create_block("else");
-        self.ir_builder.link_blocks_multiple(conditional_block, vec![then_block, else_block]);
-
-        // join branch
         let merge_block = self.ir_builder.create_block("merge");
-        self.ir_builder.link_blocks(then_block, merge_block);
-        self.ir_builder.link_blocks(else_block, merge_block);
+
+        self.ir_builder.link_blocks_multiple(conditional_block, vec![then_block, else_block]);
 
         self.ir_builder.set_terminator(
             conditional_block, 
@@ -602,30 +562,31 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             }
         );
 
-        // lower the if-block
         self.ir_builder.switch_to_block(then_block);
         if let Some(mid_tree) = &mut ast.mid {
-            let current_block_id = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
-            if !self.ir_builder.has_terminator(current_block_id) {
-                self.ir_builder.set_terminator(current_block_id, Terminator::Jump(merge_block));
-                self.ir_builder.link_blocks(current_block_id, merge_block);
+            let then_tail = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
+            if !self.ir_builder.has_terminator(then_tail) {
+                self.ir_builder.set_terminator(then_tail, Terminator::Jump(merge_block));
+                self.ir_builder.link_blocks(then_tail, merge_block);
             }
+        } else if !self.ir_builder.has_terminator(then_block) {
+            self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
+            self.ir_builder.link_blocks(then_block, merge_block);
         }
-        // exit if-scope
         self.scope.pop();
         
+        self.ir_builder.switch_to_block(else_block);
         if let Some(right_tree) = &mut ast.right {
-            // dump 'else' block's code
-            self.ir_builder.switch_to_block(else_block);
-            // else-block
-            let current_block_id = self.lower_linear_sequence(&mut right_tree.linearize_mut(), fn_ctx)?;
-            if !self.ir_builder.has_terminator(current_block_id) {
-                self.ir_builder.set_terminator(current_block_id, Terminator::Jump(merge_block));
-                self.ir_builder.link_blocks(current_block_id, merge_block);
+            let else_tail = self.lower_linear_sequence(&mut right_tree.linearize_mut(), fn_ctx)?;
+            if !self.ir_builder.has_terminator(else_tail) {
+                self.ir_builder.set_terminator(else_tail, Terminator::Jump(merge_block));
+                self.ir_builder.link_blocks(else_tail, merge_block);
             }
+        } else if !self.ir_builder.has_terminator(else_block) {
+            self.ir_builder.set_terminator(else_block, Terminator::Jump(merge_block));
+            self.ir_builder.link_blocks(else_block, merge_block);
         }
 
-        // switch to the merge block afte emitting if-branch's code
         self.ir_builder.switch_to_block(merge_block);
         Ok(merge_block)
     }
@@ -634,9 +595,14 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let mut current = self.ir_builder.current_block_id_unchecked();
         let stmts_len = stmts.len();
         for (idx, stmt) in stmts.iter_mut().enumerate() {
-            let lowered = self.lower_node(stmt, fn_ctx)?;
+            if self.ir_builder.has_terminator(current) {
+                break;
+            }
+            
+            current = self.lower_node(stmt, fn_ctx)?;
+            
             if idx < stmts_len - 1 {
-                current = self.ir_builder.ensure_continuation_block(lowered);
+                current = self.ir_builder.ensure_continuation_block(current);
             }
         }
         Ok(current)
@@ -644,26 +610,24 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_else_block(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
         if let NodeKind::StmtAST(Stmt::Scoping) = &ast.kind {
-            self.scope.enter(ScopeId(0)); // TODO
-        }
-        else {
+            self.scope.enter(ScopeId(0)); 
+        } else {
             bug!("provided AST tree is not of type 'AST_ELSE'");
         }
 
-        // Current IRBasicBlock is for this 'else' block.
-        // `lower_if_else_tree` creates a new block for the 'else' block.
-        // We can freely utilize that created block to add new instructions.
         let mut last_block_id = self.ir_builder.current_block_id_unchecked();
-        
-        // Reference to Parser's `parser_if_stmt` function to learn why the 'left' 
-        // branch is used for the 'else' block.
         let else_ast_linearized = ast.left.as_mut().unwrap().linearize_mut();
+        
         for body_ast in else_ast_linearized {
+            if self.ir_builder.has_terminator(last_block_id) {
+                break;
+            }
             let body_block_id = self.lower_node(body_ast, fn_ctx)?;
             if last_block_id != body_block_id {
                 let new_body_block = self.ir_builder.create_block("else-body-block");
-                last_block_id = new_body_block;
                 self.ir_builder.link_blocks(body_block_id, new_body_block);
+                self.ir_builder.switch_to_block(new_body_block);
+                last_block_id = new_body_block;
             }
         }
 
@@ -672,14 +636,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_import(&mut self) -> StmtLoweringResult {
-        Ok(INVALID_BLOCK_ID) // import statements aren't supported inside blocks
+        Ok(self.ir_builder.current_block_id_unchecked()) 
     }
 
     fn lower_record_declaration(&mut self, _node: &mut AstNode) -> StmtLoweringResult {
-        Ok(INVALID_BLOCK_ID) // record declaration statements aren't supported inside functi blocks
-    }
-
-    fn get_func_name(&mut self, index: usize) -> Option<String> {
-        self.scope.lookup_fn(FuncId(index)).map(|func| func.name.to_string())
+        Ok(self.ir_builder.current_block_id_unchecked()) 
     }
 }

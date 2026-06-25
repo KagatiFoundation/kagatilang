@@ -26,7 +26,5 @@ mod ast_to_mir;
 mod fn_ctx;
 mod typedefs;
 mod loop_ctx;
-mod ast_lowerer;
 
 pub use ast_to_mir::AstToMirLowerer;
-pub use ast_lowerer::*;
