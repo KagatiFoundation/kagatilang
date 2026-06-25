@@ -1,7 +1,9 @@
 def main() -> void {
-	let num = 12334;
+	loop {
+		let num = 12334;
+	}
 
 	loop {
-		let a = 12;
+		let num2 = 12222;
 	}
 }

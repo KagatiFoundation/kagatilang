@@ -88,7 +88,6 @@ impl<'tcx> CompilerPipeline<'tcx> {
         }
         
         let mir_mod = ast_lowerer.ir_builder.build();
-		println!("{mir_mod:#?}");
         self.compile_mir_modules_into_asm(&[mir_mod]);
 
         self.diagnostics.report_all(self.source_map);

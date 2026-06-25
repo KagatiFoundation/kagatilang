@@ -10,7 +10,7 @@ use kagc_lir::operand::LirOperand;
 use kagc_lir::function::LirFunction;
 use kagc_lir::block::LirBasicBlock;
 use kagc_lir::vreg::VReg;
-use kagc_mir::block::{BlockId, INVALID_BLOCK_ID};
+use kagc_mir::block::BlockId;
 use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::FunctionId;
 use kagc_mir::instruction::{IRCondition, StackSlotId};
@@ -90,23 +90,18 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         // manage function's stack
         self.emit_function_preamble(lir_func);
 
-        let mut block_ids: Vec<_> = lir_func.blocks.keys().cloned().collect();
-        block_ids.sort_by_key(|b| b.0);
+		self.gen_function_blocks(lir_func);
 
-        // function's body
-        for bid in block_ids {
-            if bid == lir_func.exit_block || bid == INVALID_BLOCK_ID {
-                continue;
-            }
-            let block = &lir_func.blocks[&bid];
-            self.gen_block(block);
-        }
         // return from the function
         self.emit_function_postamble(lir_func);
         println!("{code}", code = self.current_function_code);
     }
 
     fn gen_block(&mut self, block: &LirBasicBlock) {
+		if block.instructions.is_empty() && block.predecessors.is_empty() {
+			return;
+		}
+
         if let Some(entry_block) = self.function_entry_block {
             if entry_block != block.id {
                 self.emit_label(block.id.0);
@@ -117,17 +112,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         }
 
         for instr in block.instructions.iter() {
-            match instr {
-                LirInstruction::Mov         { dest, src } => self.emit_mov_inst(dest, src),
-                LirInstruction::Add         { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
-                LirInstruction::Store       { src, dest } => self.emit_str_inst(src, *dest),
-                LirInstruction::Load        { src, dest } => self.emit_ldr_inst(*src, dest),
-                LirInstruction::CJump       { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-                LirInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
-                LirInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
-                LirInstruction::LoadConst   { label_id, dest } => self.emit_load_const(*label_id, dest),
-                _ => panic!()
-            }
+            self.gen_instruction(instr);
         }
 
         match block.terminator {
@@ -157,11 +142,20 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
                 self.emit_raw_code(&format!("b _L{bid}\n", bid = else_block.0));
             },
         }
-        // self.emit_raw_code("***** BLOCK END *****\n");
     }
 
-    fn gen_instruction(&mut self, _: &LirInstruction) {
-        unimplemented!()
+    fn gen_instruction(&mut self, instr: &LirInstruction) {
+		match instr {
+			LirInstruction::Mov         { dest, src } => self.emit_mov_inst(dest, src),
+			LirInstruction::Add         { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
+			LirInstruction::Store       { src, dest } => self.emit_str_inst(src, *dest),
+			LirInstruction::Load        { src, dest } => self.emit_ldr_inst(*src, dest),
+			LirInstruction::CJump       { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
+			LirInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
+			LirInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
+			LirInstruction::LoadConst   { label_id, dest } => self.emit_load_const(*label_id, dest),
+			_ => panic!()
+		}
     }
 }
 
@@ -181,6 +175,38 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
             self.current_function_state = None;
         }
     }
+
+	fn gen_function_blocks(&mut self, function: &LirFunction) {
+        let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
+        block_ids.sort_by_key(|b| b.0);
+
+		for (index, block_id) in block_ids.iter().enumerate() {
+			let block = function.blocks.get(block_id).expect("block not found");
+			
+			if block.instructions.is_empty() && block.predecessors.is_empty() {
+				continue;
+			}
+
+			self.emit_label(block_id.0); // block label
+
+			self.gen_block_instructions(block);
+
+			if let LirTerminator::Jump(jump_bid) = block.terminator {
+				let next_block = function.blocks.get(&(BlockId(index + 1)));
+				if Some(jump_bid) == next_block.map(|b| b.id) {
+					// fallthrough
+				} else {
+					self.emit_raw_code(&format!("b _L{}\n", jump_bid.0));
+				}
+			}
+		}
+	}
+
+	fn gen_block_instructions(&mut self, block: &LirBasicBlock) {
+		for inst in &block.instructions {
+			self.gen_instruction(inst);
+		}
+	}
 
     /// Align the given address into an address divisible by 16.
     fn align_to_16(value: usize) -> usize {
