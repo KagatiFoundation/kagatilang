@@ -2,7 +2,8 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_mir::builtin::BuiltinFn;
-use kagc_mir::instruction::{IRCondition, StackSlotId};
+use kagc_mir::instruction::IrCondition;
+use kagc_mir::value::StackSlotId;
 
 use crate::operand::LirOperand;
 use crate::vreg::VReg;
@@ -46,7 +47,7 @@ pub enum LirInstruction {
         dest: VReg,
         lhs: LirOperand,
         rhs: LirOperand,
-        op: IRCondition
+        op: IrCondition
     },
 
     #[deprecated]

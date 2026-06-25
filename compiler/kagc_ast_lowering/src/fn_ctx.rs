@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use kagc_ast::AstOp;
 use kagc_mir::block::BlockId;
-use kagc_mir::ir_operands::TempId;
-use kagc_mir::value::IRValueId;
+use kagc_mir::value::IrValueId;
 use kagc_mir::LabelId;
-use kagc_mir::instruction::StackSlotId;
+use kagc_mir::value::StackSlotId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use crate::loop_ctx::LoopContext;
@@ -89,16 +88,10 @@ impl FunctionContext {
         self.loop_stack.last().unwrap()
     }
 
-    pub fn next_value_id2(&mut self) -> IRValueId {
-        let id = IRValueId(self.value_id);
+    pub fn next_value_id2(&mut self) -> IrValueId {
+        let id = IrValueId(self.value_id);
         self.value_id += 1;
         id
-    }
-
-    pub fn reset_parent_ast_kind(&mut self) {
-        if self.prev_ast_kind.is_some() {
-            self.parent_ast_kind = self.prev_ast_kind.unwrap();
-        }
     }
 
     pub fn get_next_label(&mut self) -> LabelId {
@@ -113,12 +106,6 @@ impl FunctionContext {
 
     pub fn reset_label_hint(&mut self) {
         self.force_label_use = INVALID_FUNC_ID;
-    }
-
-    pub fn next_temp(&mut self) -> TempId {
-        let nt = self.temp_counter;
-        self.temp_counter += 1;
-        nt
     }
 
     pub fn alloc_local_slot(&mut self) -> StackSlotId {

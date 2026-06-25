@@ -6,169 +6,172 @@ use std::collections::HashMap;
 
 use crate::block::BlockId;
 use crate::function::IRFunction;
-use crate::value::IRValueId;
+use crate::instruction::IrInstruction;
+use crate::value::IrValue;
+use crate::value::IrValueId;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct LiveRange {
-    pub value: IRValueId,
+    pub value: IrValueId,
     pub start: BlockId,
     pub end: BlockId
 }
 
 #[derive(Debug)]
 pub struct BlockLiveness {
-    pub in_set: HashSet<IRValueId>,
-    pub out_set: HashSet<IRValueId>,
+    pub in_set: HashSet<IrValueId>,
+    pub out_set: HashSet<IrValueId>,
 }
 
-#[derive(Debug)]
-pub struct LivenessAnalyzer {
-    pub block_liveness: HashMap<BlockId, BlockLiveness>
-}
+pub struct LivenessAnalyzer;
 
 impl LivenessAnalyzer {
-    pub fn analyze_function(ir_func: &IRFunction) -> Self {
-        let mut block_liveness = HashMap::new();
-        
-        // compute use[B], def[B]
-        let mut use_map = HashMap::new();
-        let mut def_map = HashMap::new();
+    pub fn compute_function_live_ranges(&self, function: &IRFunction) -> Vec<LiveRange> {
+        let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
+        block_ids.sort_by_key(|b| b.0);
 
-        // calculate use and definition maps
-        for (bid, block) in &ir_func.blocks {
-            let use_defs = block.compute_use_def();
-            use_map.insert(*bid, use_defs.uses.clone());
-            def_map.insert(*bid, use_defs.defs.clone());
-            block_liveness.insert(*bid, BlockLiveness {
-                in_set: HashSet::new(),
-                out_set: HashSet::new(),
-            });
+        let mut instr_global_id = 0;
+        let mut instr_ranges_per_block = HashMap::new(); 
+
+        for bid in &block_ids {
+            let block = &function.blocks[bid];
+            let start_ip = instr_global_id;
+            instr_global_id += block.instructions.len();
+
+            let end_ip = instr_global_id;
+            instr_ranges_per_block.insert(*bid, (start_ip, end_ip));
         }
+
+        let mut local_use: HashMap<BlockId, HashSet<IrValueId>> = HashMap::new();
+        let mut local_def: HashMap<BlockId, HashSet<IrValueId>> = HashMap::new();
+
+        for bid in &block_ids {
+            let block = &function.blocks[bid];
+            let mut uses = HashSet::new();
+            let mut defs = HashSet::new();
+
+            for instr in &block.instructions {
+                let (inst_uses, inst_defs) = self.get_ranges_for_instruction(instr);
+                
+                for u in inst_uses {
+                    if !defs.contains(&u) {
+                        uses.insert(u);
+                    }
+                }
+                for d in inst_defs {
+                    defs.insert(d);
+                }
+            }
+            local_use.insert(*bid, uses);
+            local_def.insert(*bid, defs);
+        }
+
+        let mut live_in: HashMap<BlockId, HashSet<IrValueId>> = block_ids.iter().map(|&b| (b, HashSet::new())).collect();
+        let mut live_out: HashMap<BlockId, HashSet<IrValueId>> = block_ids.iter().map(|&b| (b, HashSet::new())).collect();
 
         let mut changed = true;
         while changed {
             changed = false;
 
-            for (bid, block) in &ir_func.blocks {
-                let old_in_set = block_liveness[bid].in_set.clone();
-                let old_out_set = block_liveness[bid].out_set.clone();
-
-                let mut new_out_set = HashSet::<IRValueId>::new();
-                for succ in &block.successors {
-                    new_out_set.extend(&block_liveness[succ].in_set);
-                }
+            for bid in block_ids.iter().rev() {
+                let block = &function.blocks[bid];
                 
-                let mut new_in_set = use_map[bid].clone();
-                let out_minus_def = new_out_set.difference(&def_map[bid])
-                    .cloned()
-                    .collect::<HashSet<_>>();
-                new_in_set.extend(out_minus_def);
+                let mut new_live_out = HashSet::new();
+                for succ_id in &block.successors {
+                    if let Some(succ_in) = live_in.get(succ_id) {
+                        new_live_out.extend(succ_in);
+                    }
+                }
 
-                if new_in_set != old_in_set || new_out_set != old_out_set {
-                    block_liveness.insert(
-                        *bid, 
-                        BlockLiveness { 
-                            in_set: new_in_set, 
-                            out_set: new_out_set 
-                        }
-                    );
+                let mut new_live_in = local_use[bid].clone();
+                let local_def_set = &local_def[bid];
+                for vreg in &new_live_out {
+                    if !local_def_set.contains(vreg) {
+                        new_live_in.insert(*vreg);
+                    }
+                }
+
+                if new_live_in != live_in[bid] {
+                    live_in.insert(*bid, new_live_in);
+                    changed = true;
+                }
+                if new_live_out != live_out[bid] {
+                    live_out.insert(*bid, new_live_out);
                     changed = true;
                 }
             }
         }
 
-        Self {
-            block_liveness
+        let mut final_ranges: HashMap<IrValueId, (usize, usize)> = HashMap::new();
+
+        for bid in &block_ids {
+            let (block_start_ip, block_end_ip) = instr_ranges_per_block[bid];
+            let out_set = &live_out[bid];
+
+            for value_id in out_set {
+                let range = final_ranges.entry(*value_id).or_insert((block_start_ip, block_end_ip));
+                range.1 = std::cmp::max(range.1, block_end_ip);
+            }
+
+            let mut current_live = out_set.clone();
+            let block = &function.blocks[bid];
+            
+            for (offset, instr) in block.instructions.iter().enumerate().rev() {
+                let global_ip = block_start_ip + offset;
+                let (inst_uses, inst_defs) = self.get_ranges_for_instruction(instr);
+
+                for d in inst_defs {
+                    current_live.remove(&d);
+                    let range = final_ranges.entry(d).or_insert((global_ip, global_ip));
+                    range.0 = std::cmp::min(range.0, global_ip);
+                    range.1 = std::cmp::max(range.1, global_ip);
+                }
+
+                for u in inst_uses {
+                    current_live.insert(u);
+                    let range = final_ranges.entry(u).or_insert((global_ip, global_ip));
+                    range.0 = std::cmp::min(range.0, global_ip);
+                }
+            }
+
+            for vreg in &live_in[bid] {
+                let range = final_ranges.entry(*vreg).or_insert((block_start_ip, block_end_ip));
+                range.0 = std::cmp::min(range.0, block_start_ip);
+            }
         }
-    }
-}
 
-#[cfg(test)]
-mod tests {
-    use kagc_symbol::StorageClass;
-
-    use crate::analyzer::LivenessAnalyzer;
-    use crate::block::Terminator;
-    use crate::mir_builder::MirBuilder;
-    use crate::function::FunctionId;
-    use crate::instruction::IRCondition;
-    use crate::types::IRType;
-    use crate::value::*;
-
-    #[test]
-    fn test_inst_level_liveness_analysis() {
-       let mut builder = MirBuilder::default();
-        let fn_ctx = builder.create_function("loop_test".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
-        let func_entry = fn_ctx.entry_block;
-        let loop_entry = builder.create_block("loop-entry"); // block id 1
-        builder.link_blocks(func_entry, loop_entry);
-
-        let add_value = builder.create_add(IRValue::Constant(32), IRValue::Constant(32)); // value id 0 created in block id 1
-        let if_else_block = builder.create_block("if-else-block"); // block id 2
-        builder.link_blocks(loop_entry, if_else_block);
-        let cond_jump = builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(add_value), IRValue::Constant(64)); // value id 1 created in block id 2
-        let if_block = builder.create_block("if-block"); // block id 3
-        let else_block = builder.create_block("else-block"); // block id 4
-        builder.link_blocks_multiple(if_else_block, vec![if_block, else_block]);
-
-        let merge_block = builder.create_block("merge"); // block id 5
-        builder.link_blocks(if_block, merge_block);
-        builder.link_blocks(else_block, merge_block);
-
-        builder.set_terminator(
-            if_else_block,
-            Terminator::CondJump { 
-                cond: cond_jump, 
-                then_block: if_block, 
-                else_block 
-            }
-        );
-
-        builder.set_terminator(if_block, Terminator::Jump(merge_block));
-        builder.set_terminator(else_block, Terminator::Jump(merge_block));
-        
-        let module = builder.build(); 
-        println!("{module:#?}");
+        final_ranges.into_iter()
+            .map(|(value, (start, end))| LiveRange { value, start: BlockId(start), end: BlockId(end) })
+            .collect()
     }
 
-    #[test]
-    fn test_complex_function_live_ranges_construction() {
-        let mut builder = MirBuilder::default();
-        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
-        let func_entry = fn_ctx.entry_block;
-        let loop_entry = builder.create_block("loop-entry"); // block id 1
-        builder.link_blocks(func_entry, loop_entry);
+    fn get_ranges_for_instruction(&self, instr: &IrInstruction) -> (Vec<IrValueId>, Vec<IrValueId>) {
+        let mut uses = vec![];
+        let mut defs = vec![];
 
-        let add_value = builder.create_add(IRValue::Constant(32), IRValue::Constant(32)); // value id 0 created in block id 1
-        let if_else_block = builder.create_block("if-else-block"); // block id 2
-        builder.link_blocks(loop_entry, if_else_block);
-
-        let cond_jump = builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(add_value), IRValue::Constant(64)); // value id 1 created in block id 2
-        let if_block = builder.create_block("if-block"); // block id 3
-        let else_block = builder.create_block("else-block"); // block id 4
-        builder.link_blocks_multiple(if_else_block, vec![if_block, else_block]);
-
-        let merge_block = builder.create_block("merge"); // block id 5
-        builder.link_blocks(if_block, merge_block);
-        builder.link_blocks(else_block, merge_block);
-
-        builder.set_terminator(
-            if_else_block,
-            Terminator::CondJump { 
-                cond: cond_jump, 
-                then_block: if_block, 
-                else_block 
+        match instr {
+            IrInstruction::Mov { src, result } => {
+                defs.push(*result);
+                if let IrValue::Register(v) = src { uses.push(*v); }
             }
-        );
-
-        builder.set_terminator(if_block, Terminator::Jump(merge_block));
-        builder.set_terminator(else_block, Terminator::Jump(merge_block));
-        
-        let module = builder.build();
-        assert!(module.functions.contains_key(&FunctionId(0)));
-
-        let func1 = module.functions.get(&FunctionId(0)).unwrap(); // only one function
-        let la_data = LivenessAnalyzer::analyze_function(func1);
-        println!("{la_data:#?}");
+            IrInstruction::Add { lhs, rhs, result } => {
+                defs.push(*result);
+                if let IrValue::Register(v) = lhs { uses.push(*v); }
+                if let IrValue::Register(v) = rhs { uses.push(*v); }
+            }
+            IrInstruction::Load { result, .. } => {
+                defs.push(*result);
+            }
+            IrInstruction::Store { src, .. } => {
+                uses.push(*src);
+            }
+            IrInstruction::CondJump { result, lhs, rhs, .. } => {
+                defs.push(*result);
+                if let IrValue::Register(r) = lhs { uses.push(*r); }
+                if let IrValue::Register(r) = rhs { uses.push(*r); }
+            }
+            _ => todo!()
+        }
+        (uses, defs)
     }
 }

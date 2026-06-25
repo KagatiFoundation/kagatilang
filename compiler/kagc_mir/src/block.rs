@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::instruction::*;
 
-use crate::value::IRValueId;
+use crate::value::IrValueId;
 
 #[derive(Debug, Default, Clone, Copy, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct BlockId(pub usize);
@@ -21,7 +21,7 @@ pub const INVALID_BLOCK_ID: BlockId = BlockId(usize::MAX);
 #[derive(Debug, Clone, Default)]
 pub struct IRBasicBlock {
     pub id: BlockId,
-    pub instructions: Vec<IRInstruction>,
+    pub instructions: Vec<IrInstruction>,
     pub successors: HashSet<BlockId>,
     pub predecessors: HashSet<BlockId>,
     pub terminator: Terminator,
@@ -56,17 +56,17 @@ impl IRBasicBlock {
 
 #[derive(Debug, Default)]
 pub struct UseDefSet {
-    pub uses: HashSet<IRValueId>,
-    pub defs: HashSet<IRValueId>
+    pub uses: HashSet<IrValueId>,
+    pub defs: HashSet<IrValueId>
 }
 
 impl UseDefSet {
-    pub fn uses_as_vec(&self) -> Vec<&IRValueId> {
-        self.uses.iter().collect::<Vec<&IRValueId>>()
+    pub fn uses_as_vec(&self) -> Vec<&IrValueId> {
+        self.uses.iter().collect::<Vec<&IrValueId>>()
     }
 
-    pub fn defs_as_vec(&self) -> Vec<&IRValueId> {
-        self.defs.iter().collect::<Vec<&IRValueId>>()
+    pub fn defs_as_vec(&self) -> Vec<&IrValueId> {
+        self.defs.iter().collect::<Vec<&IrValueId>>()
     }
 }
 
@@ -77,13 +77,13 @@ pub enum Terminator {
     Jump(BlockId),
 
     CondJump {
-        cond: IRValueId,
+        cond: IrValueId,
         then_block: BlockId,
         else_block: BlockId
     },
 
     Return {
-        value: Option<IRValueId>,
+        value: Option<IrValueId>,
         target: BlockId
     }
 }
@@ -96,8 +96,8 @@ impl Default for Terminator {
 
 #[derive(Debug, Default, Clone)]
 pub struct BlockLiveness {
-    pub live_in: HashSet<IRValueId>,
-    pub live_out: HashSet<IRValueId>,
+    pub live_in: HashSet<IrValueId>,
+    pub live_out: HashSet<IrValueId>,
 }
 
 #[cfg(test)]
@@ -106,20 +106,20 @@ mod tests {
 
     use crate::block::IRBasicBlock;
     use crate::instruction::*;
-    use crate::value::{IRValue, IRValueId};
+    use crate::value::{IrValue, IrValueId};
 
     #[test]
     fn test_use_def_on_single_block() {
         let mut block = IRBasicBlock::default();
-        block.instructions.push(IRInstruction::Mov { 
-            result: IRValueId(0), 
-            src: IRValue::Constant(32)
+        block.instructions.push(IrInstruction::Mov { 
+            result: IrValueId(0), 
+            src: IrValue::Constant(32)
         });
 
-        block.instructions.push(IRInstruction::Add { 
-            result: IRValueId(1), 
-            lhs: IRValue::Constant(32), 
-            rhs: IRValue::Var(IRValueId(0)) 
+        block.instructions.push(IrInstruction::Add { 
+            result: IrValueId(1), 
+            lhs: IrValue::Constant(32), 
+            rhs: IrValue::Register(IrValueId(0)) 
         });
 
         let use_defs = block.compute_use_def();
@@ -128,8 +128,8 @@ mod tests {
             use_defs.defs, 
             {
                 let mut items = HashSet::new();
-                items.insert(IRValueId(0));
-                items.insert(IRValueId(1));
+                items.insert(IrValueId(0));
+                items.insert(IrValueId(1));
                 items
             }
         );

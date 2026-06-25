@@ -8,16 +8,15 @@ use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
 use crate::function::*;
-use crate::instruction::StackSlotId;
-use crate::instruction::{IRAddress, IRCondition};
+use crate::instruction::IrCondition;
+use crate::instruction::IrInstruction;
 use crate::module::MirModule;
 use crate::types::*;
 use crate::block::*;
-use crate::instruction::IRInstruction;
-use crate::value::{IRValue, IRValueId};
+use crate::value::{IrAddress, IrValue, IrValueId, StackSlotId};
 
 #[derive(Debug, Default)]
-pub struct MirBuilder {
+pub struct IrBuilder {
     current_function: Option<FunctionId>,
     current_block: Option<BlockId>,
 
@@ -39,18 +38,18 @@ pub struct BuilderFunction {
 #[derive(Debug)]
 pub struct BuilderBlock {
     pub name: String,
-    pub instructions: Vec<IRInstruction>,
+    pub instructions: Vec<IrInstruction>,
     pub terminator: Option<Terminator>,
     pub successors: HashSet<BlockId>,
     pub predecessors: HashSet<BlockId>,
 }
 
-impl MirBuilder {
+impl IrBuilder {
     pub fn create_function(
         &mut self, 
         name: String, 
         params: Vec<FunctionParam>, 
-        return_type: IRType,
+        return_type: IrType,
         class: StorageClass
     ) -> FunctionAnchor {
         let fid = self.next_function_id();
@@ -91,7 +90,7 @@ impl MirBuilder {
         bid
     }
 
-    pub fn inst(&mut self, instruction: IRInstruction) -> Option<IRValueId> {
+    pub fn inst(&mut self, instruction: IrInstruction) -> Option<IrValueId> {
         let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
         let bid = self.current_block.unwrap_or_else(|| bug!("No active block context"));
         
@@ -141,7 +140,7 @@ impl BuilderBlock {
 	}
 }
 
-impl MirBuilder {
+impl IrBuilder {
    	pub fn switch_to_block(&mut self, block_id: BlockId) {
     	let fid = self.current_function.unwrap_or_else(|| bug!("cannot switch blocks outside a function"));
 
@@ -203,7 +202,7 @@ impl MirBuilder {
         }
     }
 
-    pub fn occupy_value_id(&mut self) -> IRValueId {
+    pub fn occupy_value_id(&mut self) -> IrValueId {
         self.next_value_id()
     }
 
@@ -211,7 +210,7 @@ impl MirBuilder {
         self.next_block_id()
     }
 
-    pub fn create_function_parameter(&mut self, ty: IRType, stack_slot: StackSlotId) -> FunctionParam {
+    pub fn create_function_parameter(&mut self, ty: IrType, stack_slot: StackSlotId) -> FunctionParam {
         FunctionParam { 
             id: self.next_value_id(), 
             ty,
@@ -219,51 +218,51 @@ impl MirBuilder {
         }
     }
 
-    pub fn create_add(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+    pub fn create_add(&mut self, lhs: IrValue, rhs: IrValue) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::Add { result, lhs, rhs })
+        self.inst(IrInstruction::Add { result, lhs, rhs })
             .expect("create_add: no value ID created")
     }
 
-    pub fn create_subtract(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+    pub fn create_subtract(&mut self, lhs: IrValue, rhs: IrValue) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::Subtract { result, lhs, rhs })
+        self.inst(IrInstruction::Subtract { result, lhs, rhs })
             .expect("create_subtract: no value ID created")
     }
 
-    pub fn create_multiply(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+    pub fn create_multiply(&mut self, lhs: IrValue, rhs: IrValue) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::Multiply { result, lhs, rhs })
+        self.inst(IrInstruction::Multiply { result, lhs, rhs })
             .expect("create_multiply: no value ID created")
     }
     
-    pub fn create_divide(&mut self, lhs: IRValue, rhs: IRValue) -> IRValueId {
+    pub fn create_divide(&mut self, lhs: IrValue, rhs: IrValue) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::Divide { result, lhs, rhs })
+        self.inst(IrInstruction::Divide { result, lhs, rhs })
             .expect("create_divide: no value ID created")
     }
 
-    pub fn create_conditional_jump(&mut self, cond: IRCondition, lhs: IRValue, rhs: IRValue) -> IRValueId {
+    pub fn create_conditional_jump(&mut self, cond: IrCondition, lhs: IrValue, rhs: IrValue) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::CondJump { result, cond, lhs, rhs })
+        self.inst(IrInstruction::CondJump { result, cond, lhs, rhs })
             .expect("create_conditional_jump: no value ID created")
     }
 
-    pub fn create_move(&mut self, value: IRValue) -> IRValueId {
+    pub fn create_move(&mut self, value: IrValue) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::Mov { result, src: value })
+        self.inst(IrInstruction::Mov { result, src: value })
             .expect("create_move: no value ID created")
     }
 
-    pub fn create_load(&mut self, addr: IRAddress) -> IRValueId {
+    pub fn create_load(&mut self, addr: IrAddress) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::Load { src: addr, result })
+        self.inst(IrInstruction::Load { src: addr, result })
             .expect("create_move: no value ID created")
     }
 
-    pub fn create_load_const(&mut self, pool_index: usize) -> IRValueId {
+    pub fn create_load_const(&mut self, pool_index: usize) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IRInstruction::LoadConst { label_id: pool_index, result })
+        self.inst(IrInstruction::LoadConst { label_id: pool_index, result })
             .expect("create_load_const: no value ID created")
     }
 
@@ -317,10 +316,10 @@ impl MirBuilder {
         BlockId(bid)
     }
 
-    fn next_value_id(&mut self) -> IRValueId {
+    fn next_value_id(&mut self) -> IrValueId {
         let vid = self.value_id;
         self.value_id += 1;
-        IRValueId(vid)
+        IrValueId(vid)
     }
 
     pub fn current_block_id(&self) -> Option<BlockId> {

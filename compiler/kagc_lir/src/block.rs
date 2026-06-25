@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use kagc_mir::block::BlockId;
-use kagc_mir::instruction::IRCondition;
+use kagc_mir::instruction::IrCondition;
 
 use crate::instruction::LirInstruction;
 use crate::vreg::VReg;
@@ -29,7 +29,7 @@ pub enum LirTerminator {
     },
 
     CJump {
-        cond: IRCondition,
+        cond: IrCondition,
         then_block: BlockId,
         else_block: BlockId
     }

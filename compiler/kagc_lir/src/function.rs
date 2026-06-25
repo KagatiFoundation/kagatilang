@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use kagc_mir::block::BlockId;
 use kagc_mir::function::FunctionId;
-use kagc_mir::instruction::StackSlotId;
-use kagc_mir::types::IRType;
+use kagc_mir::value::StackSlotId;
+use kagc_mir::types::IrType;
 use kagc_symbol::StorageClass;
 
 use crate::block::LirBasicBlock;
@@ -19,7 +19,7 @@ use crate::vreg::VReg;
 #[derive(Debug, Clone)]
 pub struct LirFunctionParam {
     pub reg: VReg,
-    pub ty: IRType,
+    pub ty: IrType,
     pub stack_slot: StackSlotId
 }
 
@@ -27,7 +27,7 @@ pub struct LirFunctionParam {
 #[derive(Debug, Clone)]
 pub struct LirFunctionSignature {
     pub params: Vec<LirFunctionParam>,
-    pub return_type: IRType,
+    pub return_type: IrType,
     pub class: StorageClass
 }
 
@@ -131,25 +131,25 @@ impl LirFunction {
 #[cfg(test)]
 mod tests {
     use kagc_mir::block::Terminator;
-    use kagc_mir::mir_builder::MirBuilder;
-    use kagc_mir::instruction::IRCondition;
-    use kagc_mir::types::IRType;
-    use kagc_mir::value::IRValue;
+    use kagc_mir::mir_builder::IrBuilder;
+    use kagc_mir::instruction::IrCondition;
+    use kagc_mir::types::IrType;
+    use kagc_mir::value::IrValue;
     use kagc_symbol::StorageClass;
 
     #[test]
     fn test_vreg_generation() {
-        let mut builder = MirBuilder::default();
-        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IRType::I64, StorageClass::GLOBAL); // block id 0
+        let mut builder = IrBuilder::default();
+        let fn_ctx = builder.create_function("complex_fn".to_owned(), vec![], IrType::I64, StorageClass::GLOBAL); // block id 0
         let func_entry = fn_ctx.entry_block;
         let loop_entry = builder.create_block("loop-entry"); // block id 1
         builder.link_blocks(func_entry, loop_entry);
 
-        let add_value = builder.create_add(IRValue::Constant(32), IRValue::Constant(32)); // value id 0 created in block id 1
+        let add_value = builder.create_add(IrValue::Constant(32), IrValue::Constant(32)); // value id 0 created in block id 1
         let if_else_block = builder.create_block("if-else-block"); // block id 2
         builder.link_blocks(loop_entry, if_else_block);
 
-        let cond_jump = builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(add_value), IRValue::Constant(64)); // value id 1 created in block id 2
+        let cond_jump = builder.create_conditional_jump(IrCondition::EqEq, IrValue::Register(add_value), IrValue::Constant(64)); // value id 1 created in block id 2
         let if_block = builder.create_block("if-block"); // block id 3
         let else_block = builder.create_block("else-block"); // block id 4
         builder.link_blocks_multiple(if_else_block, vec![if_block, else_block]);

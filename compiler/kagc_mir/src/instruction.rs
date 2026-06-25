@@ -8,10 +8,10 @@ use kagc_const::pool::PoolIdx;
 use crate::{builtin::BuiltinFn, value::*};
 
 #[derive(Debug, Clone, Copy)]
-pub struct IRInstructionId(pub usize);
+pub struct IrInstructionId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IRCondition {
+pub enum IrCondition {
     EqEq,
     NEq,
     GTEq,
@@ -21,204 +21,166 @@ pub enum IRCondition {
 }
 
 #[derive(Debug, Clone)]
-pub enum IRInstruction {
+pub enum IrInstruction {
     Mov {
-        result: IRValueId,
-        src: IRValue
+        result: IrValueId,
+        src: IrValue
     },
 
     Add {
-        result: IRValueId,
-        lhs: IRValue,
-        rhs: IRValue
+        result: IrValueId,
+        lhs: IrValue,
+        rhs: IrValue
     },
 
     Subtract {
-        result: IRValueId,
-        lhs: IRValue,
-        rhs: IRValue
+        result: IrValueId,
+        lhs: IrValue,
+        rhs: IrValue
     },
 
     Multiply {
-        result: IRValueId,
-        lhs: IRValue,
-        rhs: IRValue
+        result: IrValueId,
+        lhs: IrValue,
+        rhs: IrValue
     },
 
     Divide {
-        result: IRValueId,
-        lhs: IRValue,
-        rhs: IRValue
+        result: IrValueId,
+        lhs: IrValue,
+        rhs: IrValue
     },
     
     Store {
-        src: IRValueId,
-        address: IRAddress
+        src: IrValueId,
+        address: IrAddress
     },
 
     Load {
-        src: IRAddress,
-        result: IRValueId
+        src: IrAddress,
+        result: IrValueId
     },
 
     Call {
         func:   String,
-        args:   Vec<IRValueId>,
-        result: Option<IRValueId>
+        args:   Vec<IrValueId>,
+        result: Option<IrValueId>
     },
 
     CallBuiltin {
         builtin: BuiltinFn,
-        args:   Vec<IRValueId>,
-        result: Option<IRValueId>
+        args:   Vec<IrValueId>,
+        result: Option<IrValueId>
     },
 
     #[deprecated]
     MemAlloc {
-        size:       IRValue,
-        ob_ty:      IRValue,
-        result:     IRValueId,
+        size:       IrValue,
+        ob_ty:      IrValue,
+        result:     IrValueId,
         pool_idx:   PoolIdx,
         base_ptr_slot: StackSlotId,
     },
 
     LoadConst {
         label_id: usize,
-        result: IRValueId
+        result: IrValueId
     },
 
     LoadGlobal {
         pool_idx: PoolIdx,
-        result: IRValueId
+        result: IrValueId
     },
 
     CondJump {
-        lhs: IRValue,
-        rhs: IRValue,
-        cond: IRCondition,
-        result: IRValueId
+        lhs: IrValue,
+        rhs: IrValue,
+        cond: IrCondition,
+        result: IrValueId
     }
 }
 
-impl IRInstruction {
+impl IrInstruction {
     pub fn defines_value(&self) -> bool {
         matches!(self, Self::Add { .. } | Self::Mov { .. })
     }
 
-    pub fn get_value_id(&self) -> Option<IRValueId> {
+    pub fn get_value_id(&self) -> Option<IrValueId> {
         match self {
-            IRInstruction::Mov          { result, .. } | 
-            IRInstruction::Add          { result, .. } |
-            IRInstruction::Load         { result, .. } |
-            IRInstruction::Subtract     { result, .. } |
-            IRInstruction::Divide       { result, .. } |
-            IRInstruction::Multiply     { result, .. } |
-            IRInstruction::LoadGlobal   { result, .. } |
-            IRInstruction::CondJump     { result, .. } => Some(*result),
-            IRInstruction::Call         { result, .. } |
-            IRInstruction::CallBuiltin  { result, .. } => *result,
-            IRInstruction::LoadConst    { result, .. } => Some(*result),
+            IrInstruction::Mov          { result, .. } | 
+            IrInstruction::Add          { result, .. } |
+            IrInstruction::Load         { result, .. } |
+            IrInstruction::Subtract     { result, .. } |
+            IrInstruction::Divide       { result, .. } |
+            IrInstruction::Multiply     { result, .. } |
+            IrInstruction::LoadGlobal   { result, .. } |
+            IrInstruction::CondJump     { result, .. } => Some(*result),
+            IrInstruction::Call         { result, .. } |
+            IrInstruction::CallBuiltin  { result, .. } => *result,
+            IrInstruction::LoadConst    { result, .. } => Some(*result),
             _ => None
         }
     }
 
-    pub fn defs(&self) -> Vec<IRValueId> {
+    pub fn defs(&self) -> Vec<IrValueId> {
         match self {
-            IRInstruction::Mov          { result, .. } |
-            IRInstruction::Load         { result, .. } |
-            IRInstruction::Add          { result, .. } |
-            IRInstruction::Subtract     { result, .. } |
-            IRInstruction::Divide       { result, .. } |
-            IRInstruction::Multiply     { result, .. } |
-            IRInstruction::LoadGlobal   { result, .. } |
-            IRInstruction::CondJump     { result, .. } => vec![*result],
-            IRInstruction::Call         { result, .. } |
-            IRInstruction::CallBuiltin  { result, .. } => vec![result.unwrap()],
+            IrInstruction::Mov          { result, .. } |
+            IrInstruction::Load         { result, .. } |
+            IrInstruction::Add          { result, .. } |
+            IrInstruction::Subtract     { result, .. } |
+            IrInstruction::Divide       { result, .. } |
+            IrInstruction::Multiply     { result, .. } |
+            IrInstruction::LoadGlobal   { result, .. } |
+            IrInstruction::CondJump     { result, .. } => vec![*result],
+            IrInstruction::Call         { result, .. } |
+            IrInstruction::CallBuiltin  { result, .. } => vec![result.unwrap()],
             _ => vec![]
         }
     }
 
-    pub fn uses(&self) -> Vec<IRValueId> {
+    pub fn uses(&self) -> Vec<IrValueId> {
         match self {
-            IRInstruction::Mov         { src, .. } => src.as_value_id().into_iter().collect(),
-            IRInstruction::Add         { lhs, rhs, .. } |
-            IRInstruction::Subtract    { lhs, rhs, .. } |
-            IRInstruction::Divide      { lhs, rhs, .. } |
-            IRInstruction::CondJump    { lhs, rhs, .. } |
-            IRInstruction::Multiply    { lhs, rhs, .. } => {
+            IrInstruction::Mov         { src, .. } => src.as_value_id().into_iter().collect(),
+            IrInstruction::Add         { lhs, rhs, .. } |
+            IrInstruction::Subtract    { lhs, rhs, .. } |
+            IrInstruction::Divide      { lhs, rhs, .. } |
+            IrInstruction::CondJump    { lhs, rhs, .. } |
+            IrInstruction::Multiply    { lhs, rhs, .. } => {
                 lhs
                     .as_value_id()
                     .into_iter()
                     .chain(rhs.as_value_id())
                     .collect()
             },
-            IRInstruction::Call        { args, .. } |
-            IRInstruction::CallBuiltin { args, .. } => args.clone(),
-            IRInstruction::Store       { src, .. } => vec![*src],
+            IrInstruction::Call        { args, .. } |
+            IrInstruction::CallBuiltin { args, .. } => args.clone(),
+            IrInstruction::Store       { src, .. } => vec![*src],
             _ => vec![]
-        }
-    }
-}
-
-/// A placeholder for local stack slots.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct StackSlotId(pub usize);
-
-impl Add for StackSlotId {
-    type Output = Self;
-    fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl Sub for StackSlotId {
-    type Output = Self;
-    fn sub(self, rhs: Self) -> Self {
-        Self(self.0 - rhs.0)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum IRAddress {
-    StackSlot(StackSlotId),
-
-    BaseSlot(IRValueId, StackSlotId)
-}
-
-impl Add for IRAddress {
-    type Output = IRAddress;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (IRAddress::StackSlot(lhs), IRAddress::StackSlot(rhs)) => IRAddress::StackSlot(lhs + rhs),
-            (IRAddress::BaseSlot(base, lhs, ), IRAddress::StackSlot(rhs))
-            | (IRAddress::StackSlot(lhs), IRAddress::BaseSlot(base, rhs)) => IRAddress::BaseSlot(base, lhs + rhs),
-            _ => unreachable!(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{instruction::*, value::{IRValue, IRValueId}};
+    use crate::{instruction::*, value::{IrValue, IrValueId}};
 
     #[test]
     fn test_simple_instr_construction() {
-        let i1 = IRInstruction::Mov { result: IRValueId(0), src: IRValue::Constant(32) };
+        let i1 = IrInstruction::Mov { result: IrValueId(0), src: IrValue::Constant(32) };
         assert!(i1.defines_value());
         assert!(i1.uses().is_empty());
-        assert_eq!(i1.get_value_id().unwrap(), IRValueId(0));
-        assert_eq!(i1.uses(), vec![IRValueId(1)]);
+        assert_eq!(i1.get_value_id().unwrap(), IrValueId(0));
+        assert_eq!(i1.uses(), vec![IrValueId(1)]);
 
-        let i_add = IRInstruction::Add {
-            result: IRValueId(1),
-            lhs: IRValue::Var(IRValueId(0)),
-            rhs: IRValue::Constant(32)
+        let i_add = IrInstruction::Add {
+            result: IrValueId(1),
+            lhs: IrValue::Register(IrValueId(0)),
+            rhs: IrValue::Constant(32)
         };
         assert!(i_add.defines_value());
         assert!(i_add.uses().len() == 1);
-        assert_eq!(i_add.uses(), vec![IRValueId(0)]);
+        assert_eq!(i_add.uses(), vec![IrValueId(0)]);
         assert!(i_add.defs().len() == 1);
-        assert_eq!(i_add.defs(), vec![IRValueId(1)]);
+        assert_eq!(i_add.defs(), vec![IrValueId(1)]);
     }
 }

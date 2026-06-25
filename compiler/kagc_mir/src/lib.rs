@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-pub mod ir_operands;
-pub mod ir_instr;
-pub mod ir_liveness;
+// pub mod ir_operands;
+// pub mod ir_instr;
 pub mod builtin;
 pub mod interference_graph;
 pub mod graph_allocator;

@@ -12,12 +12,13 @@ use kagc_const::pool::{ConstPool, KagcConst, PoolIdx};
 use kagc_scope::ScopeCtx;
 use kagc_scope::ScopeId;
 
-use kagc_mir::value::{IRValue, IRValueId};
+use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
-use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction, StackSlotId};
-use kagc_mir::mir_builder::MirBuilder;
+use kagc_mir::instruction::{IrCondition, IrInstruction};
+use kagc_mir::value::{IrAddress, StackSlotId};
+use kagc_mir::mir_builder::IrBuilder;
 use kagc_mir::function::FunctionParam;
-use kagc_mir::types::IRType;
+use kagc_mir::types::IrType;
 use kagc_mir::builtin::BuiltinFn;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_symbol::function::Func;
@@ -26,13 +27,13 @@ use kagc_utils::bug;
 use crate::fn_ctx::FunctionContext;
 use crate::loop_ctx::LoopContext;
 
-type ExprLoweringResult = Result<IRValueId, Diagnostic>;
+type ExprLoweringResult = Result<IrValueId, Diagnostic>;
 type StmtLoweringResult = Result<BlockId, Diagnostic>;
 
 pub struct AstToMirLowerer<'a, 'tcx> {
     scope: &'tcx ScopeCtx<'tcx>,
     const_pool: &'a mut ConstPool,
-    pub ir_builder: MirBuilder,
+    pub ir_builder: IrBuilder,
     current_function: Option<Func<'tcx>>,
 }
 
@@ -42,7 +43,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             scope,
             const_pool,
             current_function: None,
-            ir_builder: MirBuilder::default()
+            ir_builder: IrBuilder::default()
         }
     }
 
@@ -116,7 +117,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 let param_stack_slot = fn_ctx.alloc_local_slot();
                 fn_ctx.var_offsets.insert(sym.name.to_string(), param_stack_slot.0);
                 self.ir_builder.create_function_parameter(
-                    IRType::from(sym.ty.get()), 
+                    IrType::from(sym.ty.get()), 
                     param_stack_slot
                 )
             }).collect::<Vec<FunctionParam>>();
@@ -124,7 +125,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let func_anchor = self.ir_builder.create_function(
             func.name.to_string(),
             func_ir_params,
-            IRType::from(ast.ty.unwrap_or_else(|| bug!("Function return type must be defined"))),
+            IrType::from(ast.ty.unwrap_or_else(|| bug!("Function return type must be defined"))),
             storage_class
         );
 
@@ -182,9 +183,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let var_stack_off = fn_ctx.alloc_local_slot();
         
         self.ir_builder.inst(
-            IRInstruction::Store { 
+            IrInstruction::Store { 
                 src: assigned_expr_value_id, 
-                address: IRAddress::StackSlot(var_stack_off) 
+                address: IrAddress::StackSlot(var_stack_off) 
             }
         );
         fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off.0);
@@ -224,18 +225,18 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         let rec_stack_slot = self.load_record_from_const_pool(rec_create_expr.pool_idx, fn_ctx)?;
         for (index, field_slot_id) in field_stack_slot_ids.iter().enumerate() {
-            let rec_data_off_value_id = self.ir_builder.create_load(IRAddress::StackSlot(rec_stack_slot));
-            let field_slot_load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(*field_slot_id));
-            let index_value_id = self.ir_builder.create_move(IRValue::Constant(index as i64));
+            let rec_data_off_value_id = self.ir_builder.create_load(IrAddress::StackSlot(rec_stack_slot));
+            let field_slot_load_value_id = self.ir_builder.create_load(IrAddress::StackSlot(*field_slot_id));
+            let index_value_id = self.ir_builder.create_move(IrValue::Constant(index as i64));
             self.ir_builder.inst(
-                IRInstruction::CallBuiltin { 
+                IrInstruction::CallBuiltin { 
                     builtin: BuiltinFn::AssignRef, 
                     args: vec![rec_data_off_value_id, field_slot_load_value_id, index_value_id], 
                     result: None 
                 }
             );
         }
-        Ok(IRValueId(0xFFFFFFFF))
+        Ok(IrValueId(0xFFFFFFFF))
     }
 
     fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
@@ -244,7 +245,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 let call_result_value_id = self.ir_builder.occupy_value_id();
                 let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
                 self.ir_builder.inst(
-                    IRInstruction::CallBuiltin { 
+                    IrInstruction::CallBuiltin { 
                         builtin: BuiltinFn::AllocInt, 
                         args: vec![eval_value_id], 
                         result: Some(call_result_value_id)
@@ -252,9 +253,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 );
                 let stack_slot = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
-                    IRInstruction::Store { 
+                    IrInstruction::Store { 
                         src: eval_value_id, 
-                        address: IRAddress::StackSlot(stack_slot) 
+                        address: IrAddress::StackSlot(stack_slot) 
                     }
                 );
                 Ok(stack_slot)
@@ -269,9 +270,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
                 let stack_slot = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
-                    IRInstruction::Store { 
+                    IrInstruction::Store { 
                         src: eval_value_id, 
-                        address: IRAddress::StackSlot(stack_slot) 
+                        address: IrAddress::StackSlot(stack_slot) 
                     }
                 );
                 Ok(stack_slot)
@@ -286,15 +287,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .get(access.rec_alias)
             .unwrap_or_else(|| bug!("record's stack offset not found"));
 
-        let base_pointer_value = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(rec_stack_off)));
+        let base_pointer_value = self.ir_builder.create_load(IrAddress::StackSlot(StackSlotId(rec_stack_off)));
         let data_pointer_value = self.ir_builder.create_load(
-            IRAddress::BaseSlot(
+            IrAddress::BaseOffset(
                 base_pointer_value, 
                 StackSlotId(unsafe { runtime::GC_OFFSET_CHILDREN as usize })
             )
         );
         Ok(self.ir_builder.create_load(
-            IRAddress::BaseSlot(
+            IrAddress::BaseOffset(
                 data_pointer_value, 
                 StackSlotId(access.rel_stack_off)
             )
@@ -310,16 +311,16 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                     .size(pool_idx)
                     .unwrap_or_else(|| bug!("cannot find const entry"));
                 self.ir_builder.inst(
-                    IRInstruction::LoadConst { 
+                    IrInstruction::LoadConst { 
                         label_id: pool_idx,
                         result: const_value
                     }
                 );
 
-                let const_size_value = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
+                let const_size_value = self.ir_builder.create_move(IrValue::Constant(const_size as i64));
                 let call_result_value = self.ir_builder.occupy_value_id();
                 self.ir_builder.inst(
-                    IRInstruction::CallBuiltin { 
+                    IrInstruction::CallBuiltin { 
                         builtin: BuiltinFn::AllocStr, 
                         args: vec![const_value, const_size_value],
                         result: Some(call_result_value)
@@ -327,9 +328,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 );
                 let stack_slot = fn_ctx.alloc_local_slot();
                 self.ir_builder.inst(
-                    IRInstruction::Store { 
+                    IrInstruction::Store { 
                         src: call_result_value, 
-                        address: IRAddress::StackSlot(stack_slot) 
+                        address: IrAddress::StackSlot(stack_slot) 
                     }
                 );
                 Ok(stack_slot)
@@ -342,15 +343,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let const_value_id = self.ir_builder.occupy_value_id();
         let const_size = self.const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
         self.ir_builder.inst(
-            IRInstruction::LoadConst { 
+            IrInstruction::LoadConst { 
                 label_id: pool_idx, 
                 result: const_value_id
             }
         );
-        let const_value_size_id = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
+        let const_value_size_id = self.ir_builder.create_move(IrValue::Constant(const_size as i64));
         let call_result_value_id = self.ir_builder.occupy_value_id();
         self.ir_builder.inst(
-            IRInstruction::CallBuiltin { 
+            IrInstruction::CallBuiltin { 
                 builtin: BuiltinFn::AllocRec, 
                 args: vec![const_value_id, const_value_size_id],
                 result: Some(call_result_value_id)
@@ -358,9 +359,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         );
         let stack_slot = fn_ctx.alloc_local_slot();
         self.ir_builder.inst(
-            IRInstruction::Store { 
+            IrInstruction::Store { 
                 src: call_result_value_id, 
-                address: IRAddress::StackSlot(stack_slot) 
+                address: IrAddress::StackSlot(stack_slot) 
             }
         );
         Ok(stack_slot)
@@ -376,7 +377,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         if !matches!(func_call_expr.ty, TyKind::None | TyKind::Void) {
             let call_result_value = self.ir_builder.occupy_value_id();
             self.ir_builder.inst(
-                IRInstruction::Call { 
+                IrInstruction::Call { 
                     func: func_call_expr.symbol_name.to_string(), 
                     args: func_call_args,
                     result: Some(call_result_value)
@@ -386,13 +387,13 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
         else {
             self.ir_builder.inst(
-                IRInstruction::Call { 
+                IrInstruction::Call { 
                     func: func_call_expr.symbol_name.to_string(), 
                     args: func_call_args,
                     result: None
                 }
             );
-            Ok(IRValueId(0xFFFFFFFF))
+            Ok(IrValueId(0xFFFFFFFF))
         }
     }
 
@@ -403,17 +404,17 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             let const_size = self.const_pool.size(pool_index).unwrap_or_else(|| bug!("cannot find const entry"));
 
             self.ir_builder.inst(
-                IRInstruction::LoadConst { 
+                IrInstruction::LoadConst { 
                     label_id: pool_index,
                     result: const_value
                 }
             );
 
-            let const_size_value = self.ir_builder.create_move(IRValue::Constant(const_size as i64));
+            let const_size_value = self.ir_builder.create_move(IrValue::Constant(const_size as i64));
             let call_result_value = self.ir_builder.occupy_value_id();
 
             self.ir_builder.inst(
-                IRInstruction::CallBuiltin { 
+                IrInstruction::CallBuiltin { 
                     builtin: BuiltinFn::AllocStr, 
                     args: vec![const_value, const_size_value],
                     result: Some(call_result_value)
@@ -424,11 +425,11 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         match lit_expr.ty {
             TyKind::I64 => {
                 let const_value = *lit_expr.value.unwrap_i64().expect("No i64 value!");
-                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
+                Ok(self.ir_builder.create_move(IrValue::Constant(const_value)))
             },
             TyKind::U8 => {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
-                Ok(self.ir_builder.create_move(IRValue::Constant(const_value)))
+                Ok(self.ir_builder.create_move(IrValue::Constant(const_value)))
             },
             TyKind::Str => {
                 panic!("Str type must match literal raw structure formatting processing execution paths")
@@ -446,7 +447,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         let reg_sz = sym.ty.get().to_reg_size();
         assert_ne!(reg_sz, 0);
-        let load_value_id = self.ir_builder.create_load(IRAddress::StackSlot(StackSlotId(sym_off)));
+        let load_value_id = self.ir_builder.create_load(IrAddress::StackSlot(StackSlotId(sym_off)));
         Ok(load_value_id)
     }
 
@@ -455,16 +456,16 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         match bin_expr.operation {
             // FIX: Repaired the inverted Multiply/Divide copy-paste error
-            AstOp::Add       => Ok(self.ir_builder.create_add(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::Subtract  => Ok(self.ir_builder.create_subtract(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::Multiply  => Ok(self.ir_builder.create_multiply(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::Divide    => Ok(self.ir_builder.create_divide(IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::EqEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::EqEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::NEq       => Ok(self.ir_builder.create_conditional_jump(IRCondition::NEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::LtEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::LTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::GtEq      => Ok(self.ir_builder.create_conditional_jump(IRCondition::GTEq, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::LThan     => Ok(self.ir_builder.create_conditional_jump(IRCondition::LThan, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
-            AstOp::GThan     => Ok(self.ir_builder.create_conditional_jump(IRCondition::GThan, IRValue::Var(lhs_value_id), IRValue::Var(rhs_value_id))),
+            AstOp::Add       => Ok(self.ir_builder.create_add(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::Subtract  => Ok(self.ir_builder.create_subtract(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::Multiply  => Ok(self.ir_builder.create_multiply(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::Divide    => Ok(self.ir_builder.create_divide(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::EqEq      => Ok(self.ir_builder.create_conditional_jump(IrCondition::EqEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::NEq       => Ok(self.ir_builder.create_conditional_jump(IrCondition::NEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::LtEq      => Ok(self.ir_builder.create_conditional_jump(IrCondition::LTEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::GtEq      => Ok(self.ir_builder.create_conditional_jump(IrCondition::GTEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::LThan     => Ok(self.ir_builder.create_conditional_jump(IrCondition::LThan, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::GThan     => Ok(self.ir_builder.create_conditional_jump(IrCondition::GThan, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             _ => unimplemented!()
         }
     }

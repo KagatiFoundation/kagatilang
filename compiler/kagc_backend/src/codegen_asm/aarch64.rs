@@ -13,9 +13,10 @@ use kagc_lir::vreg::VReg;
 use kagc_mir::block::BlockId;
 use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::FunctionId;
-use kagc_mir::instruction::{IRCondition, StackSlotId};
+use kagc_mir::instruction::IrCondition;
 use kagc_mir::module::MirModule;
 use kagc_mir_lowering::MirToLirLowerer;
+use kagc_mir::value::StackSlotId;
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
@@ -131,12 +132,12 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
             },
             LirTerminator::CJump { cond, then_block, else_block } => {
                 let cmp_code = match cond {
-                    IRCondition::EqEq   => "b.eq",
-                    IRCondition::NEq    => "b.ne",
-                    IRCondition::GTEq   => "b.ge",
-                    IRCondition::LTEq   => "b.le",
-                    IRCondition::GThan  => "b.gt",
-                    IRCondition::LThan  => "b.lt",
+                    IrCondition::EqEq   => "b.eq",
+                    IrCondition::NEq    => "b.ne",
+                    IrCondition::GTEq   => "b.ge",
+                    IrCondition::LTEq   => "b.le",
+                    IrCondition::GThan  => "b.gt",
+                    IrCondition::LThan  => "b.lt",
                 };
                 self.emit_raw_code(&format!("{cmp_code} _L{bid}\n", bid = then_block.0));
                 self.emit_raw_code(&format!("b _L{bid}\n", bid = else_block.0));

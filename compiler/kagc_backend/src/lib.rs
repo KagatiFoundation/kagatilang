@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use kagc_lir::block::LirBasicBlock;
 use kagc_lir::function::LirFunction;
 use kagc_lir::instruction::LirInstruction;
-use kagc_mir::instruction::StackSlotId;
+use kagc_mir::value::StackSlotId;
 
 /// Parent struct for generating code.
 pub trait CodeGenerator {

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use kagc_mir::block::{IRBasicBlock, Terminator};
 use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::{FunctionSignature, IRFunction};
-use kagc_mir::instruction::{IRAddress, IRCondition, IRInstruction};
-use kagc_mir::value::{IRValue, IRValueId};
+use kagc_mir::instruction::{IrCondition, IrInstruction};
+use kagc_mir::value::{IrValue, IrValueId, IrAddress};
 
 use kagc_lir::block::{LirBasicBlock, LirTerminator};
 use kagc_lir::function::{LirFunction, LirFunctionParam, LirFunctionSignature};
@@ -59,14 +59,14 @@ impl MirToLirLowerer {
         let mut lir_instrs = vec![];
         for instr in &block.instructions {
             let instrs = match instr {
-                IRInstruction::Add { result, lhs, rhs } => self.lower_add(result, lhs, rhs),
-                IRInstruction::Mov { result, src } => self.lower_move(result, src),
-                IRInstruction::Store { address, src } => self.lower_store(*address, src),
-                IRInstruction::Load { src, result } => self.lower_load(result, *src),
-                IRInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
-                IRInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
-                IRInstruction::LoadConst { label_id, result } => self.lower_const_load(*label_id, result),
-                IRInstruction::CallBuiltin { builtin, args, result } => self.lower_builtin_function_call(*builtin, args, result),
+                IrInstruction::Add { result, lhs, rhs } => self.lower_add(result, lhs, rhs),
+                IrInstruction::Mov { result, src } => self.lower_move(result, src),
+                IrInstruction::Store { address, src } => self.lower_store(*address, src),
+                IrInstruction::Load { src, result } => self.lower_load(result, *src),
+                IrInstruction::CondJump { lhs, rhs, cond, result } => self.lower_conditional(lhs, rhs, cond, result),
+                IrInstruction::Call { func, args, result } => self.lower_function_call(func, args, result),
+                IrInstruction::LoadConst { label_id, result } => self.lower_const_load(*label_id, result),
+                IrInstruction::CallBuiltin { builtin, args, result } => self.lower_builtin_function_call(*builtin, args, result),
                 _ => unimplemented!("{instr:#?}")
             };
             lir_instrs.extend(instrs);
@@ -92,7 +92,7 @@ impl MirToLirLowerer {
             Terminator::CondJump { cond, then_block, else_block } => {
                 self.vreg_mapper.get_or_create(cond);
                 LirTerminator::CJump { 
-                    cond: IRCondition::EqEq, 
+                    cond: IrCondition::EqEq, 
                     then_block, 
                     else_block
                 }
@@ -112,8 +112,8 @@ impl MirToLirLowerer {
     fn lower_function_call(
         &mut self, 
         func: &str, 
-        args: &[IRValueId], 
-        result: &Option<IRValueId>
+        args: &[IrValueId], 
+        result: &Option<IrValueId>
     ) -> Vec<LirInstruction> {
         let mut lir_args = Vec::with_capacity(args.len());
         for arg in args {
@@ -136,8 +136,8 @@ impl MirToLirLowerer {
     fn lower_builtin_function_call(
         &mut self,
         builtin: BuiltinFn,
-        args: &[IRValueId],
-        result: &Option<IRValueId>
+        args: &[IrValueId],
+        result: &Option<IrValueId>
     ) -> Vec<LirInstruction> {
         let mut lir_args = Vec::with_capacity(args.len());
         for arg in args {
@@ -159,13 +159,13 @@ impl MirToLirLowerer {
 
     fn lower_conditional(
         &mut self, 
-        lhs: &IRValue, 
-        rhs: &IRValue, 
-        cond: &IRCondition,
-        result: &IRValueId
+        lhs: &IrValue, 
+        rhs: &IrValue, 
+        cond: &IrCondition,
+        result: &IrValueId
     ) -> Vec<LirInstruction> {
         match cond {
-            IRCondition::EqEq => {
+            IrCondition::EqEq => {
                 let lhs_op = self.resolve_to_operand(*lhs);
                 let rhs_op = self.resolve_to_operand(*rhs);
                 let dest_reg = self.vreg_mapper.get_or_create(*result);
@@ -178,15 +178,15 @@ impl MirToLirLowerer {
                     }
                 ]
             },
-            IRCondition::NEq => todo!(),
-            IRCondition::GTEq => todo!(),
-            IRCondition::LTEq => todo!(),
-            IRCondition::GThan => todo!(),
-            IRCondition::LThan => todo!(),
+            IrCondition::NEq => todo!(),
+            IrCondition::GTEq => todo!(),
+            IrCondition::LTEq => todo!(),
+            IrCondition::GThan => todo!(),
+            IrCondition::LThan => todo!(),
         }
     }
 
-    fn lower_store(&mut self, address: IRAddress, src: &IRValueId) -> Vec<LirInstruction> {
+    fn lower_store(&mut self, address: IrAddress, src: &IrValueId) -> Vec<LirInstruction> {
         let src_vreg = self.vreg_mapper.get_or_create(*src);
         vec![
             LirInstruction::Store { 
@@ -196,7 +196,7 @@ impl MirToLirLowerer {
         ]
     }
 
-    fn lower_load(&mut self, result: &IRValueId, address: IRAddress) -> Vec<LirInstruction> {
+    fn lower_load(&mut self, result: &IrValueId, address: IrAddress) -> Vec<LirInstruction> {
         let dest_vreg = self.vreg_mapper.get_or_create(*result);
         vec![
             LirInstruction::Load { 
@@ -206,17 +206,17 @@ impl MirToLirLowerer {
         ]
     }
 
-    fn lower_mir_addr_to_lir_addr(&mut self, address: IRAddress) -> LirAddress {
+    fn lower_mir_addr_to_lir_addr(&mut self, address: IrAddress) -> LirAddress {
         match address {
-            IRAddress::StackSlot(off) => LirAddress::Offset(off),
-            IRAddress::BaseSlot(base, off) => {
+            IrAddress::StackSlot(off) => LirAddress::Offset(off),
+            IrAddress::BaseOffset(base, off) => {
                 let base_reg = self.vreg_mapper.get_or_create(base);
                 LirAddress::BaseOffset(base_reg, off)
             }
         }
     }
 
-    fn lower_add(&mut self, result: &IRValueId, lhs: &IRValue, rhs: &IRValue) -> Vec<LirInstruction> {
+    fn lower_add(&mut self, result: &IrValueId, lhs: &IrValue, rhs: &IrValue) -> Vec<LirInstruction> {
         let lhs_operand = self.resolve_to_operand(*lhs);
         let rhs_operand = self.resolve_to_operand(*rhs);
         let dest_vreg = self.vreg_mapper.get_or_create(*result);
@@ -230,7 +230,7 @@ impl MirToLirLowerer {
         ]
     }
 
-    fn lower_move(&mut self, result: &IRValueId, src: &IRValue) -> Vec<LirInstruction> {
+    fn lower_move(&mut self, result: &IrValueId, src: &IrValue) -> Vec<LirInstruction> {
         let src_operand = self.resolve_to_operand(*src);
         let dest_vreg = self.vreg_mapper.get_or_create(*result);
 
@@ -242,15 +242,15 @@ impl MirToLirLowerer {
         ]
     }
 
-    fn lower_const_load(&mut self, label_id: usize, result: &IRValueId) -> Vec<LirInstruction> {
+    fn lower_const_load(&mut self, label_id: usize, result: &IrValueId) -> Vec<LirInstruction> {
         let dest_vreg = self.vreg_mapper.get_or_create(*result);
         vec![LirInstruction::LoadConst { label_id, dest: dest_vreg }]
     }
 
-    fn resolve_to_operand(&mut self, value: IRValue) -> LirOperand {
+    fn resolve_to_operand(&mut self, value: IrValue) -> LirOperand {
         match value {
-            IRValue::Constant(value) => LirOperand::Constant(value),
-            IRValue::Var(irvalue_id) => {
+            IrValue::Constant(value) => LirOperand::Constant(value),
+            IrValue::Register(irvalue_id) => {
                 let vreg = self.vreg_mapper.get_or_create(irvalue_id);
                 LirOperand::VReg(vreg)
             },

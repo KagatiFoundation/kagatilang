@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use kagc_mir::value::IRValueId;
+use kagc_mir::value::IrValueId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VReg(pub usize);
@@ -11,11 +11,11 @@ pub struct VReg(pub usize);
 #[derive(Debug, Default)]
 pub struct VRegMapper {
     pub(crate) vreg_id: usize,
-    pub(crate) mapping: HashMap<IRValueId, VReg>
+    pub(crate) mapping: HashMap<IrValueId, VReg>
 }
 
 impl VRegMapper {
-    pub fn get_or_create(&mut self, value: IRValueId) -> VReg {
+    pub fn get_or_create(&mut self, value: IrValueId) -> VReg {
         if let Some(&vreg) = self.mapping.get(&value) {
             vreg
         } 

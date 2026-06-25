@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use crate::value::IRValueId;
+use crate::value::IrValueId;
 
 pub struct GraphColoringAllocator {
     pub physical_registers: Vec<String>,
@@ -9,8 +9,8 @@ pub struct GraphColoringAllocator {
 
 #[derive(Debug)]
 pub struct AllocationResult {
-    pub mapping: HashMap<IRValueId, String>,
-    pub spills: HashSet<IRValueId>,
+    pub mapping: HashMap<IrValueId, String>,
+    pub spills: HashSet<IrValueId>,
 }
 
 impl GraphColoringAllocator {
@@ -21,8 +21,8 @@ impl GraphColoringAllocator {
     pub fn allocate(&self, graph: crate::interference_graph::InterferenceGraph) -> AllocationResult {
         let k = self.physical_registers.len();
         
-        let mut select_stack: Vec<IRValueId> = Vec::new();
-        let mut removed_nodes: HashSet<IRValueId> = HashSet::new();
+        let mut select_stack: Vec<IrValueId> = Vec::new();
+        let mut removed_nodes: HashSet<IrValueId> = HashSet::new();
         
         let mut working_degrees = graph.degrees.clone();
 
@@ -60,7 +60,7 @@ impl GraphColoringAllocator {
             }
         }
 
-        let mut mapping: HashMap<IRValueId, String> = HashMap::new();
+        let mut mapping: HashMap<IrValueId, String> = HashMap::new();
 
         while let Some(node) = select_stack.pop() {
             let mut used_colors = HashSet::new();

@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use kagc_lir::vreg::VReg;
-use kagc_mir::instruction::StackSlotId;
+use kagc_mir::value::StackSlotId;
 
 use crate::regalloc::register::Register;
 

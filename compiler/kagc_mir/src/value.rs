@@ -1,40 +1,62 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use std::ops::{Add, Sub};
+
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Default, Hash)]
-pub struct IRValueId(pub usize);
+pub struct IrValueId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Default)]
 pub struct ParamPosition(pub usize);
 
-#[derive(Debug, Clone, Copy)]
-pub enum IRValue {
-    Constant(i64),
-    Var(IRValueId),
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StackSlotId(pub usize);
 
-    // memory address
-    SymbolicOffset(usize) // argument is label id
+impl Add for StackSlotId {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
 }
 
-impl IRValue {
-    pub fn as_value_id(&self) -> Option<IRValueId> {
-        match self {
-            IRValue::Var(id) => Some(*id),
-            _ => None,
+impl Sub for StackSlotId {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self {
+        Self(self.0 - rhs.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum IrAddress {
+	StackSlot(StackSlotId),
+	BaseOffset(IrValueId, StackSlotId)
+}
+
+impl Add for IrAddress {
+    type Output = IrAddress;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (IrAddress::StackSlot(lhs), IrAddress::StackSlot(rhs)) => IrAddress::StackSlot(StackSlotId(lhs.0 + rhs.0)),
+            (IrAddress::BaseOffset(base, lhs, ), IrAddress::StackSlot(rhs))
+            | (IrAddress::StackSlot(lhs), IrAddress::BaseOffset(base, rhs)) => IrAddress::BaseOffset(base, StackSlotId(lhs.0 + rhs.0)),
+            _ => unreachable!(),
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::value::{IRValue, IRValueId};
+#[derive(Debug, Clone, Copy)]
+pub enum IrValue {
+    Constant(i64),
+    Register(IrValueId), // virtual register
+	Address(IrAddress),
+}
 
-    #[test]
-    fn test_as_value_id_correctness() {
-        let value = IRValue::Constant(32);
-        assert_eq!(value.as_value_id(), None);
-
-        let value = IRValue::Var(IRValueId(12));
-        assert_eq!(value.as_value_id(), Some(IRValueId(12)));
+impl IrValue {
+    pub fn as_value_id(&self) -> Option<IrValueId> {
+        match self {
+            IrValue::Register(id) => Some(*id),
+            _ => None,
+        }
     }
 }

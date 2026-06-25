@@ -1,6 +1,6 @@
 #![allow(clippy::new_without_default)]
 
-use crate::value::IRValueId;
+use crate::value::IrValueId;
 use crate::function::IRFunction;
 use crate::block::BlockId;
 use crate::block::BlockLiveness;
@@ -10,8 +10,8 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct InterferenceGraph {
-    pub adj_list: HashMap<IRValueId, HashSet<IRValueId>>,
-    pub degrees: HashMap<IRValueId, usize>,
+    pub adj_list: HashMap<IrValueId, HashSet<IrValueId>>,
+    pub degrees: HashMap<IrValueId, usize>,
 }
 
 impl InterferenceGraph {
@@ -22,12 +22,12 @@ impl InterferenceGraph {
         }
     }
 
-    pub fn add_node(&mut self, val: IRValueId) {
+    pub fn add_node(&mut self, val: IrValueId) {
         self.adj_list.entry(val).or_default();
         self.degrees.entry(val).or_insert(0);
     }
 
-    pub fn add_edge(&mut self, u: IRValueId, v: IRValueId) {
+    pub fn add_edge(&mut self, u: IrValueId, v: IrValueId) {
         if u == v {
             return; 
         }
