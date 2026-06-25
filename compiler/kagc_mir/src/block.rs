@@ -94,6 +94,12 @@ impl Default for Terminator {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct BlockLiveness {
+    pub live_in: HashSet<IRValueId>,
+    pub live_out: HashSet<IRValueId>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;

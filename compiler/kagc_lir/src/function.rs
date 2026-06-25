@@ -80,9 +80,6 @@ impl LirFunction {
                         }
                         vregs_used.push(*src);
                     },
-                    LirInstruction::MemAlloc { dest, .. } => {
-                        vregs_defined.push(*dest);
-                    },
                     LirInstruction::CJump { dest, lhs, rhs, ..} => {
                         vregs_defined.push(*dest);
                         if let LirOperand::VReg(v) = lhs { vregs_used.push(*v); }
@@ -100,7 +97,7 @@ impl LirFunction {
                     LirInstruction::LoadConst { dest, .. } => {
                         vregs_defined.push(*dest);
                     }
-                    _ => {}
+                    _ => todo!()
                 }
 
                 for v in vregs_used.iter() {

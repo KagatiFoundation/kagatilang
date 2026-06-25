@@ -5,6 +5,8 @@ pub mod ir_operands;
 pub mod ir_instr;
 pub mod ir_liveness;
 pub mod builtin;
+pub mod interference_graph;
+pub mod graph_allocator;
 
 /// Label ID
 pub type LabelId = usize;

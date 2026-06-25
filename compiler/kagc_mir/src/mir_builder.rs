@@ -242,11 +242,6 @@ impl MirBuilder {
         let mut module = MirModule::new();
 
         for (func_id, func_anchor) in &mut self.function_anchors {
-            // let func_anchor = self
-            //     .function_anchors
-            //     .get(func_id)
-            //     .unwrap_or_else(|| bug!("function is not anchored"));
-
             let mut blocks_for_func: IndexMap<BlockId, IRBasicBlock> = IndexMap::new();
 
             for (&block_id, &owner_func) in self.block_owner.iter() {
@@ -301,11 +296,32 @@ impl MirBuilder {
                     exit_block: func_anchor.exit_block,
                     is_leaf: false,
                 };
+
+				println!("{function:#?}");
+
+				// MirBuilder::_run_register_allocation(&function);
+
                 module.add_function(function);
             }
         }
         module
     }
+
+	fn _run_register_allocation(func: &IRFunction) {
+		let analyzer = crate::function::LivenessAnalyzer::new(func);
+		let global_liveness = analyzer.compute_global_liveness();
+
+		let graph = crate::interference_graph::InterferenceGraph::build(func, &global_liveness);
+
+		let target_regs = vec![
+			"r0".to_string(), "r1".to_string(), 
+			"r2".to_string(), "r3".to_string()
+		];
+		let allocator = crate::graph_allocator::GraphColoringAllocator::new(target_regs);
+		let result = allocator.allocate(graph);
+
+		println!("Allocated Registers: {:?}", result.mapping);
+	}
 
     pub fn build2(&mut self) -> MirModule {
         assert_ne!(self.current_function, None);

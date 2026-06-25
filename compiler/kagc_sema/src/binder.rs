@@ -6,7 +6,6 @@ use kagc_utils::bug;
 use kagc_errors::code::ErrCode;
 use kagc_scope::ScopeCtx;
 use kagc_scope::ScopeType;
-use kagc_scope::ScopeDatabase;
 use kagc_symbol::{StorageClass, Sym, SymId, SymTy};
 use kagc_symbol::function::{Func, FuncId};
 use kagc_types::record::{RecordFieldType, RecordType};
@@ -18,7 +17,6 @@ pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
     scope: &'tcx ScopeCtx<'tcx>,
     ast_nodes: &'r Vec<AstNode<'tcx>>,
 	current_function_id: Option<FuncId>,
-	scope_db: &'tcx ScopeDatabase<'tcx>
 }
 
 pub type BindingResult = Option<SymId>;
@@ -28,7 +26,6 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         scope: &'tcx ScopeCtx<'tcx>,
         diags: &'r DiagnosticBag,
         asts: &'r Vec<AstNode<'tcx>>,
-		scope_db: &'tcx ScopeDatabase<'tcx>
     ) -> Self {
         Self {
             diagnostics: diags,
@@ -36,7 +33,6 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             _local_offset: 0,
             ast_nodes: asts,
 			current_function_id: None,
-			scope_db
         }
     }
 

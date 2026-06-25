@@ -66,8 +66,6 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
     fn gen_function(&mut self, lir_func: &LirFunction) {
-        // println!("{lir_func:#?}");
-        // return;
         if lir_func.signature.class == StorageClass::EXTERN {
             println!(".extern _{fn_name}", fn_name = lir_func.name); // an extern function
             return;

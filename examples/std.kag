@@ -1,5 +1,7 @@
-import "std/io";
-
 def main() -> void {
-	let num = 1024 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2;
+	let num = 12334;
+
+	loop {
+		let a = 12;
+	}
 }

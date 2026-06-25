@@ -1,0 +1,9 @@
+[package]
+name = "kagc_optimization"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+kagc_ast = { path = "../kagc_ast" }
+kagc_symbol = { path = "../kagc_symbol" }
+kagc_types = { path = "../kagc_types" }
