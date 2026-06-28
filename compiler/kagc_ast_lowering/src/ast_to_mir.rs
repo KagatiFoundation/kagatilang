@@ -562,9 +562,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.ir_builder.set_terminator(
             conditional_block, 
             Terminator::CondJump { 
-                cond: if_stmt_cond_value, 
+                jump_value_id: if_stmt_cond_value, 
                 then_block, 
-                else_block
+                else_block,
+				cond: IrCondition::EqEq
             }
         );
 

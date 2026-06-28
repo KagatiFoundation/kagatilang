@@ -161,7 +161,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
     fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
         let mut cg = Aarch64CodeGenerator::new(self.const_pool);
         for module in modules.iter() {
-            cg.generate_module_code(module);
+            // cg.generate_module_code(module);
+			cg.generate_code(&module.functions);
         }
         cg.dump_globals();
     }

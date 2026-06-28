@@ -5,16 +5,16 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 
 use crate::block::BlockId;
-use crate::function::IRFunction;
+use crate::function::IrFunction;
 use crate::instruction::IrInstruction;
 use crate::value::IrValue;
 use crate::value::IrValueId;
 
 #[derive(Debug, Clone, Copy)]
 pub struct LiveRange {
-    pub value: IrValueId,
-    pub start: BlockId,
-    pub end: BlockId
+    pub value: IrValueId, // virtual register
+    pub start: usize, 
+    pub end: usize,   
 }
 
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub struct BlockLiveness {
 pub struct LivenessAnalyzer;
 
 impl LivenessAnalyzer {
-    pub fn compute_function_live_ranges(&self, function: &IRFunction) -> Vec<LiveRange> {
+    pub fn compute_function_live_ranges(&self, function: &IrFunction) -> Vec<LiveRange> {
         let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
         block_ids.sort_by_key(|b| b.0);
 
@@ -141,7 +141,7 @@ impl LivenessAnalyzer {
         }
 
         final_ranges.into_iter()
-            .map(|(value, (start, end))| LiveRange { value, start: BlockId(start), end: BlockId(end) })
+            .map(|(value, (start, end))| LiveRange { value, start, end })
             .collect()
     }
 
@@ -165,12 +165,12 @@ impl LivenessAnalyzer {
             IrInstruction::Store { src, .. } => {
                 uses.push(*src);
             }
-            IrInstruction::CondJump { result, lhs, rhs, .. } => {
-                defs.push(*result);
+            IrInstruction::CondJump { lhs, rhs, .. } => {
+                // Evaluates branches, modifies flags/control-flow but defines zero local values.
                 if let IrValue::Register(r) = lhs { uses.push(*r); }
                 if let IrValue::Register(r) = rhs { uses.push(*r); }
             }
-            _ => todo!()
+            _ => {}
         }
         (uses, defs)
     }

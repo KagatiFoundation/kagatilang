@@ -1,7 +1,7 @@
 #![allow(clippy::new_without_default)]
 
 use crate::value::IrValueId;
-use crate::function::IRFunction;
+use crate::function::IrFunction;
 use crate::block::BlockId;
 use crate::block::BlockLiveness;
 
@@ -41,7 +41,7 @@ impl InterferenceGraph {
         }
 	}
 
-    pub fn build(func: &IRFunction, global_liveness: &HashMap<BlockId, BlockLiveness>) -> Self {
+    pub fn build(func: &IrFunction, global_liveness: &HashMap<BlockId, BlockLiveness>) -> Self {
         let mut graph = Self::new();
 
         for block in func.blocks.values() {

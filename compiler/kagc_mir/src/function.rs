@@ -4,7 +4,7 @@
 use indexmap::IndexMap;
 use kagc_symbol::StorageClass;
 
-use crate::block::IRBasicBlock;
+use crate::block::IrBasicBlock;
 use crate::block::BlockId;
 
 use crate::value::StackSlotId;
@@ -29,11 +29,11 @@ pub struct FunctionSignature {
 }
 
 #[derive(Default, Debug)]
-pub struct IRFunction {
+pub struct IrFunction {
     pub id: FunctionId,
     pub name: String,
     pub signature: FunctionSignature,
-    pub blocks: IndexMap<BlockId, IRBasicBlock>,
+    pub blocks: IndexMap<BlockId, IrBasicBlock>,
     pub entry_block: BlockId,
     pub exit_block: BlockId,
     pub is_leaf: bool

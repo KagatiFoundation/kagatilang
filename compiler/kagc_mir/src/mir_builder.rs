@@ -277,7 +277,7 @@ impl IrBuilder {
 					Terminator::Jump(b_func.anchor.exit_block)
 				);
 
-            	let ir_block = IRBasicBlock {
+            	let ir_block = IrBasicBlock {
                 	id: block_id,
                 	instructions: b_block.instructions,
                 	successors: b_block.successors,
@@ -288,7 +288,7 @@ impl IrBuilder {
             	finalized_blocks.insert(block_id, ir_block);
         	}
 
-        	let function = IRFunction {
+        	let function = IrFunction {
             	signature: b_func.signature,
             	id: func_id,
             	name: b_func.name.clone(),

@@ -24,7 +24,6 @@ SOFTWARE.
 
 mod ast_to_mir;
 mod fn_ctx;
-mod typedefs;
 mod loop_ctx;
 
 pub use ast_to_mir::AstToMirLowerer;

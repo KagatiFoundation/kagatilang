@@ -19,7 +19,7 @@ pub struct BlockId(pub usize);
 pub const INVALID_BLOCK_ID: BlockId = BlockId(usize::MAX);
 
 #[derive(Debug, Clone, Default)]
-pub struct IRBasicBlock {
+pub struct IrBasicBlock {
     pub id: BlockId,
     pub instructions: Vec<IrInstruction>,
     pub successors: HashSet<BlockId>,
@@ -28,7 +28,7 @@ pub struct IRBasicBlock {
     pub name: String
 }
 
-impl IRBasicBlock {
+impl IrBasicBlock {
     pub fn compute_use_def(&self) -> UseDefSet {
         let mut use_defs = UseDefSet::default();
 
@@ -77,9 +77,10 @@ pub enum Terminator {
     Jump(BlockId),
 
     CondJump {
-        cond: IrValueId,
+        jump_value_id: IrValueId,
+		cond: IrCondition,
         then_block: BlockId,
-        else_block: BlockId
+        else_block: BlockId,
     },
 
     Return {
@@ -104,13 +105,13 @@ pub struct BlockLiveness {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::block::IRBasicBlock;
+    use crate::block::IrBasicBlock;
     use crate::instruction::*;
     use crate::value::{IrValue, IrValueId};
 
     #[test]
     fn test_use_def_on_single_block() {
-        let mut block = IRBasicBlock::default();
+        let mut block = IrBasicBlock::default();
         block.instructions.push(IrInstruction::Mov { 
             result: IrValueId(0), 
             src: IrValue::Constant(32)

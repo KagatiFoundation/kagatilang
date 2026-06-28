@@ -7,7 +7,7 @@ use crate::function::*;
 
 #[derive(Default, Debug)]
 pub struct MirModule {
-    pub functions: HashMap<FunctionId, IRFunction>
+    pub functions: HashMap<FunctionId, IrFunction>
 }
 
 impl MirModule {
@@ -15,7 +15,7 @@ impl MirModule {
         Self { functions: HashMap::new() }
     }
 
-    pub fn add_function(&mut self, function: IRFunction) {
+    pub fn add_function(&mut self, function: IrFunction) {
         self.functions.insert(function.id, function);
     }
 }

@@ -6,21 +6,21 @@ pub mod codegen_asm;
 
 use std::collections::HashMap;
 
-use kagc_lir::block::LirBasicBlock;
-use kagc_lir::function::LirFunction;
-use kagc_lir::instruction::LirInstruction;
+use kagc_mir::function::IrFunction;
+use kagc_mir::block::IrBasicBlock;
+use kagc_mir::instruction::IrInstruction;
 use kagc_mir::value::StackSlotId;
 
 /// Parent struct for generating code.
 pub trait CodeGenerator {
     /// Generate code from LIR functions
-    fn gen_function(&mut self, func: &LirFunction);
+    fn gen_function(&mut self, func: &IrFunction);
 
     /// Generate code from LIR basic blocks
-    fn gen_block(&mut self, block: &LirBasicBlock);
+    fn gen_block(&mut self, block: &IrBasicBlock);
 
     /// Generate code from LIR instructions
-    fn gen_instruction(&mut self, instr: &LirInstruction);
+    fn gen_instruction(&mut self, instr: &IrInstruction);
 }
 
 /// A utility struct which helps generate offsets.

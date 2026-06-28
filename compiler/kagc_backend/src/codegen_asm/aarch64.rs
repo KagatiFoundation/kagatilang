@@ -4,25 +4,19 @@
 use std::collections::HashMap;
 
 use kagc_const::pool::{ConstEntry, ConstPool, KagcConst};
-use kagc_lir::block::LirTerminator;
-use kagc_lir::instruction::{LirAddress, LirInstruction};
-use kagc_lir::operand::LirOperand;
-use kagc_lir::function::LirFunction;
-use kagc_lir::block::LirBasicBlock;
-use kagc_lir::vreg::VReg;
-use kagc_mir::block::BlockId;
+use kagc_mir::analyzer::LivenessAnalyzer;
+use kagc_mir::block::{BlockId, IrBasicBlock, Terminator};
 use kagc_mir::builtin::BuiltinFn;
-use kagc_mir::function::FunctionId;
-use kagc_mir::instruction::IrCondition;
-use kagc_mir::module::MirModule;
-use kagc_mir_lowering::MirToLirLowerer;
-use kagc_mir::value::StackSlotId;
+use kagc_mir::function::{FunctionId, IrFunction};
+use kagc_mir::instruction::{IrCondition, IrInstruction};
+use kagc_mir::value::{IrAddress, IrValue, IrValueId, StackSlotId};
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
 use crate::codegen_asm::fn_state::CurrentFunctionState;
+use crate::regalloc::Location;
+use crate::regalloc::linear_alloca2::LinearScanAllocator;
 use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
-use crate::regalloc::{Location, LinearScanAllocator};
 use crate::regalloc::register::{RegClass, Register};
 use crate::{CodeGenerator, OffsetGenerator};
 
@@ -44,7 +38,7 @@ lazy_static! {
 }
 
 pub struct Aarch64CodeGenerator<'cg> {
-    allocations: Option<HashMap<VReg, Location>>,
+    allocations: Option<HashMap<IrValueId, Location>>,
     function_entry_block: Option<BlockId>,
     const_pool: &'cg ConstPool,
     offset_generator: OffsetGenerator,
@@ -66,39 +60,48 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 }
 
 impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
-    fn gen_function(&mut self, lir_func: &LirFunction) {
-        if lir_func.signature.class == StorageClass::EXTERN {
-            println!(".extern _{fn_name}", fn_name = lir_func.name); // an extern function
+    fn gen_function(&mut self, function: &IrFunction) {
+        if function.signature.class == StorageClass::EXTERN {
+            println!(".extern _{fn_name}", fn_name = function.name); // an extern function
             return;
         }
 
         let mut allocator = LinearScanAllocator::new(standard_aarch64_register_file());
-        let allocs = allocator.allocate(&mut lir_func.compute_vreg_live_ranges()[..]);
 
-        let vreg_mappings: HashMap<VReg, Location> = allocs.allocations.into_iter().map(|a| (a.vreg, a.location)).collect();
-        self.allocations = Some(vreg_mappings);
-        self.function_entry_block = Some(lir_func.entry_block);
+		let liveness_analyzer = LivenessAnalyzer {};
+		let mut live_ranges = liveness_analyzer.compute_function_live_ranges(function);
+  
+        let allocs = allocator.allocate(&mut live_ranges);
+
+        let value_id_mappings: HashMap<IrValueId, Location> = allocs
+			.allocations
+			.into_iter()
+			.map(|a| (a.value_id, a.location))
+			.collect();
+
+        self.allocations = Some(value_id_mappings);
+        self.function_entry_block = Some(function.entry_block);
 
         // current function's metadata
-        let is_leaf = self.is_function_leaf(lir_func);
-        let stack_size = Self::align_to_16(self.calculate_function_stack_size(lir_func, is_leaf));
+        let is_leaf = self.is_function_leaf(function);
+        let stack_size = Self::align_to_16(self.calculate_function_stack_size(function, is_leaf));
         self.current_function_state = Some(CurrentFunctionState {
             is_leaf,
-            id: lir_func.id,
+            id: function.id,
             computed_stack_size: stack_size as i64
         });
 
         // manage function's stack
-        self.emit_function_preamble(lir_func);
+        self.emit_function_preamble(function);
 
-		self.gen_function_blocks(lir_func);
+		self.gen_function_blocks(function);
 
         // return from the function
-        self.emit_function_postamble(lir_func);
+        self.emit_function_postamble(function);
         println!("{code}", code = self.current_function_code);
     }
 
-    fn gen_block(&mut self, block: &LirBasicBlock) {
+    fn gen_block(&mut self, block: &IrBasicBlock) {
 		if block.instructions.is_empty() && block.predecessors.is_empty() {
 			return;
 		}
@@ -117,20 +120,20 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         }
 
         match block.terminator {
-            LirTerminator::Jump(block_id) => self.current_function_code.push_str(&format!("b _L{}\n", block_id.0)),
-            LirTerminator::Return { value, target } => {
+            Terminator::Jump(block_id) => self.current_function_code.push_str(&format!("b _L{}\n", block_id.0)),
+            Terminator::Return { value, target } => {
                 if let Some(ret_val_vreg) = value {
                     let src_loc = self.current_allocations().get(&ret_val_vreg).unwrap();
                     match src_loc {
                         Location::Reg(r1) => self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}\n", s = r1.name, d = target.0)),
                         Location::StackSlot(ss) => {
-                            self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(*ss));
+                            self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(*ss));
                             self.current_function_code.push_str(&format!("mov x0, {s}\nb _L{d}\n", s = SCRATCH_REGISTER_0.name, d = target.0));
                         }
                     }
                 }
             },
-            LirTerminator::CJump { cond, then_block, else_block } => {
+            Terminator::CondJump { jump_value_id, cond, then_block, else_block } => {
                 let cmp_code = match cond {
                     IrCondition::EqEq   => "b.eq",
                     IrCondition::NEq    => "b.ne",
@@ -145,39 +148,37 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         }
     }
 
-    fn gen_instruction(&mut self, instr: &LirInstruction) {
+    fn gen_instruction(&mut self, instr: &IrInstruction) {
 		match instr {
-			LirInstruction::Mov         { dest, src } => self.emit_mov_inst(dest, src),
-			LirInstruction::Add         { dest, lhs, rhs } => self.emit_add_inst(dest, lhs, rhs),
-			LirInstruction::Store       { src, dest } => self.emit_str_inst(src, *dest),
-			LirInstruction::Load        { src, dest } => self.emit_ldr_inst(*src, dest),
-			LirInstruction::CJump       { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-			LirInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
-			LirInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
-			LirInstruction::LoadConst   { label_id, dest } => self.emit_load_const(*label_id, dest),
+			IrInstruction::Mov         { result, src } => self.emit_mov_inst(result, src),
+			IrInstruction::Add         { result, lhs, rhs } => self.emit_add_inst(result, lhs, rhs),
+			IrInstruction::Store       { src, address } => self.emit_str_inst(src, *address),
+			IrInstruction::Load        { src, result } => self.emit_ldr_inst(*src, result),
+			IrInstruction::CondJump    { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
+			IrInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
+			IrInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
+			IrInstruction::LoadConst   { label_id, result } => self.emit_load_const(*label_id, result),
 			_ => panic!()
 		}
     }
 }
 
 impl<'cg> Aarch64CodeGenerator<'cg> {
-    pub fn generate_module_code(&mut self, module: &MirModule) {
-        let mut module_funcs: Vec<FunctionId> = module.functions.keys().cloned().collect();
-        let mut mir_lowerer = MirToLirLowerer::default();
-        module_funcs.sort_by_key(|fid| fid.0);
-        for func_id in module_funcs {
-            let func = &module.functions[&func_id];
-            let func_lowered = mir_lowerer.lower_function(func);
-            self.gen_function(&func_lowered); 
+	pub fn generate_code(&mut self, functions: &HashMap<FunctionId, IrFunction>) {
+        let mut function_ids: Vec<FunctionId> = functions.keys().cloned().collect();
+        function_ids.sort_by_key(|function_id| function_id.0);
 
-            // reset current function
+		for function_id in function_ids {
+			let function = &functions[&function_id];
+			self.gen_function(function);
+
             self.current_function_code = String::new();
             self.offset_generator.next_off = 0;
             self.current_function_state = None;
-        }
-    }
+		}
+	}
 
-	fn gen_function_blocks(&mut self, function: &LirFunction) {
+	fn gen_function_blocks(&mut self, function: &IrFunction) {
         let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
         block_ids.sort_by_key(|b| b.0);
 
@@ -192,7 +193,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 			self.gen_block_instructions(block);
 
-			if let LirTerminator::Jump(jump_bid) = block.terminator {
+			if let Terminator::Jump(jump_bid) = block.terminator {
 				let next_block = function.blocks.get(&(BlockId(index + 1)));
 				if Some(jump_bid) == next_block.map(|b| b.id) {
 					// fallthrough
@@ -203,7 +204,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		}
 	}
 
-	fn gen_block_instructions(&mut self, block: &LirBasicBlock) {
+	fn gen_block_instructions(&mut self, block: &IrBasicBlock) {
 		for inst in &block.instructions {
 			self.gen_instruction(inst);
 		}
@@ -235,7 +236,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         }
     }
 
-    fn emit_call_inst(&mut self, func: &str, args: &[VReg], result: &Option<VReg>) {
+    fn emit_call_inst(&mut self, func: &str, args: &[IrValueId], result: &Option<IrValueId>) {
         if args.len() > 8 {
             bug!("compiler doesn't support more than 8 arguments");
         }
@@ -252,7 +253,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                     );
                 },
                 Location::StackSlot(slot) => {
-                    self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(*slot));
+                    self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(*slot));
                     self.emit_raw_code(
                         &format!(
                             "mov {reg}, {val}\n",
@@ -279,7 +280,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         }
     }
 
-    fn emit_builtin_fn_call_inst(&mut self, builtin: BuiltinFn, args: &[VReg], result: &Option<VReg>) {
+    fn emit_builtin_fn_call_inst(&mut self, builtin: BuiltinFn, args: &[IrValueId], result: &Option<IrValueId>) {
         let fn_name = match builtin {
             BuiltinFn::AssignRef => "assign_ref",
             BuiltinFn::AllocInt => "make_rt_int",
@@ -290,7 +291,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         self.emit_call_inst(fn_name, args, result);
     }
 
-    fn calculate_function_stack_size(&self, lir_func: &LirFunction, is_leaf: bool) -> usize {
+    fn calculate_function_stack_size(&self, lir_func: &IrFunction, is_leaf: bool) -> usize {
         let mut final_stack_size = 0;
         // non-leaf functions call other functions and thus 
         // the x29 and x30 registers must be saved on the stack
@@ -304,7 +305,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
             for instr in &block.instructions {
                 // store instructions take space
                 // NOTE: machine's CPU word size is not considered at the moment.
-                if let LirInstruction::Store { .. } = instr {
+                if let IrInstruction::Store { .. } = instr {
                     final_stack_size += 8;
                 }
             }
@@ -312,12 +313,12 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         final_stack_size
     }
 
-    fn emit_function_preamble(&mut self, lir_func: &LirFunction) {
+    fn emit_function_preamble(&mut self, function: &IrFunction) {
         let curr_fn_state = self.get_current_fn_state();
         let curr_func_is_leaf = curr_fn_state.is_leaf;
         let stack_size = curr_fn_state.computed_stack_size;
 
-        self.current_function_code.push_str(&format!(".global _{name}\n_{name}:\n", name = lir_func.name));
+        self.current_function_code.push_str(&format!(".global _{name}\n_{name}:\n", name = function.name));
         if curr_func_is_leaf {
             if stack_size > 0 {
                 self.current_function_code.push_str(&format!("sub sp, sp, #{stack_size}\n"));
@@ -328,14 +329,14 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
             self.current_function_code.push_str(&format!("add x29, sp, #{}\n", stack_size - 16));
         }
 
-        for (reg_counter, param) in lir_func.signature.params.iter().enumerate() {
+        for (reg_counter, param) in function.signature.params.iter().enumerate() {
             let param_addr = self.offset_generator.next(param.stack_slot);
             // self.current_function_code.push_str(&format!("str x{reg_counter}, [sp, #{param_addr}]\n"));
             self.emit_store_reg_by_name(&format!("x{}", reg_counter), param_addr);
         }
     }
 
-    fn emit_function_postamble(&mut self, lir_func: &LirFunction) {
+    fn emit_function_postamble(&mut self, lir_func: &IrFunction) {
         let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
         let stack_size = self.get_current_fn_state().computed_stack_size;
         self.current_function_code.push_str(&format!("_L{lbl}:\n", lbl = lir_func.exit_block.0));
@@ -353,9 +354,9 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         self.current_function_code.push_str("ret\n");
     }
 
-    fn emit_cjump_inst(&mut self, lhs: &LirOperand, rhs: &LirOperand) {
+    fn emit_cjump_inst(&mut self, lhs: &IrValue, rhs: &IrValue) {
         match (lhs, rhs) {
-            (LirOperand::VReg(vreg1), LirOperand::VReg(vreg2)) => {
+            (IrValue::Register(vreg1), IrValue::Register(vreg2)) => {
                 let src1 = self.current_allocations().get(vreg1).unwrap().clone();
                 let src2 = self.current_allocations().get(vreg2).unwrap().clone();
                 match (src1, src2) {
@@ -363,31 +364,31 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
                     (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
                     (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(op_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op_slot));
                         self.emit_cmp_reg_reg(&reg_op, &SCRATCH_REGISTER_0);
                     },
 
                     (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(op1_slot));
-                        self.emit_ldr(&SCRATCH_REGISTER_1, LirAddress::Offset(op2_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op1_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_1, IrAddress::StackSlot(op2_slot));
                         self.emit_cmp_reg_reg(&SCRATCH_REGISTER_0, &SCRATCH_REGISTER_1);
                     },
                 } 
             },
 
-            (LirOperand::VReg(vreg), LirOperand::Constant(imm)) |
-            (LirOperand::Constant(imm), LirOperand::VReg(vreg)) => {
+            (IrValue::Register(vreg), IrValue::Constant(imm)) |
+            (IrValue::Constant(imm), IrValue::Register(vreg)) => {
                 let src1 = self.current_allocations().get(vreg).unwrap().clone();
                 match src1 {
                     Location::Reg(register) => self.emit_cmp_reg_imm(&register, *imm),
                     Location::StackSlot(src_slot) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(src_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(src_slot));
                         self.emit_cmp_reg_imm(&SCRATCH_REGISTER_0, *imm);
                     },
                 }
             },
 
-            (LirOperand::Constant(imm1), LirOperand::Constant(imm2)) => {
+            (IrValue::Constant(imm1), IrValue::Constant(imm2)) => {
                 self.emit_move_const_to_reg(&SCRATCH_REGISTER_0, *imm1);
                 self.emit_move_const_to_reg(&SCRATCH_REGISTER_1, *imm2);
                 self.emit_cmp_reg_reg(&SCRATCH_REGISTER_0, &SCRATCH_REGISTER_1);
@@ -407,23 +408,23 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         self.current_function_code.push_str(&format!("_L{id}:\n"));
     }
 
-    fn emit_str_inst(&mut self, src: &VReg, addr: LirAddress) {
+    fn emit_str_inst(&mut self, src: &IrValueId, addr: IrAddress) {
         let src_loc = self.current_allocations().get(src).unwrap().clone();
         match src_loc {
             Location::Reg(register) => self.emit_str(&register, addr),
             Location::StackSlot(ss) => {
-                self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(ss));
+                self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(ss));
                 self.emit_str(&SCRATCH_REGISTER_0, addr);
             }
         }
     }
 
-    fn emit_ldr_inst(&mut self, addr: LirAddress, dest: &VReg) {
+    fn emit_ldr_inst(&mut self, addr: IrAddress, dest: &IrValueId) {
         let dest_loc = self.current_allocations().get(dest).unwrap().clone();
         match dest_loc {
             Location::Reg(register) => self.emit_ldr(&register, addr),
             Location::StackSlot(ss) => {
-                self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(ss));
+                self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(ss));
                 self.emit_str(&SCRATCH_REGISTER_0, addr);
             }
         }
@@ -475,39 +476,39 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         self.current_function_code.push_str(&format!("ldr {}, {src_addr}\n", reg.name));
     }
 
-    fn emit_mov_inst(&mut self, dest: &VReg, src: &LirOperand) {
+    fn emit_mov_inst(&mut self, dest: &IrValueId, src: &IrValue) {
         let loc = self.current_allocations().get(dest).unwrap().clone();
         if let Location::Reg(dest_reg) = loc {
             match src {
-                LirOperand::VReg(vreg) => {
-                    let src_loc = self.current_allocations().get(vreg).unwrap().clone();
+                IrValue::Register(reg) => {
+                    let src_loc = self.current_allocations().get(reg).unwrap().clone();
                     if let Location::Reg(src_reg) = src_loc {
                         self.emit_move_reg_to_reg(&dest_reg, &src_reg);
                     }
                 },
-                LirOperand::Constant(value) => {
+                IrValue::Constant(value) => {
                     self.emit_move_const_to_reg(&dest_reg, *value);
                 },
             }
         }
         else if let Location::StackSlot(dest_slot) = loc {
             match src {
-                LirOperand::VReg(vreg) => {
+                IrValue::Register(vreg) => {
                     let src_loc = self.current_allocations().get(vreg).unwrap().clone();
                     if let Location::Reg(src_reg) = src_loc {
                         self.emit_move_reg_to_reg(&SCRATCH_REGISTER_0, &src_reg);
-                        self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                        self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
                     }
                 },
-                LirOperand::Constant(value) => {
+                IrValue::Constant(value) => {
                     self.emit_move_const_to_reg(&SCRATCH_REGISTER_0, *value);
-                    self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                    self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
                 },
             }
         }
     }
 
-    fn emit_add_inst(&mut self, dest: &VReg, lhs: &LirOperand, rhs: &LirOperand) {
+    fn emit_add_inst(&mut self, dest: &IrValueId, lhs: &IrValue, rhs: &IrValue) {
         let dest_loc = self.current_allocations().get(dest).unwrap().clone();
         match dest_loc {
             Location::Reg(register) => self.emit_add_dest_reg(&register, lhs, rhs),
@@ -515,9 +516,9 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         }
     }
 
-    fn emit_add_dest_reg(&mut self, dest_reg: &Register, lhs: &LirOperand, rhs: &LirOperand) {
+    fn emit_add_dest_reg(&mut self, dest_reg: &Register, lhs: &IrValue, rhs: &IrValue) {
         match (lhs, rhs) {
-            (LirOperand::VReg(vreg1), LirOperand::VReg(vreg2)) => {
+            (IrValue::Register(vreg1), IrValue::Register(vreg2)) => {
                 let src1 = self.current_allocations().get(vreg1).unwrap().clone();
                 let src2 = self.current_allocations().get(vreg2).unwrap().clone();
                 match (src1, src2) {
@@ -525,90 +526,90 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
                     (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
                     (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(op_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op_slot));
                         self.emit_add_reg_reg_reg(dest_reg, &reg_op, &SCRATCH_REGISTER_0);
                     },
 
                     (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(op1_slot));
-                        self.emit_ldr(&SCRATCH_REGISTER_1, LirAddress::Offset(op2_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op1_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_1, IrAddress::StackSlot(op2_slot));
                         self.emit_add_reg_reg_reg(dest_reg, &SCRATCH_REGISTER_0, &SCRATCH_REGISTER_1);
                     },
                 }
             },
 
-            (LirOperand::Constant(imm), LirOperand::VReg(vreg)) |
-            (LirOperand::VReg(vreg), LirOperand::Constant(imm)) => {
+            (IrValue::Constant(imm), IrValue::Register(vreg)) |
+            (IrValue::Register(vreg), IrValue::Constant(imm)) => {
                 let src1 = self.current_allocations().get(vreg).unwrap().clone();
                 match src1 {
                     Location::Reg(r1) => self.emit_add_reg_reg_imm(dest_reg, &r1, *imm),
                     Location::StackSlot(src_slot) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(src_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(src_slot));
                         self.emit_add_reg_reg_imm(dest_reg, &SCRATCH_REGISTER_0, *imm);
                     },
                 }
             },
 
-            (LirOperand::Constant(imm1), LirOperand::Constant(imm2)) => {
+            (IrValue::Constant(imm1), IrValue::Constant(imm2)) => {
                 self.emit_move_const_to_reg(dest_reg, *imm1 + *imm2);
             },
         }
     }
 
-    fn emit_add_dest_stack(&mut self, dest_slot: StackSlotId, lhs: &LirOperand, rhs: &LirOperand) {
+    fn emit_add_dest_stack(&mut self, dest_slot: StackSlotId, lhs: &IrValue, rhs: &IrValue) {
         match (lhs, rhs) {
-            (LirOperand::VReg(vreg1), LirOperand::VReg(vreg2)) => {
-                let src1 = self.current_allocations().get(vreg1).unwrap().clone();
-                let src2 = self.current_allocations().get(vreg2).unwrap().clone();
+            (IrValue::Register(reg1), IrValue::Register(reg2)) => {
+                let src1 = self.current_allocations().get(reg1).unwrap().clone();
+                let src2 = self.current_allocations().get(reg2).unwrap().clone();
                 match (src1, src2) {
                     (Location::Reg(r1), Location::Reg(r2)) => {
                         self.emit_add_reg_reg_reg(&SCRATCH_REGISTER_0, &r1, &r2);
-                        self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                        self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
                     }
 
                     (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
                     (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(op_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op_slot));
                         self.emit_add_reg_reg_reg(&SCRATCH_REGISTER_1, &reg_op, &SCRATCH_REGISTER_0);
-                        self.emit_str(&SCRATCH_REGISTER_1, LirAddress::Offset(dest_slot));
+                        self.emit_str(&SCRATCH_REGISTER_1, IrAddress::StackSlot(dest_slot));
                     },
 
                     (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(op1_slot));
-                        self.emit_ldr(&SCRATCH_REGISTER_1, LirAddress::Offset(op2_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op1_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_1, IrAddress::StackSlot(op2_slot));
                         self.emit_add_reg_reg_reg(&SCRATCH_REGISTER_0, &SCRATCH_REGISTER_0, &SCRATCH_REGISTER_1);
-                        self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                        self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
                     },
                 }
             },
 
-            (LirOperand::Constant(imm), LirOperand::VReg(vreg)) |
-            (LirOperand::VReg(vreg), LirOperand::Constant(imm)) => {
+            (IrValue::Constant(imm), IrValue::Register(vreg)) |
+            (IrValue::Register(vreg), IrValue::Constant(imm)) => {
                 let src1 = self.current_allocations().get(vreg).unwrap().clone();
                 match src1 {
                     Location::Reg(r1) => {
                         self.emit_add_reg_reg_imm(&SCRATCH_REGISTER_0, &r1, *imm);
-                        self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                        self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
                     }
                     Location::StackSlot(src_slot) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, LirAddress::Offset(src_slot));
+                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(src_slot));
                         self.emit_add_reg_reg_imm(&SCRATCH_REGISTER_0, &SCRATCH_REGISTER_0, *imm);
-                        self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                        self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
                     },
                 }
             },
-            (LirOperand::Constant(imm1), LirOperand::Constant(imm2)) => {
+            (IrValue::Constant(imm1), IrValue::Constant(imm2)) => {
                 self.emit_move_const_to_reg(&SCRATCH_REGISTER_0, *imm1 + *imm2);
-                self.emit_str(&SCRATCH_REGISTER_0, LirAddress::Offset(dest_slot));
+                self.emit_str(&SCRATCH_REGISTER_0, IrAddress::StackSlot(dest_slot));
             },
         }
     }
 
-    fn emit_ldr(&mut self, r1: &Register, addr: LirAddress) {
+    fn emit_ldr(&mut self, r1: &Register, addr: IrAddress) {
         let stack_size = self.get_current_fn_state().computed_stack_size;
         match addr {
-            LirAddress::Offset(off) => {
-                let addr_off = self.offset_generator.get_offset_unchecked(off);
+            IrAddress::StackSlot(slot_id) => {
+                let addr_off = self.offset_generator.get_offset_unchecked(slot_id);
                 if self.get_current_fn_state().is_leaf {
                     self.emit_ldr_relative_sp(r1, stack_size, addr_off);
                 }
@@ -616,8 +617,8 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                     self.emit_ldr_relative_fp(r1, addr_off);
                 }
             },
-            LirAddress::BaseOffset(vreg, off) => {
-                let loc = self.current_allocations().get(&vreg).unwrap_or_else(|| bug!("no allocation found for {vreg:#?}"));
+            IrAddress::BaseOffset(value_id, off) => {
+                let loc = self.current_allocations().get(&value_id).unwrap_or_else(|| bug!("no allocation found for {value_id:#?}"));
                 match loc {
                     Location::Reg(register) => {
                         self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{off}]\n", d = r1.name, b = register.name));
@@ -628,11 +629,11 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         }
     }
 
-    fn emit_str(&mut self, r1: &Register, addr: LirAddress) {
+    fn emit_str(&mut self, r1: &Register, addr: IrAddress) {
         let stack_size = self.get_current_fn_state().computed_stack_size;
         match addr {
-            LirAddress::Offset(off) => {
-                let addr_off = self.offset_generator.next(off);
+            IrAddress::StackSlot(slot_id) => {
+                let addr_off = self.offset_generator.next(slot_id);
                 if self.get_current_fn_state().is_leaf {
                     self.emit_str_relative_sp(r1, stack_size, addr_off);
                 }
@@ -640,19 +641,19 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                     self.emit_str_relative_fp(r1, addr_off);
                 }
             },
-            LirAddress::BaseOffset(vreg, off) => {
+            IrAddress::BaseOffset(value_id, off) => {
                 let addr_off = self.offset_generator.off_map.insert(StackSlotId(off), off * 8).unwrap_or_else(|| bug!("cannot create an offset"));
-                let loc = self.current_allocations().get(&vreg).unwrap();
+                let loc = self.current_allocations().get(&value_id).unwrap();
                 match loc {
                     Location::Reg(register) => self.current_function_code.push_str(&format!("str {s}, [{b}, #{addr_off}]\n", s = r1.name, b = register.name)),
-                    Location::StackSlot(ss) => self.emit_str(r1, LirAddress::Offset(*ss)),
+                    Location::StackSlot(ss) => self.emit_str(r1, IrAddress::StackSlot(*ss)),
                 }
             },
         }
     }
 
-    fn emit_load_const(&mut self, label_id: usize, vreg: &VReg) {
-        let loc = self.current_allocations().get(vreg).unwrap().clone();
+    fn emit_load_const(&mut self, label_id: usize, value_id: &IrValueId) {
+        let loc = self.current_allocations().get(value_id).unwrap().clone();
         self.emit_raw_code(&format!("adrp {d}, .L.__c.{label_id}@page\n", d = SCRATCH_REGISTER_0.name));
         self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{label_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
         match loc {
@@ -734,7 +735,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         output_str
     }
 
-    fn current_allocations(&self) -> &HashMap<VReg, Location> {
+    fn current_allocations(&self) -> &HashMap<IrValueId, Location> {
         if let Some(allocs) = &self.allocations {
             allocs
         }
@@ -745,11 +746,11 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
     /// Check whether a function is leaf or not.
     /// A leaf function does not call any other functions.
-    fn is_function_leaf(&self, lir_func: &LirFunction) -> bool {
+    fn is_function_leaf(&self, lir_func: &IrFunction) -> bool {
         let mut is_leaf = true;
         for block in lir_func.blocks.values() {
             for instr in &block.instructions {
-                is_leaf = !matches!(instr, LirInstruction::Call { .. } | LirInstruction::CallBuiltin { .. });
+                is_leaf = !matches!(instr, IrInstruction::Call { .. } | IrInstruction::CallBuiltin { .. });
             }
         }
         is_leaf

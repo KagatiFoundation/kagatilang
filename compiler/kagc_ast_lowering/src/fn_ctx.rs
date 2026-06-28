@@ -7,7 +7,6 @@ use kagc_mir::LabelId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use crate::loop_ctx::LoopContext;
-use crate::typedefs::*;
 
 /// Holds function-specific context during AST-to-IR conversion.
 #[derive(Debug)]
@@ -16,9 +15,6 @@ pub struct FunctionContext {
     /// NOTE: The offsets generated using this field are not
     /// the physical slots. They are just placeholders.
     pub stack_slot_id: i64,
-
-    /// Counter for generating fresh temporary variable IDs.
-    pub temp_counter: TempCounter,
 
     /// Marks whether the next return is an early return.
     pub early_return: bool,
@@ -50,7 +46,6 @@ impl FunctionContext {
     pub fn new() -> Self {
         Self {
             stack_slot_id: Default::default(), 
-            temp_counter: 0, 
             early_return: Default::default(), 
             prev_ast_kind: None,
             parent_ast_kind: AstOp::Func,
