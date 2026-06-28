@@ -1,8 +1,8 @@
-use kagc_mir::function::FunctionId;
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2023 Kagati Foundation
 
 #[derive(Default, Debug)]
 pub(crate) struct CurrentFunctionState {
-    pub id: FunctionId,
     pub is_leaf: bool,
     pub computed_stack_size: i64
 }

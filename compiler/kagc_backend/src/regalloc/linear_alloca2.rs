@@ -85,7 +85,7 @@ impl LinearScanAllocator {
                         location: Location::Reg(reg),
                     }
                 );
-                active.push(lr.clone());
+                active.push(*lr);
             } 
             else {
                 // spill

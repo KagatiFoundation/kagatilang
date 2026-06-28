@@ -6,7 +6,7 @@ pub struct CompUnit<'tcx> {
 }
 
 impl<'tcx> CompUnit<'tcx> {
-    pub fn extract_imports(&self) -> Vec<Import> {
+    pub fn extract_imports(&self) -> Vec<Import<'tcx>> {
         let mut imports = vec![]; 
 
         for ast in &self.asts {

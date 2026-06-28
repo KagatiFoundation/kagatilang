@@ -87,7 +87,6 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         let stack_size = Self::align_to_16(self.calculate_function_stack_size(function, is_leaf));
         self.current_function_state = Some(CurrentFunctionState {
             is_leaf,
-            id: function.id,
             computed_stack_size: stack_size as i64
         });
 
@@ -133,7 +132,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
                     }
                 }
             },
-            Terminator::CondJump { jump_value_id, cond, then_block, else_block } => {
+            Terminator::CondJump { cond, then_block, else_block, .. } => {
                 let cmp_code = match cond {
                     IrCondition::EqEq   => "b.eq",
                     IrCondition::NEq    => "b.ne",

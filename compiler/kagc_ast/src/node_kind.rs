@@ -53,7 +53,7 @@ impl<'tcx> NodeKind<'tcx> {
         }
     }
 
-    pub fn as_stmt(&self) -> Option<&Stmt> {
+    pub fn as_stmt(&self) -> Option<&Stmt<'tcx>> {
         if let Self::StmtAST(stmt) = self {
             Some(stmt)
         } 

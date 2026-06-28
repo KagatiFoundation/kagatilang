@@ -26,7 +26,7 @@ impl<K: Hash + Eq, V: Hash> Hash for OrderedMap<K, V> {
 }
 
 impl<K: Hash + Eq, V> OrderedMap<K, V> {
-    pub fn iter(&self) -> indexmap::map::Iter<K, V> {
+    pub fn iter(&self) -> indexmap::map::Iter<'_, K, V> {
         self.0.iter()
     }
 }

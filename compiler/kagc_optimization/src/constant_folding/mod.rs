@@ -21,7 +21,7 @@ fn fold_expr<'tcx>(expr: Expr<'tcx>, meta: NodeMeta, sym_table: &'tcx SymTable<'
 }
 
 fn fold_ident_expr<'tcx>(ident: IdentExpr<'tcx>, meta: NodeMeta, sym_table: &'tcx SymTable<'tcx>) -> AstNode<'tcx> {
-    if let Some(symbol) = sym_table.get(ident.sym_name) {
+    if sym_table.get(ident.sym_name).is_some() {
         return AstNode::leaf(
 			NodeId(1),
 			NodeKind::ExprAST(
