@@ -13,9 +13,10 @@ use kagc_mir::value::{IrAddress, IrValue, IrValueId, StackSlotId};
 use kagc_symbol::StorageClass;
 use kagc_utils::bug;
 
+use crate::codegen_asm::cg_function_ctx::CodeGenFunctionContext;
 use crate::codegen_asm::fn_state::CurrentFunctionState;
 use crate::regalloc::Location;
-use crate::regalloc::linear_alloca2::LinearScanAllocator;
+use crate::regalloc::linear_alloca::LinearScanAllocator;
 use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
 use crate::regalloc::register::{RegClass, Register};
 use crate::{CodeGenerator, OffsetGenerator};
@@ -31,7 +32,7 @@ lazy_static! {
     };
 
     static ref SCRATCH_REGISTER_1: Register = Register {
-        id: 0x9,
+        id: 0xA,
         name: String::from("x10"),
         class: RegClass::GPR
     };
@@ -43,7 +44,9 @@ pub struct Aarch64CodeGenerator<'cg> {
     const_pool: &'cg ConstPool,
     offset_generator: OffsetGenerator,
     current_function_state: Option<CurrentFunctionState>, // none indicates no function is currently being processed
-    current_function_code: String
+    current_function_code: String,
+
+	current_function_ctx: CodeGenFunctionContext
 }
 
 impl<'cg> Aarch64CodeGenerator<'cg> {
@@ -52,6 +55,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
             allocations: None,
             function_entry_block: None,
             const_pool,
+			current_function_ctx: CodeGenFunctionContext::new(), 
             current_function_code: String::new(),
             current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
@@ -79,6 +83,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			.map(|a| (a.value_id, a.location))
 			.collect();
 
+		self.current_function_ctx.reinit();
+
         self.allocations = Some(value_id_mappings);
         self.function_entry_block = Some(function.entry_block);
 
@@ -97,6 +103,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 
         // return from the function
         self.emit_function_postamble(function);
+
         println!("{code}", code = self.current_function_code);
     }
 
@@ -149,9 +156,9 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 
     fn gen_instruction(&mut self, instr: &IrInstruction) {
 		match instr {
-			IrInstruction::Mov         { result, src } => self.emit_mov_inst(result, src),
-			IrInstruction::Add         { result, lhs, rhs } => self.emit_add_inst(result, lhs, rhs),
-			IrInstruction::Store       { src, address } => self.emit_str_inst(src, *address),
+			IrInstruction::Mov         { result, src } => self.emit_mov(*src, *result),
+			IrInstruction::Add         { result, lhs, rhs } => self.emit_add(*lhs, *rhs, *result),
+			IrInstruction::Store       { src, address } => self.emit_store(*src, *address),
 			IrInstruction::Load        { src, result } => self.emit_ldr_inst(*src, result),
 			IrInstruction::CondJump    { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
 			IrInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
@@ -217,6 +224,111 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     fn emit_raw_code(&mut self, code: &str) {
         self.current_function_code.push_str(code);
     }
+
+	fn emit_mov(&mut self, src: IrValue, result: IrValueId) {
+		let store_off = self.current_function_ctx.stack_frame.allocate(result, 0x8);
+
+		match src {
+			IrValue::Constant(src) => {
+				self.current_function_code.push_str(
+					&format!(
+						"\nmov {}, #{src}\nstr {}, [fp, #-{store_off}]",
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_0.name,
+					)
+				);
+			},
+			IrValue::Register(src_value) => {
+				let stack_slot = self.current_function_ctx.stack_frame.get_offset(src_value).expect("unknown stack value");
+
+				self.current_function_code.push_str(
+					&format!(
+						"\nldr {}, [fp, #-{}]\nstr {}, #{store_off}",
+						SCRATCH_REGISTER_0.name,
+						stack_slot.offset,
+						SCRATCH_REGISTER_0.name,
+					)
+				);
+			},
+		}
+	}
+
+	fn emit_add(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId) {
+		match (lhs, rhs) {
+			(IrValue::Constant(lhs), IrValue::Constant(rhs)) => {
+				self.current_function_code.push_str(
+					&format!(
+						"\nmov {}, #{lhs}\nmov {}, #{rhs}\nadd {}, {}, {}", 
+						SCRATCH_REGISTER_0.name, 
+						SCRATCH_REGISTER_1.name,
+						SCRATCH_REGISTER_0.name, 
+						SCRATCH_REGISTER_0.name, 
+						SCRATCH_REGISTER_1.name
+					)
+				);
+
+				self.current_function_ctx.stack_frame.allocate(result, 0x8);
+			},
+			(IrValue::Register(rhs), IrValue::Constant(lhs))
+			| (IrValue::Constant(lhs), IrValue::Register(rhs)) => {
+				let rhs = self.current_function_ctx.stack_frame.get_offset(rhs).expect("unknown stack value");
+				self.current_function_code.push_str(
+					&format!(
+						"\nmov {}, #{lhs}\nldr {}, [fp, #-{}]",
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_1.name,
+						rhs.offset
+					)
+				);
+
+				self.current_function_ctx.stack_frame.allocate(result, 0x8);
+			},
+			(IrValue::Register(lhs), IrValue::Register(rhs)) => {
+				let lhs = self.current_function_ctx.stack_frame.get_offset(lhs).expect("unknown stack value");
+				let rhs = self.current_function_ctx.stack_frame.get_offset(rhs).expect("unknown stack value");
+
+				let result = self.current_function_ctx.stack_frame.allocate(result, 0x8);
+				self.current_function_code.push_str(
+					&format!(
+						"\nldr {}, [fp, #-{}]\nldr {}, [fp, #-{}]\nadd {}, {}, {}\nstr {}, [fp, #-{}]",
+						SCRATCH_REGISTER_0.name,
+						lhs.offset,
+						SCRATCH_REGISTER_1.name,
+						rhs.offset,
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_1.name,
+						SCRATCH_REGISTER_0.name,
+						result
+					)
+				);
+			},
+		}
+	}
+
+	fn emit_store(&mut self, src: IrValueId, addr: IrAddress) {
+		let lhs = self.current_function_ctx.stack_frame.get_offset(src).expect("unknown stack value");
+		self.current_function_code.push_str(
+			&format!(
+				"\nldr {}, [fp, #-{}]",
+				SCRATCH_REGISTER_0.name,
+				lhs.offset,
+			)
+		);
+
+		match addr {
+			IrAddress::StackSlot(result) => {
+				self.current_function_code.push_str(
+					&format!(
+						"\nstr {}, [fp, #-{}]",
+						SCRATCH_REGISTER_0.name,
+						result.0
+					)
+				);
+			},
+			_ => todo!()
+		}
+	}
 
     /// WARNING: Use this function with caution.
     fn emit_store_reg_by_name(&mut self, reg: &str, off: i64) {
@@ -625,6 +737,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                     Location::StackSlot(_) => todo!(),
                 }
             },
+			_ => todo!()
         }
     }
 
@@ -648,6 +761,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
                     Location::StackSlot(ss) => self.emit_str(r1, IrAddress::StackSlot(*ss)),
                 }
             },
+			_ => todo!()
         }
     }
 

@@ -29,7 +29,7 @@ impl Sub for StackSlotId {
 #[derive(Debug, Clone, Copy)]
 pub enum IrAddress {
 	StackSlot(StackSlotId),
-	BaseOffset(IrValueId, i64)
+	BaseOffset(IrValueId, i64),
 }
 
 #[derive(Debug, Clone, Copy)]
