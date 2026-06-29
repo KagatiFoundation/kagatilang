@@ -4,15 +4,13 @@
 use std::collections::HashSet;
 use std::collections::HashMap;
 
-use crate::block::BlockId;
-use crate::function::IrFunction;
-use crate::instruction::IrInstruction;
-use crate::value::IrValue;
-use crate::value::IrValueId;
+use kagc_mir::block::BlockId;
+use kagc_mir::function::IrFunction;
+use kagc_mir::value::IrValueId;
 
 #[derive(Debug, Clone, Copy)]
 pub struct LiveRange {
-    pub value: IrValueId, // virtual register
+    pub value: IrValueId, 
     pub start: usize, 
     pub end: usize,   
 }
@@ -51,7 +49,7 @@ impl LivenessAnalyzer {
             let mut defs = HashSet::new();
 
             for instr in &block.instructions {
-                let (inst_uses, inst_defs) = self.get_ranges_for_instruction(instr);
+                let (inst_uses, inst_defs) = instr.uses_and_defs();
                 
                 for u in inst_uses {
                     if !defs.contains(&u) {
@@ -85,9 +83,9 @@ impl LivenessAnalyzer {
 
                 let mut new_live_in = local_use[bid].clone();
                 let local_def_set = &local_def[bid];
-                for vreg in &new_live_out {
-                    if !local_def_set.contains(vreg) {
-                        new_live_in.insert(*vreg);
+                for value_id in &new_live_out {
+                    if !local_def_set.contains(value_id) {
+                        new_live_in.insert(*value_id);
                     }
                 }
 
@@ -118,7 +116,7 @@ impl LivenessAnalyzer {
             
             for (offset, instr) in block.instructions.iter().enumerate().rev() {
                 let global_ip = block_start_ip + offset;
-                let (inst_uses, inst_defs) = self.get_ranges_for_instruction(instr);
+                let (inst_uses, inst_defs) = instr.uses_and_defs();
 
                 for d in inst_defs {
                     current_live.remove(&d);
@@ -143,35 +141,5 @@ impl LivenessAnalyzer {
         final_ranges.into_iter()
             .map(|(value, (start, end))| LiveRange { value, start, end })
             .collect()
-    }
-
-    fn get_ranges_for_instruction(&self, instr: &IrInstruction) -> (Vec<IrValueId>, Vec<IrValueId>) {
-        let mut uses = vec![];
-        let mut defs = vec![];
-
-        match instr {
-            IrInstruction::Mov { src, result } => {
-                defs.push(*result);
-                if let IrValue::Register(v) = src { uses.push(*v); }
-            }
-            IrInstruction::Add { lhs, rhs, result } => {
-                defs.push(*result);
-                if let IrValue::Register(v) = lhs { uses.push(*v); }
-                if let IrValue::Register(v) = rhs { uses.push(*v); }
-            }
-            IrInstruction::Load { result, .. } => {
-                defs.push(*result);
-            }
-            IrInstruction::Store { src, .. } => {
-                uses.push(*src);
-            }
-            IrInstruction::CondJump { lhs, rhs, .. } => {
-                // Evaluates branches, modifies flags/control-flow but defines zero local values.
-                if let IrValue::Register(r) = lhs { uses.push(*r); }
-                if let IrValue::Register(r) = rhs { uses.push(*r); }
-            }
-            _ => {}
-        }
-        (uses, defs)
     }
 }

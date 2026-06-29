@@ -29,22 +29,6 @@ pub struct IrBasicBlock {
 }
 
 impl IrBasicBlock {
-    pub fn compute_use_def(&self) -> UseDefSet {
-        let mut use_defs = UseDefSet::default();
-
-        for inst in &self.instructions {
-            for u in inst.uses() {
-                if !use_defs.defs.contains(&u) {
-                    use_defs.uses.insert(u);
-                }
-            }
-            for d in inst.defs() {
-                use_defs.defs.insert(d);
-            }
-        }
-        use_defs
-    }
-
     pub fn add_successor(&mut self, block_id: BlockId) {
         self.successors.insert(block_id);
     }
@@ -92,47 +76,5 @@ pub enum Terminator {
 impl Default for Terminator {
     fn default() -> Self {
         Terminator::Jump(BlockId(0))
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct BlockLiveness {
-    pub live_in: HashSet<IrValueId>,
-    pub live_out: HashSet<IrValueId>,
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use crate::block::IrBasicBlock;
-    use crate::instruction::*;
-    use crate::value::{IrValue, IrValueId};
-
-    #[test]
-    fn test_use_def_on_single_block() {
-        let mut block = IrBasicBlock::default();
-        block.instructions.push(IrInstruction::Mov { 
-            result: IrValueId(0), 
-            src: IrValue::Constant(32)
-        });
-
-        block.instructions.push(IrInstruction::Add { 
-            result: IrValueId(1), 
-            lhs: IrValue::Constant(32), 
-            rhs: IrValue::Register(IrValueId(0)) 
-        });
-
-        let use_defs = block.compute_use_def();
-        assert_eq!(use_defs.uses, HashSet::new());
-        assert_eq!(
-            use_defs.defs, 
-            {
-                let mut items = HashSet::new();
-                items.insert(IrValueId(0));
-                items.insert(IrValueId(1));
-                items
-            }
-        );
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use kagc_mir::analyzer::LiveRange;
+use crate::codegen_asm::stack::LiveRange;
 use kagc_mir::value::IrValueId;
 use kagc_mir::value::StackSlotId;
 

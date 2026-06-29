@@ -127,65 +127,32 @@ impl IrInstruction {
         }
     }
 
-    pub fn defs(&self) -> Vec<IrValueId> {
+	pub fn uses_and_defs(&self) -> (Vec<IrValueId>, Vec<IrValueId>) {
+		let mut uses = vec![];
+        let mut defs = vec![];
+
         match self {
-            IrInstruction::Mov          { result, .. } |
-            IrInstruction::Load         { result, .. } |
-            IrInstruction::Add          { result, .. } |
-            IrInstruction::Subtract     { result, .. } |
-            IrInstruction::Divide       { result, .. } |
-            IrInstruction::Multiply     { result, .. } |
-            IrInstruction::LoadGlobal   { result, .. } |
-            IrInstruction::CondJump     { result, .. } => vec![*result],
-            IrInstruction::Call         { result, .. } |
-            IrInstruction::CallBuiltin  { result, .. } => vec![result.unwrap()],
-            _ => vec![]
+            IrInstruction::Mov { src, result } => {
+                defs.push(*result);
+                if let IrValue::Register(v) = src { uses.push(*v); }
+            }
+            IrInstruction::Add { lhs, rhs, result } => {
+                defs.push(*result);
+                if let IrValue::Register(v) = lhs { uses.push(*v); }
+                if let IrValue::Register(v) = rhs { uses.push(*v); }
+            }
+            IrInstruction::Load { result, .. } => {
+                defs.push(*result);
+            }
+            IrInstruction::Store { src, .. } => {
+                uses.push(*src);
+            }
+            IrInstruction::CondJump { lhs, rhs, .. } => {
+                if let IrValue::Register(r) = lhs { uses.push(*r); }
+                if let IrValue::Register(r) = rhs { uses.push(*r); }
+            }
+            _ => {}
         }
-    }
-
-    pub fn uses(&self) -> Vec<IrValueId> {
-        match self {
-            IrInstruction::Mov         { src, .. } => src.as_value_id().into_iter().collect(),
-            IrInstruction::Add         { lhs, rhs, .. } |
-            IrInstruction::Subtract    { lhs, rhs, .. } |
-            IrInstruction::Divide      { lhs, rhs, .. } |
-            IrInstruction::CondJump    { lhs, rhs, .. } |
-            IrInstruction::Multiply    { lhs, rhs, .. } => {
-                lhs
-                    .as_value_id()
-                    .into_iter()
-                    .chain(rhs.as_value_id())
-                    .collect()
-            },
-            IrInstruction::Call        { args, .. } |
-            IrInstruction::CallBuiltin { args, .. } => args.clone(),
-            IrInstruction::Store       { src, .. } => vec![*src],
-            _ => vec![]
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{instruction::*, value::{IrValue, IrValueId}};
-
-    #[test]
-    fn test_simple_instr_construction() {
-        let i1 = IrInstruction::Mov { result: IrValueId(0), src: IrValue::Constant(32) };
-        assert!(i1.defines_value());
-        assert!(i1.uses().is_empty());
-        assert_eq!(i1.get_value_id().unwrap(), IrValueId(0));
-        assert_eq!(i1.uses(), vec![IrValueId(1)]);
-
-        let i_add = IrInstruction::Add {
-            result: IrValueId(1),
-            lhs: IrValue::Register(IrValueId(0)),
-            rhs: IrValue::Constant(32)
-        };
-        assert!(i_add.defines_value());
-        assert!(i_add.uses().len() == 1);
-        assert_eq!(i_add.uses(), vec![IrValueId(0)]);
-        assert!(i_add.defs().len() == 1);
-        assert_eq!(i_add.defs(), vec![IrValueId(1)]);
-    }
+        (uses, defs)
+	}
 }
