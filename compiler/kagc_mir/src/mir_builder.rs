@@ -15,6 +15,7 @@ use crate::module::MirModule;
 use crate::types::*;
 use crate::block::*;
 use crate::value::{IrValue, IrValueId};
+use crate::variable::IrVariableId;
 
 #[derive(Debug, Default)]
 pub struct IrBuilder {
@@ -211,9 +212,9 @@ impl IrBuilder {
         self.next_block_id()
     }
 
-    pub fn create_function_parameter(&mut self, ty: IrType) -> FunctionParam {
+    pub fn create_function_parameter(&mut self, ty: IrType, var_id: IrVariableId) -> FunctionParam {
         FunctionParam { 
-            id: self.next_value_id(), 
+            id: var_id,
             ty
         }
     }

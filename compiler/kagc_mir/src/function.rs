@@ -8,14 +8,14 @@ use crate::block::IrBasicBlock;
 use crate::block::BlockId;
 
 use crate::types::IrType;
-use crate::value::IrValueId;
+use crate::variable::IrVariableId;
 
 #[derive(Default, Debug, Hash, Eq, PartialEq, Clone, Copy)]
 pub struct FunctionId(pub usize);
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct FunctionParam {
-    pub id: IrValueId,
+    pub id: IrVariableId,
     pub ty: IrType
 }
 

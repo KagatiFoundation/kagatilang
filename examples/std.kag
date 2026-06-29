@@ -1,5 +1,9 @@
-def main() -> void {
-	loop {
-		let num = 12334 + 12222;
-	}
+import "std/io";
+
+def main(argc: integer) -> void {
+	let num = 12334;
+	let num2 = 12334;
+
+	print_int(num);
+	// print_int(num2);
 }

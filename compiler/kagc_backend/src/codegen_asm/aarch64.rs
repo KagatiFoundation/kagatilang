@@ -4,22 +4,15 @@
 use std::collections::HashMap;
 
 use kagc_const::pool::{ConstEntry, ConstPool, KagcConst};
-use kagc_mir::analyzer::LivenessAnalyzer;
 use kagc_mir::block::{BlockId, IrBasicBlock, Terminator};
-use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::function::{FunctionId, IrFunction};
 use kagc_mir::instruction::{IrCondition, IrInstruction, IrLocation};
-use kagc_mir::value::{IrAddress, IrValue, IrValueId};
+use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::variable::IrVariableId;
 use kagc_symbol::StorageClass;
-use kagc_utils::bug;
 
 use crate::codegen_asm::cg_function_ctx::CodeGenFunctionContext;
-use crate::codegen_asm::fn_state::CurrentFunctionState;
 use crate::codegen_asm::stack::{StackFrameBuilder, StackObject};
-use crate::regalloc::Location;
-use crate::regalloc::linear_alloca::LinearScanAllocator;
-use crate::regalloc::register::aarch64::{self, standard_aarch64_register_file};
 use crate::regalloc::register::{RegClass, Register};
 use crate::{CodeGenerator, OffsetGenerator};
 
@@ -41,11 +34,9 @@ lazy_static! {
 }
 
 pub struct Aarch64CodeGenerator<'cg> {
-    allocations: Option<HashMap<IrValueId, Location>>,
     function_entry_block: Option<BlockId>,
     const_pool: &'cg ConstPool,
     offset_generator: OffsetGenerator,
-    current_function_state: Option<CurrentFunctionState>, // none indicates no function is currently being processed
     current_function_code: String,
 
 	current_function_ctx: CodeGenFunctionContext
@@ -54,12 +45,10 @@ pub struct Aarch64CodeGenerator<'cg> {
 impl<'cg> Aarch64CodeGenerator<'cg> {
     pub fn new(const_pool: &'cg ConstPool) -> Self {
         Self { 
-            allocations: None,
             function_entry_block: None,
             const_pool,
 			current_function_ctx: CodeGenFunctionContext::new(), 
             current_function_code: String::new(),
-            current_function_state: None,
             offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
         }
     }
@@ -72,33 +61,10 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
             return;
         }
 
-        let mut allocator = LinearScanAllocator::new(standard_aarch64_register_file());
-
-		let liveness_analyzer = LivenessAnalyzer {};
-		let mut live_ranges = liveness_analyzer.compute_function_live_ranges(function);
-  
-        let allocs = allocator.allocate(&mut live_ranges);
-
-        let value_id_mappings: HashMap<IrValueId, Location> = allocs
-			.allocations
-			.into_iter()
-			.map(|a| (a.value_id, a.location))
-			.collect();
-
 		self.current_function_ctx.reinit();
-
 		self.current_function_ctx.stack_frame = StackFrameBuilder::build_for_function(function);
-
-        self.allocations = Some(value_id_mappings);
         self.function_entry_block = Some(function.entry_block);
-
-        // current function's metadata
-        let is_leaf = self.is_function_leaf(function);
-        let stack_size = Self::align_to_16(self.calculate_function_stack_size(function, is_leaf));
-        self.current_function_state = Some(CurrentFunctionState {
-            is_leaf,
-            computed_stack_size: stack_size as i64
-        });
+		self.current_function_ctx.compute_is_leaf(function);
 
         // manage function's stack
         self.emit_function_preamble(function);
@@ -131,17 +97,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 
         match block.terminator {
             Terminator::Jump(block_id) => self.current_function_code.push_str(&format!("\nb _L{}", block_id.0)),
-            Terminator::Return { value, target } => {
-                if let Some(ret_val_vreg) = value {
-                    let src_loc = self.current_allocations().get(&ret_val_vreg).unwrap();
-                    match src_loc {
-                        Location::Reg(r1) => self.current_function_code.push_str(&format!("\nmov x0, {s}\nb _L{d}", s = r1.name, d = target.0)),
-                        Location::StackSlot(ss) => {
-                            self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(*ss));
-                            self.current_function_code.push_str(&format!("\nmov x0, {s}\nb _L{d}", s = SCRATCH_REGISTER_0.name, d = target.0));
-                        }
-                    }
-                }
+            Terminator::Return { .. } => {
+				todo!()
             },
             Terminator::CondJump { cond, then_block, else_block, .. } => {
                 let cmp_code = match cond {
@@ -164,11 +121,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::Add         { result, lhs, rhs } => self.emit_add(*lhs, *rhs, *result),
 			IrInstruction::Store       { src, location } => self.emit_store(*src, *location),
 			IrInstruction::Load        { location, result } => self.emit_load(*location, *result),
-			IrInstruction::CondJump    { lhs, rhs, .. } => self.emit_cjump_inst(lhs, rhs),
-			IrInstruction::Call        { func, args, result } => self.emit_call_inst(func, args, result),
-			IrInstruction::CallBuiltin { builtin, args, result } => self.emit_builtin_fn_call_inst(*builtin, args, result),
-			IrInstruction::LoadConst   { label_id, result } => self.emit_load_const(*label_id, result),
-			_ => panic!()
+			IrInstruction::Call        { func, args, result } => self.emit_call(func, args, *result),
+			_ => todo!()
 		}
     }
 }
@@ -184,7 +138,6 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
             self.current_function_code = String::new();
             self.offset_generator.next_off = 0;
-            self.current_function_state = None;
 		}
 	}
 
@@ -220,11 +173,6 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		}
 	}
 
-    /// Align the given address into an address divisible by 16.
-    fn align_to_16(value: usize) -> usize {
-        (value + 16 - 1) & !15
-    }
-
     fn emit_raw_code(&mut self, code: &str) {
         self.current_function_code.push_str(code);
     }
@@ -239,7 +187,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 			IrValue::Constant(src) => {
 				self.current_function_code.push_str(
 					&format!(
-						"\nmov {}, #{src}\nstr {}, [fp, #-{store_off}]",
+						"\nmov {}, #{src}\nstr {}, [sp, #{store_off}]",
 						SCRATCH_REGISTER_0.name,
 						SCRATCH_REGISTER_0.name,
 					)
@@ -255,7 +203,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 				self.current_function_code.push_str(
 					&format!(
-						"\nldr {}, [fp, #-{load_off}]\nstr {}, #{store_off}",
+						"\nldr {}, [sp, #{load_off}]\nstr {}, #{store_off}",
 						SCRATCH_REGISTER_0.name,
 						SCRATCH_REGISTER_0.name,
 					)
@@ -287,7 +235,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 				self.current_function_code.push_str(
 					&format!(
-						"\nmov {}, #{lhs}\nldr {}, [fp, #-{offset}]",
+						"\nmov {}, #{lhs}\nldr {}, [sp, #{offset}]",
 						SCRATCH_REGISTER_0.name,
 						SCRATCH_REGISTER_1.name,
 					)
@@ -311,7 +259,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 				self.current_function_code.push_str(
 					&format!(
-						"\nldr {}, [fp, #-{lhs_offset}]\nldr {}, [fp, #-{rhs_offset}]\nadd {}, {}, {}\nstr {}, [fp, #-{result_offset}]",
+						"\nldr {}, [sp, #{lhs_offset}]\nldr {}, [sp, #{rhs_offset}]\nadd {}, {}, {}\nstr {}, [sp, #{result_offset}]",
 						SCRATCH_REGISTER_0.name,
 						SCRATCH_REGISTER_1.name,
 						SCRATCH_REGISTER_0.name,
@@ -329,7 +277,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 		self.current_function_code.push_str(
 			&format!(
-				"\nldr {}, [fp, #-{offset}]",
+				"\nldr {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
@@ -339,7 +287,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 		self.current_function_code.push_str(
 			&format!(
-				"\nstr {}, [fp, #-{offset}]",
+				"\nstr {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
@@ -351,7 +299,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 		self.current_function_code.push_str(
 			&format!(
-				"\nldr {}, [fp, #-{offset}]",
+				"\nldr {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
@@ -359,291 +307,85 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		let offset = self.get_value_stack_offset_unchecked(result);
 		self.current_function_code.push_str(
 			&format!(
-				"\nstr {}, [fp, #-{offset}]",
+				"\nstr {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
 	}
 
-    /// WARNING: Use this function with caution.
-    fn emit_store_reg_by_name(&mut self, reg: &str, off: i64) {
-        let is_leaf = self.get_current_fn_state().is_leaf;
-        let stack_size = self.get_current_fn_state().computed_stack_size;
-        let r = Register {
-            class: RegClass::GPR,
-            id: 0xFF,
-            name: reg.to_string()
-        };
-        if is_leaf {
-            self.emit_str_relative_sp(&r, stack_size, off);
-        }
-        else {
-            self.emit_str_relative_fp(&r, off);
-        }
-    }
+	fn emit_call(&mut self, name: &str, args: &[IrValueId], result: Option<IrValueId>) {
+		assert!(args.len() < 8, "please make sure the args count is less than 8");
 
-    fn emit_call_inst(&mut self, func: &str, args: &[IrValueId], result: &Option<IrValueId>) {
-        if args.len() > 8 {
-            bug!("compiler doesn't support more than 8 arguments");
-        }
-        for (idx, arg) in args.iter().enumerate() {
-            let loc = self.current_allocations().get(arg).unwrap_or_else(|| bug!("bug"));
-            match loc {
-                Location::Reg(register) => {
-                    self.emit_raw_code(
-                        &format!(
-                            "mov {reg}, {val}\n", 
-                            reg = aarch64::ABI_ARG_REGISTERS_64_BIT[idx],
-                            val = register.name
-                        )
-                    );
-                },
-                Location::StackSlot(slot) => {
-                    self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(*slot));
-                    self.emit_raw_code(
-                        &format!(
-                            "mov {reg}, {val}\n",
-                            reg = aarch64::ABI_ARG_REGISTERS_64_BIT[idx],
-                            val = SCRATCH_REGISTER_0.name
-                        )
-                    );
-                },
-            }
-        }
-        self.emit_raw_code(&format!("bl _{func}\n"));
+        for (reg_counter, param) in args.iter().enumerate() {
+			let offset = self.get_value_stack_offset_unchecked(*param);
 
-        if let Some(result_pos) = result {
-            let loc = self.current_allocations().get(result_pos).unwrap();
-            match loc {
-                Location::Reg(register) => {
-                    self.emit_raw_code(&format!("mov {d}, x0\n", d = register.name));
-                },
-                Location::StackSlot(stack_slot_id) => {
-                    let call_value_stack_off = self.offset_generator.get_or_create_offset(*stack_slot_id);
-                    self.emit_store_reg_by_name("x0", call_value_stack_off);
-                },
-            }
-        }
-    }
-
-    fn emit_builtin_fn_call_inst(&mut self, builtin: BuiltinFn, args: &[IrValueId], result: &Option<IrValueId>) {
-        let fn_name = match builtin {
-            BuiltinFn::AssignRef => "assign_ref",
-            BuiltinFn::AllocInt => "make_rt_int",
-            BuiltinFn::AllocStr => "make_rt_str",
-            BuiltinFn::AllocRec => "make_rt_rec",
-            BuiltinFn::Panic => "rt_panic",
-        };
-        self.emit_call_inst(fn_name, args, result);
-    }
-
-    fn calculate_function_stack_size(&self, lir_func: &IrFunction, is_leaf: bool) -> usize {
-        let mut final_stack_size = 0;
-        // non-leaf functions call other functions and thus 
-        // the x29 and x30 registers must be saved on the stack
-        if !is_leaf {
-            final_stack_size += 16;
+			self.current_function_code.push_str(
+				&format!(
+					"\nldr x{reg_counter}, [sp, #{offset}]"
+				)
+			);
         }
 
-        final_stack_size += lir_func.signature.params.len() * 8; // each parameter is going take 8-bytes of space
+		self.current_function_code.push_str(&format!("\nbl _{name}"));
 
-        for block in lir_func.blocks.values() {
-            for instr in &block.instructions {
-                // store instructions take space
-                // NOTE: machine's CPU word size is not considered at the moment.
-                if let IrInstruction::Store { .. } = instr {
-                    final_stack_size += 8;
-                }
-            }
-        }
-        final_stack_size
-    }
+		if let Some(result) = result {
+			let offset = self.get_value_stack_offset_unchecked(result);
+			self.current_function_code.push_str(
+				&format!(
+					"\nstr x0, [sp, #{offset}]"
+				)
+			);
+		}
+	}
 
     fn emit_function_preamble(&mut self, function: &IrFunction) {
-        let curr_fn_state = self.get_current_fn_state();
-        let curr_func_is_leaf = curr_fn_state.is_leaf;
+        let curr_func_is_leaf = self.current_function_ctx.is_leaf;
         let stack_size = self.current_function_ctx.stack_frame.size();
 
-        self.current_function_code.push_str(&format!(".global _{name}\n_{name}:\n", name = function.name));
-        if curr_func_is_leaf {
-            if stack_size > 0 {
-                self.current_function_code.push_str(&format!("sub sp, sp, #{stack_size}\n"));
-            }
-        } else {
-            self.current_function_code.push_str(&format!("sub sp, sp, #{stack_size}\n"));
-            self.current_function_code.push_str(&format!("stp x29, x30, [sp, #{}]\n", stack_size - 16));
-            self.current_function_code.push_str(&format!("add x29, sp, #{}\n", stack_size - 16));
-        }
+        self.current_function_code.push_str(
+			&format!(
+				".global _{name}\n_{name}:",
+				name = function.name
+			)
+		);
 
-        for (reg_counter, _) in function.signature.params.iter().enumerate() {
-            // let param_addr = self.offset_generator.next(param.stack_slot);
-            // self.current_function_code.push_str(&format!("str x{reg_counter}, [sp, #{param_addr}]\n"));
-            self.emit_store_reg_by_name(&format!("x{}", reg_counter), 0);
+		self.current_function_code.push_str(&format!("\nsub sp, sp, #{stack_size}"));
+
+		let lr_offset = stack_size - 8;
+
+		if !curr_func_is_leaf {
+			self.current_function_code.push_str(&format!("\nstr x30, [sp, #{lr_offset}]"));
+		}
+
+        for (reg_counter, param) in function.signature.params.iter().enumerate() {
+			let offset = self.get_variable_stack_offset_unchecked(param.id);
+
+			self.current_function_code.push_str(
+				&format!(
+					"\nstr x{reg_counter}, [sp, #{offset}]"
+				)
+			);
         }
     }
 
     fn emit_function_postamble(&mut self, lir_func: &IrFunction) {
-        let curr_func_is_leaf = self.get_current_fn_state().is_leaf;
+        let curr_func_is_leaf = self.current_function_ctx.is_leaf;
         let stack_size = self.current_function_ctx.stack_frame.size();
+
         self.current_function_code.push_str(&format!("\n_L{lbl}:", lbl = lir_func.exit_block.0));
 
-        if curr_func_is_leaf {
-            if stack_size > 0 {
-                self.current_function_code.push_str(&format!("\nadd sp, sp, #{stack_size}"));
-            }
-        } else {
-            self.current_function_code.push_str(&format!("\nldp x29, x30, [sp, #{off}]", off = stack_size - 16));
-            if stack_size > 0 {
-                self.current_function_code.push_str(&format!("\nadd sp, sp, #{stack_size}"));
-            }
-        }
-        self.current_function_code.push_str("\nret");
-    }
+		let lr_offset = stack_size - 8;
 
-    fn emit_cjump_inst(&mut self, lhs: &IrValue, rhs: &IrValue) {
-        match (lhs, rhs) {
-            (IrValue::Register(vreg1), IrValue::Register(vreg2)) => {
-                let src1 = self.current_allocations().get(vreg1).unwrap().clone();
-                let src2 = self.current_allocations().get(vreg2).unwrap().clone();
-                match (src1, src2) {
-                    (Location::Reg(r1), Location::Reg(r2)) => self.emit_cmp_reg_reg(&r1, &r2),
+		if !curr_func_is_leaf {
+			self.current_function_code.push_str(&format!("\nldr x30, [sp, #{lr_offset}]"));
+		}
 
-                    (Location::StackSlot(op_slot), Location::Reg(reg_op)) |
-                    (Location::Reg(reg_op), Location::StackSlot(op_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op_slot));
-                        self.emit_cmp_reg_reg(&reg_op, &SCRATCH_REGISTER_0);
-                    },
-
-                    (Location::StackSlot(op1_slot), Location::StackSlot(op2_slot)) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(op1_slot));
-                        self.emit_ldr(&SCRATCH_REGISTER_1, IrAddress::StackSlot(op2_slot));
-                        self.emit_cmp_reg_reg(&SCRATCH_REGISTER_0, &SCRATCH_REGISTER_1);
-                    },
-                } 
-            },
-
-            (IrValue::Register(vreg), IrValue::Constant(imm)) |
-            (IrValue::Constant(imm), IrValue::Register(vreg)) => {
-                let src1 = self.current_allocations().get(vreg).unwrap().clone();
-                match src1 {
-                    Location::Reg(register) => self.emit_cmp_reg_imm(&register, *imm),
-                    Location::StackSlot(src_slot) => {
-                        self.emit_ldr(&SCRATCH_REGISTER_0, IrAddress::StackSlot(src_slot));
-                        self.emit_cmp_reg_imm(&SCRATCH_REGISTER_0, *imm);
-                    },
-                }
-            },
-
-            (IrValue::Constant(imm1), IrValue::Constant(imm2)) => {
-                self.emit_move_const_to_reg(&SCRATCH_REGISTER_0, *imm1);
-                self.emit_move_const_to_reg(&SCRATCH_REGISTER_1, *imm2);
-                self.emit_cmp_reg_reg(&SCRATCH_REGISTER_0, &SCRATCH_REGISTER_1);
-            },
-        }
-    }
-
-    fn emit_cmp_reg_reg(&mut self, r1: &Register, r2: &Register) {
-        self.current_function_code.push_str(&format!("cmp {a}, {b}\n", a = r1.name, b = r2.name));
-    }
-
-    fn emit_cmp_reg_imm(&mut self, r1: &Register, imm: i64) {
-        self.current_function_code.push_str(&format!("cmp {a}, #{imm}\n", a = r1.name));
+		self.current_function_code.push_str(&format!("\nadd sp, sp, #{stack_size}"));
+		self.current_function_code.push_str("\nret");
     }
 
     fn emit_label(&mut self, id: usize) {
         self.current_function_code.push_str(&format!("\n_L{id}:"));
-    }
-
-    /// Spill register to stack pointer (SP)
-    fn emit_str_relative_sp(&mut self, reg: &Register, stack_size: i64, off: i64) {
-        let stack_off = stack_size - off;
-        let dest_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
-            format!("[sp, #{stack_off}]")
-        }
-        else {
-            "[sp]".to_string()
-        };
-        self.current_function_code.push_str(&format!("str {}, {dest_addr}\n", reg.name));
-    }
-
-    /// Load register from stack pointer (SP)
-    fn emit_ldr_relative_sp(&mut self, reg: &Register, stack_size: i64, off: i64) {
-        let stack_off = stack_size - off;
-        let src_addr = if stack_off != stack_size { // if not at the beginning of the stack frame
-            format!("[sp, #{stack_off}]")
-        }
-        else {
-            "[sp]".to_string()
-        };
-        self.current_function_code.push_str(&format!("ldr {}, {src_addr}\n", reg.name));
-    }
-
-    /// Spill register to frame pointer (x29)
-    fn emit_str_relative_fp(&mut self, reg: &Register, off: i64) {
-        let dest_addr = if off != 0 { // if not at the beginning of the frame pointer
-            format!("[x29, #-{off}]")
-        }
-        else {
-            "[x29]".to_string()
-        };
-        self.current_function_code.push_str(&format!("str {}, {dest_addr}\n", reg.name));
-    }
-
-    /// Load register from frame pointer (x29)
-    fn emit_ldr_relative_fp(&mut self, reg: &Register, off: i64) {
-        let src_addr = if off != 0 { // if not at the beginning of the frame pointer
-            format!("[x29, #-{off}]")
-        }
-        else {
-            "[x29]".to_string()
-        };
-        self.current_function_code.push_str(&format!("ldr {}, {src_addr}\n", reg.name));
-    }
-
-    fn emit_ldr(&mut self, r1: &Register, addr: IrAddress) {
-        let stack_size = self.get_current_fn_state().computed_stack_size;
-        match addr {
-            IrAddress::StackSlot(slot_id) => {
-                let addr_off = self.offset_generator.get_offset_unchecked(slot_id);
-                if self.get_current_fn_state().is_leaf {
-                    self.emit_ldr_relative_sp(r1, stack_size, addr_off);
-                }
-                else {
-                    self.emit_ldr_relative_fp(r1, addr_off);
-                }
-            },
-            IrAddress::BaseOffset(value_id, off) => {
-                let loc = self.current_allocations().get(&value_id).unwrap_or_else(|| bug!("no allocation found for {value_id:#?}"));
-                match loc {
-                    Location::Reg(register) => {
-                        self.current_function_code.push_str(&format!("ldr {d}, [{b}, #{off}]\n", d = r1.name, b = register.name));
-                    },
-                    Location::StackSlot(_) => todo!(),
-                }
-            },
-        }
-    }
-
-    fn emit_load_const(&mut self, label_id: usize, value_id: &IrValueId) {
-        let loc = self.current_allocations().get(value_id).unwrap().clone();
-        self.emit_raw_code(&format!("adrp {d}, .L.__c.{label_id}@page\n", d = SCRATCH_REGISTER_0.name));
-        self.emit_raw_code(&format!("add {d}, {d}, .L.__c.{label_id}@pageoff\n", d = SCRATCH_REGISTER_0.name));
-        match loc {
-            Location::Reg(register) => {
-                self.emit_raw_code(
-                    &format!(
-                        "mov {d}, {s}\n", 
-                        d = register.name, 
-                        s = SCRATCH_REGISTER_0.name
-                    )
-                );
-            }
-            Location::StackSlot(stack_slot_id) => self.emit_store_reg_by_name(&SCRATCH_REGISTER_0.name, stack_slot_id.0),
-        }
-    }
-
-    fn emit_move_const_to_reg(&mut self, r1: &Register, s: i64) {
-        self.current_function_code.push_str(&format!("mov {d}, #{s}\n", d = r1.name));
     }
 
     /// This function is public only for a short period of time.
@@ -693,33 +435,6 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
             }
         }
         output_str
-    }
-
-    fn current_allocations(&self) -> &HashMap<IrValueId, Location> {
-        if let Some(allocs) = &self.allocations {
-            allocs
-        }
-        else {
-            bug!("no allocations found");
-        }
-    }
-
-    /// Check whether a function is leaf or not.
-    /// A leaf function does not call any other functions.
-    fn is_function_leaf(&self, lir_func: &IrFunction) -> bool {
-        let mut is_leaf = true;
-        for block in lir_func.blocks.values() {
-            for instr in &block.instructions {
-                is_leaf = !matches!(instr, IrInstruction::Call { .. } | IrInstruction::CallBuiltin { .. });
-            }
-        }
-        is_leaf
-    }
-
-    fn get_current_fn_state(&self) -> &CurrentFunctionState {
-        self.current_function_state
-            .as_ref()
-            .expect("Compile time function info not found! Aborting...")
     }
 
 	fn get_value_stack_offset_unchecked(&self, value_id: IrValueId) -> i32 {

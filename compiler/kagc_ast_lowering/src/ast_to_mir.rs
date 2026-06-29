@@ -114,18 +114,12 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .collect_params(func_scope.id.get())
             .iter()
             .map(|&sym| {
-                let param = self.ir_builder.create_function_parameter(
-                    IrType::from(sym.ty.get()), 
-                );
-
-				let param_id = param.id;
 				let variable_id = fn_ctx.next_variable_id();
 
-				self.ir_builder.inst(
-					IrInstruction::Store { src: param_id, location: IrLocation::Variable(variable_id) }
-				);
-
-				param
+                self.ir_builder.create_function_parameter(
+                    IrType::from(sym.ty.get()), 
+					variable_id
+                )
             }).collect::<Vec<FunctionParam>>();
 
         let func_anchor = self.ir_builder.create_function(
@@ -186,15 +180,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let assigned_expr_value_id = self.lower_expression_ast(assigned_expr, fn_ctx)?;
 
         let var_decl = var_ast.expect_var_decl_stmt_mut();
+
+		let var_id = fn_ctx.map_var(var_decl.sym_name.to_string());
         
         self.ir_builder.inst(
             IrInstruction::Store { 
                 src: assigned_expr_value_id, 
-                location: IrLocation::Variable(fn_ctx.next_variable_id())
+                location: IrLocation::Variable(var_id)
             }
         );
-
-		fn_ctx.map_var(var_decl.sym_name.to_string());
 
         Ok(self.ir_builder.current_block_id_unchecked())
     }
@@ -303,7 +297,6 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         match bin_expr.operation {
-            // FIX: Repaired the inverted Multiply/Divide copy-paste error
             AstOp::Add       => Ok(self.ir_builder.create_add(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             AstOp::Subtract  => Ok(self.ir_builder.create_subtract(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             AstOp::Multiply  => Ok(self.ir_builder.create_multiply(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
@@ -361,7 +354,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 		let loop_head_id = self.ir_builder.create_block("loop_head");
         let loop_body_id = self.ir_builder.create_block("loop_body");
-        let loop_tail_id = self.ir_builder.create_block("loop_exit"); // Utilizing create_block hierarchy mapping
+        let loop_tail_id = self.ir_builder.create_block("loop_exit"); 
 
         fn_ctx.enter_loop(LoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
 

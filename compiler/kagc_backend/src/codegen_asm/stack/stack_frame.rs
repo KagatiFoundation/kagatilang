@@ -113,8 +113,12 @@ impl StackFrame {
         self.objects.contains_key(&object)
     }
 
+	pub fn increase_size(&mut self, size: i32) {
+		self.frame_size += size;
+	}
+
     pub fn size(&self) -> i32 {
-		(self.frame_size + 8 - 1) & !7
+		(self.frame_size + 16 - 1) & !15
     }
 
     pub fn clear(&mut self) {

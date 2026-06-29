@@ -3,7 +3,6 @@
 
 pub mod aarch64;
 
-mod fn_state;
 mod cg_function_ctx;
 mod eval_stack;
 mod stack;
