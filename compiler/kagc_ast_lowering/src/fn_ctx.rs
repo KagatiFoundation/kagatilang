@@ -4,6 +4,7 @@ use kagc_ast::AstOp;
 use kagc_mir::block::BlockId;
 use kagc_mir::value::IrValueId;
 use kagc_mir::LabelId;
+use kagc_mir::variable::IrVariableId;
 use kagc_symbol::function::INVALID_FUNC_ID;
 
 use crate::loop_ctx::LoopContext;
@@ -11,11 +12,6 @@ use crate::loop_ctx::LoopContext;
 /// Holds function-specific context during AST-to-IR conversion.
 #[derive(Debug)]
 pub struct FunctionContext {
-    /// Next available stack slot for local variables.
-    /// NOTE: The offsets generated using this field are not
-    /// the physical slots. They are just placeholders.
-    pub stack_slot_id: i64,
-
     /// Marks whether the next return is an early return.
     pub early_return: bool,
 
@@ -31,30 +27,31 @@ pub struct FunctionContext {
     /// Forces the use of a specific label ID.
     pub force_label_use: LabelId,
 
-    /// Maps variable names to their stack offsets.
-    pub var_offsets: HashMap<String, i64>,
-
     value_id: usize,
 
     return_label: Option<BlockId>,
 
-    loop_stack: Vec<LoopContext>
+    loop_stack: Vec<LoopContext>,
+
+	variable_id: usize,
+
+	var_map: HashMap<String, IrVariableId>
 }
 
 impl FunctionContext {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
-            stack_slot_id: Default::default(), 
             early_return: Default::default(), 
             prev_ast_kind: None,
             parent_ast_kind: AstOp::Func,
             next_label: 0,
             force_label_use: 0,
-            var_offsets: HashMap::new(),
             value_id: 0,
             return_label: None,
-            loop_stack: vec![]
+            loop_stack: vec![],
+			variable_id: 0,
+			var_map: HashMap::new()
         }
     }
 
@@ -102,13 +99,19 @@ impl FunctionContext {
         self.force_label_use = INVALID_FUNC_ID;
     }
 
-    pub fn alloc_local_slot(&mut self) -> i64 {
-        let so = self.stack_slot_id;
-        self.stack_slot_id += 1;
-        so
-    }
+	pub fn map_var(&mut self, var_name: String) -> IrVariableId {
+		let var_id = self.next_variable_id();
+		self.var_map.insert(var_name, var_id);
+		var_id
+	}
 
-    pub fn current_local_slot(&self) -> i64 {
-        self.stack_slot_id
-    }
+	pub fn get_mapped_var_unchecked(&mut self, var_name: String) -> IrVariableId {
+		*self.var_map.get(&var_name).expect("unchecked var map error")
+	}
+
+	pub fn next_variable_id(&mut self) -> IrVariableId {
+		let id = self.variable_id;
+		self.variable_id += 1;
+		IrVariableId(id)
+	}
 }

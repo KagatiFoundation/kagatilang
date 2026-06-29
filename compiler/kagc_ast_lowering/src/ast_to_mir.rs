@@ -6,16 +6,16 @@ use std::vec;
 
 use kagc_ast::*;
 use kagc_symbol::*;
-use kagc_types::builtins::obj::KObjType;
 use kagc_types::*;
-use kagc_const::pool::{ConstPool, KagcConst, PoolIdx};
+use kagc_mir::instruction::IrLocation;
+use kagc_types::builtins::obj::KObjType;
+use kagc_const::pool::{ConstPool, KagcConst};
 use kagc_scope::ScopeCtx;
 use kagc_scope::ScopeId;
 
 use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
 use kagc_mir::instruction::{IrCondition, IrInstruction};
-use kagc_mir::value::{IrAddress, StackSlotId};
 use kagc_mir::mir_builder::IrBuilder;
 use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IrType;
@@ -114,12 +114,18 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .collect_params(func_scope.id.get())
             .iter()
             .map(|&sym| {
-                let param_stack_slot = fn_ctx.alloc_local_slot();
-                fn_ctx.var_offsets.insert(sym.name.to_string(), param_stack_slot);
-                self.ir_builder.create_function_parameter(
+                let param = self.ir_builder.create_function_parameter(
                     IrType::from(sym.ty.get()), 
-                    StackSlotId(param_stack_slot)
-                )
+                );
+
+				let param_id = param.id;
+				let variable_id = fn_ctx.next_variable_id();
+
+				self.ir_builder.inst(
+					IrInstruction::Store { src: param_id, location: IrLocation::Variable(variable_id) }
+				);
+
+				param
             }).collect::<Vec<FunctionParam>>();
 
         let func_anchor = self.ir_builder.create_function(
@@ -180,15 +186,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let assigned_expr_value_id = self.lower_expression_ast(assigned_expr, fn_ctx)?;
 
         let var_decl = var_ast.expect_var_decl_stmt_mut();
-        let var_stack_off = fn_ctx.alloc_local_slot();
         
         self.ir_builder.inst(
             IrInstruction::Store { 
                 src: assigned_expr_value_id, 
-                address: IrAddress::StackSlot(StackSlotId(var_stack_off))
+                location: IrLocation::Variable(fn_ctx.next_variable_id())
             }
         );
-        fn_ctx.var_offsets.insert(var_decl.sym_name.to_string(), var_stack_off);
+
+		fn_ctx.map_var(var_decl.sym_name.to_string());
 
         Ok(self.ir_builder.current_block_id_unchecked())
     }
@@ -210,161 +216,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
             Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
             Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
-            Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access_expr(rec_field_access, fn_ctx),
-            Expr::RecordCreation(rec_create_expr) => self.lower_record_creation_expr(rec_create_expr, fn_ctx),
+            // Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access_expr(rec_field_access, fn_ctx),
+            // Expr::RecordCreation(rec_create_expr) => self.lower_record_creation_expr(rec_create_expr, fn_ctx),
             _ => unimplemented!()
         }
-    }
-
-    fn lower_record_creation_expr(&mut self, rec_create_expr: &mut RecordCreationExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let mut field_stack_slot_ids = Vec::with_capacity(rec_create_expr.fields.len());
-        for field in &mut rec_create_expr.fields {
-            let field_slot = self.lower_record_field_creation_expr(field, fn_ctx)?;
-            field_stack_slot_ids.push(field_slot);
-        }
-
-        let rec_stack_slot = self.load_record_from_const_pool(rec_create_expr.pool_idx, fn_ctx)?;
-        for (index, field_slot_id) in field_stack_slot_ids.iter().enumerate() {
-            let rec_data_off_value_id = self.ir_builder.create_load(IrAddress::StackSlot(rec_stack_slot));
-            let field_slot_load_value_id = self.ir_builder.create_load(IrAddress::StackSlot(*field_slot_id));
-            let index_value_id = self.ir_builder.create_move(IrValue::Constant(index as i64));
-            self.ir_builder.inst(
-                IrInstruction::CallBuiltin { 
-                    builtin: BuiltinFn::AssignRef, 
-                    args: vec![rec_data_off_value_id, field_slot_load_value_id, index_value_id], 
-                    result: None 
-                }
-            );
-        }
-        Ok(IrValueId(0xFFFFFFFF))
-    }
-
-    fn lower_record_field_creation_expr(&mut self, expr: &mut RecordFieldAssignExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
-        match expr.value.result_type() {
-            TyKind::I64 => {
-                let call_result_value_id = self.ir_builder.occupy_value_id();
-                let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
-                self.ir_builder.inst(
-                    IrInstruction::CallBuiltin { 
-                        builtin: BuiltinFn::AllocInt, 
-                        args: vec![eval_value_id], 
-                        result: Some(call_result_value_id)
-                    }
-                );
-                let stack_slot = fn_ctx.alloc_local_slot();
-                self.ir_builder.inst(
-                    IrInstruction::Store { 
-                        src: eval_value_id, 
-                        address: IrAddress::StackSlot(StackSlotId(stack_slot))
-                    }
-                );
-                Ok(StackSlotId(stack_slot))
-            },
-            TyKind::PoolStr => {
-                let lit_val_expr = expr.value.as_litval().unwrap_or_else(|| {
-                    bug!("type was PoolStr but the expression itself is not of type LitValExpr")
-                });
-                self.load_str_from_const_pool(lit_val_expr, fn_ctx)
-            },
-            TyKind::Str => {
-                let eval_value_id = self.lower_expression(&mut expr.value, fn_ctx)?;
-                let stack_slot = fn_ctx.alloc_local_slot();
-                self.ir_builder.inst(
-                    IrInstruction::Store { 
-                        src: eval_value_id, 
-                        address: IrAddress::StackSlot(StackSlotId(stack_slot))
-                    }
-                );
-                Ok(StackSlotId(stack_slot))
-            }
-            _ => unimplemented!("cannot assign {typ:#?} to a record's field", typ = expr.value.result_type())
-        }
-    }
-
-    fn lower_record_field_access_expr(&mut self, access: &mut RecordFieldAccessExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
-        let rec_stack_off = *fn_ctx
-            .var_offsets
-            .get(access.rec_alias)
-            .unwrap_or_else(|| bug!("record's stack offset not found"));
-
-        let base_pointer_value = self.ir_builder.create_load(IrAddress::StackSlot(StackSlotId(rec_stack_off)));
-        let data_pointer_value = self.ir_builder.create_load(
-            IrAddress::BaseOffset(
-                base_pointer_value, 
-                unsafe { runtime::GC_OFFSET_CHILDREN as i64 }
-            )
-        );
-        Ok(self.ir_builder.create_load(
-            IrAddress::BaseOffset(
-                data_pointer_value, 
-                access.rel_stack_off
-            )
-        ))
-    }
-
-    fn load_str_from_const_pool(&mut self, expr: &LitValExpr, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
-        match expr.value {
-            Literal::PoolStr(pool_idx) => {
-                let const_value = self.ir_builder.occupy_value_id();
-                let const_size = self
-                    .const_pool
-                    .size(pool_idx)
-                    .unwrap_or_else(|| bug!("cannot find const entry"));
-                self.ir_builder.inst(
-                    IrInstruction::LoadConst { 
-                        label_id: pool_idx,
-                        result: const_value
-                    }
-                );
-
-                let const_size_value = self.ir_builder.create_move(IrValue::Constant(const_size as i64));
-                let call_result_value = self.ir_builder.occupy_value_id();
-                self.ir_builder.inst(
-                    IrInstruction::CallBuiltin { 
-                        builtin: BuiltinFn::AllocStr, 
-                        args: vec![const_value, const_size_value],
-                        result: Some(call_result_value)
-                    }
-                );
-                let stack_slot = fn_ctx.alloc_local_slot();
-                self.ir_builder.inst(
-                    IrInstruction::Store { 
-                        src: call_result_value, 
-                        address: IrAddress::StackSlot(StackSlotId(stack_slot))
-                    }
-                );
-                Ok(StackSlotId(stack_slot))
-            },
-            _ => bug!("expected a PoolStr but found '{:#?}'", expr)
-        }
-    }
-
-    fn load_record_from_const_pool(&mut self, pool_idx: PoolIdx, fn_ctx: &mut FunctionContext) -> Result<StackSlotId, Diagnostic> {
-        let const_value_id = self.ir_builder.occupy_value_id();
-        let const_size = self.const_pool.size(pool_idx).unwrap_or_else(|| bug!("cannot find const entry"));
-        self.ir_builder.inst(
-            IrInstruction::LoadConst { 
-                label_id: pool_idx, 
-                result: const_value_id
-            }
-        );
-        let const_value_size_id = self.ir_builder.create_move(IrValue::Constant(const_size as i64));
-        let call_result_value_id = self.ir_builder.occupy_value_id();
-        self.ir_builder.inst(
-            IrInstruction::CallBuiltin { 
-                builtin: BuiltinFn::AllocRec, 
-                args: vec![const_value_id, const_value_size_id],
-                result: Some(call_result_value_id)
-            }
-        );
-        let stack_slot = fn_ctx.alloc_local_slot();
-        self.ir_builder.inst(
-            IrInstruction::Store { 
-                src: call_result_value_id, 
-                address: IrAddress::StackSlot(StackSlotId(stack_slot))
-            }
-        );
-        Ok(StackSlotId(stack_slot))
     }
 
     fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
@@ -431,23 +286,16 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
                 Ok(self.ir_builder.create_move(IrValue::Constant(const_value)))
             },
-            TyKind::Str => {
-                panic!("Str type must match literal raw structure formatting processing execution paths")
-            }
             _ => unimplemented!("{lit_expr:#?}")
         }
     }
 
     fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
         let sym = self.scope.lookup_sym(None, ident_expr.sym_name).unwrap(); 
-        let sym_off = *fn_ctx
-            .var_offsets
-            .get(ident_expr.sym_name)
-            .unwrap_or_else(|| bug!("undefined symbol '{name}'", name = ident_expr.sym_name));
 
-        let reg_sz = sym.ty.get().to_reg_size();
-        assert_ne!(reg_sz, 0);
-        let load_value_id = self.ir_builder.create_load(IrAddress::StackSlot(StackSlotId(sym_off)));
+		let var_id = fn_ctx.get_mapped_var_unchecked(sym.name.to_string());
+
+        let load_value_id = self.ir_builder.create_load(IrLocation::Variable(var_id));
         Ok(load_value_id)
     }
 

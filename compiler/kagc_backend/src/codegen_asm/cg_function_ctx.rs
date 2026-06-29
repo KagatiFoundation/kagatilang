@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::codegen_asm::{eval_stack::EvalStack, stack_frame::StackFrame};
+use crate::codegen_asm::eval_stack::EvalStack;
+use crate::codegen_asm::stack::StackFrame;
 
 pub struct CodeGenFunctionContext {
 	pub stack_frame: StackFrame,

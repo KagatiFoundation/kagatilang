@@ -10,10 +10,11 @@ use kagc_utils::bug;
 use crate::function::*;
 use crate::instruction::IrCondition;
 use crate::instruction::IrInstruction;
+use crate::instruction::IrLocation;
 use crate::module::MirModule;
 use crate::types::*;
 use crate::block::*;
-use crate::value::{IrAddress, IrValue, IrValueId, StackSlotId};
+use crate::value::{IrValue, IrValueId};
 
 #[derive(Debug, Default)]
 pub struct IrBuilder {
@@ -210,11 +211,10 @@ impl IrBuilder {
         self.next_block_id()
     }
 
-    pub fn create_function_parameter(&mut self, ty: IrType, stack_slot: StackSlotId) -> FunctionParam {
+    pub fn create_function_parameter(&mut self, ty: IrType) -> FunctionParam {
         FunctionParam { 
             id: self.next_value_id(), 
-            ty,
-            stack_slot
+            ty
         }
     }
 
@@ -254,10 +254,16 @@ impl IrBuilder {
             .expect("create_move: no value ID created")
     }
 
-    pub fn create_load(&mut self, addr: IrAddress) -> IrValueId {
+    pub fn create_load(&mut self, location: IrLocation) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IrInstruction::Load { src: addr, result })
-            .expect("create_move: no value ID created")
+        self.inst(IrInstruction::Load { location, result })
+            .expect("create_load: no value ID created")
+    }
+
+	pub fn create_store(&mut self, src: IrValueId, location: IrLocation) -> IrValueId {
+        self.inst(IrInstruction::Store { src, location })
+            .expect("create_move: no value ID created");
+		src
     }
 
     pub fn create_load_const(&mut self, pool_index: usize) -> IrValueId {

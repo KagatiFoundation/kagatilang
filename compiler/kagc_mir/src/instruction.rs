@@ -3,7 +3,9 @@
 
 use kagc_const::pool::PoolIdx;
 
-use crate::{builtin::BuiltinFn, value::*};
+use crate::builtin::BuiltinFn;
+use crate::variable::IrVariableId;
+use crate::value::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct IrInstructionId(pub usize);
@@ -16,6 +18,11 @@ pub enum IrCondition {
     LTEq,
     GThan,
     LThan,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum IrLocation {
+	Variable(IrVariableId)
 }
 
 #[derive(Debug, Clone)]
@@ -51,11 +58,11 @@ pub enum IrInstruction {
     
     Store {
         src: IrValueId,
-        address: IrAddress
+        location: IrLocation
     },
 
     Load {
-        src: IrAddress,
+        location: IrLocation,
         result: IrValueId
     },
 
