@@ -5,9 +5,9 @@ use core::panic;
 use std::vec;
 
 use kagc_ast::*;
+use kagc_mir::loop_ctx::IrLoopContext;
 use kagc_symbol::*;
 use kagc_types::*;
-use kagc_mir::instruction::IrLocation;
 use kagc_types::builtins::obj::KObjType;
 use kagc_const::pool::{ConstPool, KagcConst};
 use kagc_scope::ScopeCtx;
@@ -17,15 +17,14 @@ use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
 use kagc_mir::instruction::{IrCondition, IrInstruction};
 use kagc_mir::mir_builder::IrBuilder;
-use kagc_mir::function::FunctionParam;
 use kagc_mir::types::IrType;
 use kagc_mir::builtin::BuiltinFn;
+use kagc_mir::instruction::IrLocation;
+use kagc_mir::function::IrFunctionContext;
+
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_symbol::function::Func;
 use kagc_utils::bug;
-
-use crate::fn_ctx::FunctionContext;
-use crate::loop_ctx::LoopContext;
 
 type ExprLoweringResult = Result<IrValueId, Diagnostic>;
 type StmtLoweringResult = Result<BlockId, Diagnostic>;
@@ -47,15 +46,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    pub fn lower(&mut self, nodes: &mut [AstNode]) -> StmtLoweringResult {
-        let mut fn_ctx = FunctionContext::new();
-        for node in nodes {
-            self.lower_node(node, &mut fn_ctx)?;
-        }
-        Ok(BlockId(1))
-    }
-
-    pub fn lower_node(&mut self, node: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    pub fn lower_node(&mut self, node: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         match node.op {
             AstOp::Func    => self.lower_function(node),
             AstOp::FuncCall => self.lower_function_call(node, fn_ctx),
@@ -71,7 +62,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    fn lower_block(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_block(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let node_id = ast.id;
         let block_stmt = ast.expect_block_stmt_mut();
 
@@ -107,22 +98,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let storage_class = func.storage_class;
 
         self.scope.enter(func_scope.id.get()); 
-        let mut fn_ctx = FunctionContext::new();
 
         let func_ir_params = self
             .scope
             .collect_params(func_scope.id.get())
             .iter()
-            .map(|&sym| {
-				let variable_id = fn_ctx.next_variable_id();
+            .map(|&sym| sym.ty.get())
+			.collect::<Vec<TyKind<'_>>>();
 
-                self.ir_builder.create_function_parameter(
-                    IrType::from(sym.ty.get()), 
-					variable_id
-                )
-            }).collect::<Vec<FunctionParam>>();
-
-        let func_anchor = self.ir_builder.create_function(
+        let mut func_context = self.ir_builder.create_function(
             func.name.to_string(),
             func_ir_params,
             IrType::from(ast.ty.unwrap_or_else(|| bug!("Function return type must be defined"))),
@@ -133,8 +117,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             return Ok(INVALID_BLOCK_ID);
         }
 
-        let return_label = func_anchor.exit_block; 
-        fn_ctx.set_return_label(return_label);
+        let return_label = func_context.anchor.exit_block; 
+        func_context.set_return_label(return_label);
 
         let Some(func_body) = &mut ast.left else {
             bug!("no function body found");
@@ -146,7 +130,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             .iter_mut()
             .collect::<Vec<&mut AstNode>>();
             
-        let current_block_id = self.lower_linear_sequence(&mut statements, &mut fn_ctx)?;
+        let current_block_id = self.lower_linear_sequence(&mut statements, &mut func_context)?;
 
         if !self.ir_builder.has_terminator(current_block_id) {
             self.ir_builder.set_terminator(
@@ -163,7 +147,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(current_block_id)
     }
 
-    fn lower_function_call(&mut self, node: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_function_call(&mut self, node: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         if let NodeKind::ExprAST(Expr::FuncCall(func_call)) = &mut node.kind {
             let _ = self.lower_function_call_expr(func_call, fn_ctx)?;
             return Ok(self.ir_builder.current_block_id_unchecked());
@@ -171,7 +155,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         panic!("Invalid function call assignment matching state")
     }
 
-    fn lower_variable_declaration(&mut self, var_ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_variable_declaration(&mut self, var_ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         if var_ast.left.is_none() { 
             bug!("Variable is not assigned a value!");
         }
@@ -193,7 +177,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(self.ir_builder.current_block_id_unchecked())
     }
 
-    fn lower_expression_ast(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_expression_ast(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         if !ast.kind.is_expr() {
             bug!("needed an Expr--but found {ast:#?}");
         }
@@ -204,7 +188,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.lower_expression(expr, fn_ctx)
     }
 
-    fn lower_expression(&mut self, expr: &mut Expr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_expression(&mut self, expr: &mut Expr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         match expr {
             Expr::LitVal(lit_expr) => self.lower_literal_value_expr(lit_expr, fn_ctx),
             Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
@@ -216,7 +200,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_function_call_expr(&mut self, func_call_expr: &mut FuncCallExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         let mut func_call_args = Vec::with_capacity(func_call_expr.args.len());
         for (_, arg_expr) in &mut func_call_expr.args {
             let arg_value_id = self.lower_expression(arg_expr, fn_ctx)?;
@@ -246,7 +230,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, _fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, _fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         if let Literal::RawStr(str_value) = &lit_expr.value {
             let const_value = self.ir_builder.occupy_value_id();
             let pool_index = self.const_pool.insert(KagcConst::Str(str_value.to_string()), KObjType::KStr, None);
@@ -284,7 +268,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         let sym = self.scope.lookup_sym(None, ident_expr.sym_name).unwrap(); 
 
 		let var_id = fn_ctx.get_mapped_var_unchecked(sym.name.to_string());
@@ -293,7 +277,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(load_value_id)
     }
 
-    fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut FunctionContext) -> ExprLoweringResult {
+    fn lower_binary_expr(&mut self, bin_expr: &mut BinExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         let lhs_value_id = self.lower_expression(&mut bin_expr.left, fn_ctx)?;
         let rhs_value_id = self.lower_expression(&mut bin_expr.right, fn_ctx)?;
         match bin_expr.operation {
@@ -311,7 +295,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    fn lower_return(&mut self, ret_stmt: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_return(&mut self, ret_stmt: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_id_unchecked();
@@ -350,13 +334,13 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         bug!("expected ReturnStmt but found {ret_stmt:#?}");
     }
 
-    fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 		let loop_head_id = self.ir_builder.create_block("loop_head");
         let loop_body_id = self.ir_builder.create_block("loop_body");
         let loop_tail_id = self.ir_builder.create_block("loop_exit"); 
 
-        fn_ctx.enter_loop(LoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
+        fn_ctx.enter_loop(IrLoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
 
         self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_head_id));
         self.ir_builder.link_blocks(prev_block_id, loop_head_id);
@@ -381,7 +365,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(loop_tail_id)
     }
 
-    fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         if let NodeKind::StmtAST(Stmt::If) = &ast.kind {
             self.scope.enter(ScopeId(0));
         }
@@ -439,7 +423,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(merge_block)
     }
 
-    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AstNode], fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AstNode], fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let mut current = self.ir_builder.current_block_id_unchecked();
         let stmts_len = stmts.len();
         for (idx, stmt) in stmts.iter_mut().enumerate() {
@@ -456,7 +440,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(current)
     }
 
-    fn lower_else_block(&mut self, ast: &mut AstNode, fn_ctx: &mut FunctionContext) -> StmtLoweringResult {
+    fn lower_else_block(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         if let NodeKind::StmtAST(Stmt::Scoping) = &ast.kind {
             self.scope.enter(ScopeId(0)); 
         } else {

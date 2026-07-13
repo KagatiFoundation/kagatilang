@@ -84,7 +84,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
 				self.diagnostics.report_all(self.source_map);
 			}
 
-            let _ = ast_lowerer.lower(&mut unit.asts);
+            // let _ = ast_lowerer.lower_node(&mut unit.asts);
         }
         
         let mir_mod = ast_lowerer.ir_builder.build();

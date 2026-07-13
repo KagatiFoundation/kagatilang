@@ -17,3 +17,4 @@ pub mod function;
 pub mod mir_builder;
 pub mod types;
 pub mod module;
+pub mod loop_ctx;

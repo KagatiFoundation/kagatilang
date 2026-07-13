@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use kagc_const::pool::{ConstEntry, ConstPool, KagcConst};
 use kagc_mir::block::{BlockId, IrBasicBlock, Terminator};
-use kagc_mir::function::{FunctionId, IrFunction};
+use kagc_mir::function::{IrFunctionId, IrFunction};
 use kagc_mir::instruction::{IrCondition, IrInstruction, IrLocation};
 use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::variable::IrVariableId;
@@ -122,14 +122,15 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::Store       { src, location } => self.emit_store(*src, *location),
 			IrInstruction::Load        { location, result } => self.emit_load(*location, *result),
 			IrInstruction::Call        { func, args, result } => self.emit_call(func, args, *result),
+			IrInstruction::Param 	   { index, var_id } => self.emit_param(*index, *var_id),
 			_ => todo!()
 		}
     }
 }
 
 impl<'cg> Aarch64CodeGenerator<'cg> {
-	pub fn generate_code(&mut self, functions: &HashMap<FunctionId, IrFunction>) {
-        let mut function_ids: Vec<FunctionId> = functions.keys().cloned().collect();
+	pub fn generate_code(&mut self, functions: &HashMap<IrFunctionId, IrFunction>) {
+        let mut function_ids: Vec<IrFunctionId> = functions.keys().cloned().collect();
         function_ids.sort_by_key(|function_id| function_id.0);
 
 		for function_id in function_ids {
@@ -338,6 +339,16 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		}
 	}
 
+	fn emit_param(&mut self, index: usize, var_id: IrVariableId) {
+		let offset = self.get_variable_stack_offset_unchecked(var_id);
+
+		self.current_function_code.push_str(
+			&format!(
+				"\nstr x{index}, [sp, #{offset}]"
+			)
+		);
+	}
+
     fn emit_function_preamble(&mut self, function: &IrFunction) {
         let curr_func_is_leaf = self.current_function_ctx.is_leaf;
         let stack_size = self.current_function_ctx.stack_frame.size();
@@ -356,16 +367,6 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		if !curr_func_is_leaf {
 			self.current_function_code.push_str(&format!("\nstr x30, [sp, #{lr_offset}]"));
 		}
-
-        for (reg_counter, param) in function.signature.params.iter().enumerate() {
-			let offset = self.get_variable_stack_offset_unchecked(param.id);
-
-			self.current_function_code.push_str(
-				&format!(
-					"\nstr x{reg_counter}, [sp, #{offset}]"
-				)
-			);
-        }
     }
 
     fn emit_function_postamble(&mut self, lir_func: &IrFunction) {

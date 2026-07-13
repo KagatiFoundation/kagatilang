@@ -66,6 +66,11 @@ pub enum IrInstruction {
         result: IrValueId
     },
 
+	Param {
+		index: usize,
+		var_id: IrVariableId
+	},
+
     Call {
         func:   String,
         args:   Vec<IrValueId>,

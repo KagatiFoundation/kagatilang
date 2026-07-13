@@ -24,7 +24,7 @@ pub struct BlockLiveness {
 pub struct LivenessAnalyzer;
 
 impl LivenessAnalyzer {
-    pub fn compute_function_live_ranges(&self, function: &IrFunction) -> Vec<LiveRange> {
+    pub fn compute_function_live_ranges(function: &IrFunction) {
         let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
         block_ids.sort_by_key(|b| b.0);
 
@@ -100,46 +100,8 @@ impl LivenessAnalyzer {
             }
         }
 
-        let mut final_ranges: HashMap<IrValueId, (usize, usize)> = HashMap::new();
-
-        for bid in &block_ids {
-            let (block_start_ip, block_end_ip) = instr_ranges_per_block[bid];
-            let out_set = &live_out[bid];
-
-            for value_id in out_set {
-                let range = final_ranges.entry(*value_id).or_insert((block_start_ip, block_end_ip));
-                range.1 = std::cmp::max(range.1, block_end_ip);
-            }
-
-            let mut current_live = out_set.clone();
-            let block = &function.blocks[bid];
-            
-            for (offset, instr) in block.instructions.iter().enumerate().rev() {
-                let global_ip = block_start_ip + offset;
-                let (inst_uses, inst_defs) = instr.uses_and_defs();
-
-                for d in inst_defs {
-                    current_live.remove(&d);
-                    let range = final_ranges.entry(d).or_insert((global_ip, global_ip));
-                    range.0 = std::cmp::min(range.0, global_ip);
-                    range.1 = std::cmp::max(range.1, global_ip);
-                }
-
-                for u in inst_uses {
-                    current_live.insert(u);
-                    let range = final_ranges.entry(u).or_insert((global_ip, global_ip));
-                    range.0 = std::cmp::min(range.0, global_ip);
-                }
-            }
-
-            for vreg in &live_in[bid] {
-                let range = final_ranges.entry(*vreg).or_insert((block_start_ip, block_end_ip));
-                range.0 = std::cmp::min(range.0, block_start_ip);
-            }
-        }
-
-        final_ranges.into_iter()
-            .map(|(value, (start, end))| LiveRange { value, start, end })
-            .collect()
+        // final_ranges.into_iter()
+        //     .map(|(value, (start, end))| LiveRange { value, start, end })
+        //     .collect()
     }
 }

@@ -7,7 +7,7 @@ use crate::function::*;
 
 #[derive(Default, Debug)]
 pub struct MirModule {
-    pub functions: HashMap<FunctionId, IrFunction>
+    pub functions: HashMap<IrFunctionId, IrFunction>
 }
 
 impl MirModule {

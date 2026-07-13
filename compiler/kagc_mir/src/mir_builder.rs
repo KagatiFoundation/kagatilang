@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 use indexmap::IndexMap;
 use kagc_symbol::StorageClass;
+use kagc_types::TyKind;
 use kagc_utils::bug;
 
 use crate::function::*;
@@ -15,14 +16,13 @@ use crate::module::MirModule;
 use crate::types::*;
 use crate::block::*;
 use crate::value::{IrValue, IrValueId};
-use crate::variable::IrVariableId;
 
 #[derive(Debug, Default)]
 pub struct IrBuilder {
-    current_function: Option<FunctionId>,
+    current_function: Option<IrFunctionId>,
     current_block: Option<BlockId>,
 
-    pub functions: IndexMap<FunctionId, BuilderFunction>,
+    pub functions: IndexMap<IrFunctionId, BuilderFunction>,
 
     function_id: usize,
     block_id: usize,
@@ -32,8 +32,8 @@ pub struct IrBuilder {
 #[derive(Debug)]
 pub struct BuilderFunction {
     pub name: String,
-    pub signature: FunctionSignature,
-    pub anchor: FunctionAnchor,
+    pub signature: IrFunctionSignature,
+    pub anchor: IrFunctionAnchor,
     pub blocks: IndexMap<BlockId, BuilderBlock>,
 }
 
@@ -50,24 +50,43 @@ impl IrBuilder {
     pub fn create_function(
         &mut self, 
         name: String, 
-        params: Vec<FunctionParam>, 
+        params: Vec<TyKind<'_>>, 
         return_type: IrType,
-        class: StorageClass
-    ) -> FunctionAnchor {
-        let fid = self.next_function_id();
-        self.current_function = Some(fid);
+        class: StorageClass,
+    ) -> IrFunctionContext {
+        let function_id = self.next_function_id();
+        self.current_function = Some(function_id);
 
-        let signature = FunctionSignature { params, return_type, class };
-        
-        let mut blocks = IndexMap::new();
         let entry_block = self.next_block_id();
         let exit_block = self.next_block_id();
+
+        let anchor = IrFunctionAnchor::new(function_id, entry_block, exit_block);
+		let mut function_ctx = IrFunctionContext::new(anchor);
+
+        self.current_block = Some(entry_block);
+
+		let mut function_params = vec![];
+
+		for param in &params {
+			function_params.push(
+				IrFunctionParam {
+					id: function_ctx.next_variable_id(),
+					ty: IrType::from(*param)
+				}
+			);
+		}
+
+        let signature = IrFunctionSignature { 
+			params: function_params.clone(), 
+			return_type, 
+			class
+		};
+        
+        let mut blocks = IndexMap::new();
         
         blocks.insert(entry_block, BuilderBlock::new("function-entry"));
         blocks.insert(exit_block, BuilderBlock::new("function-exit"));
 
-        let anchor = FunctionAnchor::new(fid, entry_block, exit_block);
-        
         let builder_func = BuilderFunction {
             name,
             signature,
@@ -75,10 +94,15 @@ impl IrBuilder {
             blocks,
         };
 
-        self.functions.insert(fid, builder_func);
-        self.current_block = Some(entry_block);
+        self.functions.insert(function_id, builder_func);
 
-        anchor
+		for (index, param) in function_params.iter().enumerate() {
+			self.inst(
+				IrInstruction::Param { index, var_id: param.id }
+			);
+		}
+
+		function_ctx
     }
 
     pub fn create_block(&mut self, name: &str) -> BlockId {
@@ -122,27 +146,7 @@ impl IrBuilder {
         func.blocks.get_mut(&from).unwrap().successors.insert(to);
         func.blocks.get_mut(&to).unwrap().predecessors.insert(from);
     }
-}
 
-impl BuilderBlock {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            instructions: Vec::new(),
-            terminator: None,
-            successors: HashSet::new(),
-            predecessors: HashSet::new(),
-        }
-    }
-}
-
-impl BuilderBlock {
-	pub fn has_terminator(&self) -> bool {
-		self.terminator.is_some()
-	}
-}
-
-impl IrBuilder {
    	pub fn switch_to_block(&mut self, block_id: BlockId) {
     	let fid = self.current_function.unwrap_or_else(|| bug!("cannot switch blocks outside a function"));
 
@@ -210,13 +214,6 @@ impl IrBuilder {
 
     pub fn create_label(&mut self) -> BlockId {
         self.next_block_id()
-    }
-
-    pub fn create_function_parameter(&mut self, ty: IrType, var_id: IrVariableId) -> FunctionParam {
-        FunctionParam { 
-            id: var_id,
-            ty
-        }
     }
 
     pub fn create_add(&mut self, lhs: IrValue, rhs: IrValue) -> IrValueId {
@@ -311,10 +308,10 @@ impl IrBuilder {
     	module
 	}
 
-    fn next_function_id(&mut self) -> FunctionId {
+    fn next_function_id(&mut self) -> IrFunctionId {
         let fid = self.function_id;
         self.function_id += 1;
-        FunctionId(fid)
+        IrFunctionId(fid)
     }
 
     fn next_block_id(&mut self) -> BlockId {
@@ -365,4 +362,20 @@ impl IrBuilder {
             .and_then(|func| func.blocks.get_mut(&bid))
             .unwrap_or_else(|| bug!("Active block {:?} not found inside function {:?}", bid, fid))
     }
+}
+
+impl BuilderBlock {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            instructions: Vec::new(),
+            terminator: None,
+            successors: HashSet::new(),
+            predecessors: HashSet::new(),
+        }
+    }
+
+	pub fn has_terminator(&self) -> bool {
+		self.terminator.is_some()
+	}
 }
