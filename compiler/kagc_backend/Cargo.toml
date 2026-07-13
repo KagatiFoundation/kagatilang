@@ -14,4 +14,5 @@ kagc_ctx = { path = "../kagc_ctx" }
 kagc_scope = { path = "../kagc_scope" }
 kagc_symbol = { path = "../kagc_symbol" }
 kagc_utils = { path = "../kagc_utils" }
+kagc_optimization = { path = "../kagc_optimization" }
 runtime = { path = "../../runtime" }

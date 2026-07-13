@@ -16,6 +16,9 @@ use crate::codegen_asm::stack::{StackFrameBuilder, StackObject};
 use crate::regalloc::register::{RegClass, Register};
 use crate::{CodeGenerator, OffsetGenerator};
 
+use kagc_optimization::constant_folder::ConstantFolder;
+use kagc_optimization::FunctionPass;
+
 use lazy_static::lazy_static;
 
 // Aarch64 scratch registers
@@ -55,11 +58,14 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 }
 
 impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
-    fn gen_function(&mut self, function: &IrFunction) {
+    fn gen_function(&mut self, function: &mut IrFunction) {
         if function.signature.class == StorageClass::EXTERN {
             println!(".extern _{fn_name}", fn_name = function.name); // an extern function
             return;
         }
+
+		let mut const_folder = ConstantFolder::default();
+		const_folder.run_on_function(function);
 
 		self.current_function_ctx.reinit();
 		self.current_function_ctx.stack_frame = StackFrameBuilder::build_for_function(function);
@@ -129,12 +135,15 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 }
 
 impl<'cg> Aarch64CodeGenerator<'cg> {
-	pub fn generate_code(&mut self, functions: &HashMap<IrFunctionId, IrFunction>) {
+	pub fn generate_code(&mut self, functions: &mut HashMap<IrFunctionId, IrFunction>) {
         let mut function_ids: Vec<IrFunctionId> = functions.keys().cloned().collect();
         function_ids.sort_by_key(|function_id| function_id.0);
 
 		for function_id in function_ids {
-			let function = &functions[&function_id];
+			let Some(function) = functions.get_mut(&function_id)
+			else {
+				panic!("function not found. obvious bug");
+			};
 			self.gen_function(function);
 
             self.current_function_code = String::new();

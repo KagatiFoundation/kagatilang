@@ -5,8 +5,6 @@ use std::collections::HashMap;
 
 use kagc_ast_lowering::AstToMirLowerer;
 use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
-use kagc_comp_unit::ImportResolver;
-use kagc_comp_unit::source_map::{FileId, SourceMap};
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_mir::module::MirModule;
@@ -18,7 +16,8 @@ use kagc_ctx::StringInterner;
 use kagc_sema::TypeChecker;
 use kagc_sema::binder::NameBinder;
 use kagc_utils::bug;
-
+use kagc_comp_unit::ImportResolver;
+use kagc_comp_unit::source_map::{FileId, SourceMap};
 use kagc_comp_unit::CompUnit;
 
 pub struct CompilerPipeline<'tcx> {
@@ -80,7 +79,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         }
         
         let mir_mod = ast_lowerer.ir_builder.build();
-        self.compile_mir_modules_into_asm(&[mir_mod]);
+        self.compile_mir_modules_into_asm(&mut [mir_mod]);
 
         self.diagnostics.report_all(self.source_map);
         Ok(())
@@ -152,11 +151,11 @@ impl<'tcx> CompilerPipeline<'tcx> {
         self.compile_order.push(file_path.to_string());
     }
 
-    fn compile_mir_modules_into_asm(&mut self, modules: &[MirModule]) {
+    fn compile_mir_modules_into_asm(&mut self, modules: &mut [MirModule]) {
         let mut cg = Aarch64CodeGenerator::new(self.const_pool);
-        for module in modules.iter() {
+        for module in modules.iter_mut() {
             // cg.generate_module_code(module);
-			cg.generate_code(&module.functions);
+			cg.generate_code(&mut module.functions);
         }
         cg.dump_globals();
     }

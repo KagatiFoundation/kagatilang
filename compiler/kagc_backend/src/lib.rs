@@ -14,7 +14,7 @@ use kagc_mir::value::StackSlotId;
 /// Parent struct for generating code.
 pub trait CodeGenerator {
     /// Generate code from LIR functions
-    fn gen_function(&mut self, func: &IrFunction);
+    fn gen_function(&mut self, func: &mut IrFunction);
 
     /// Generate code from LIR basic blocks
     fn gen_block(&mut self, block: &IrBasicBlock);
