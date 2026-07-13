@@ -4,7 +4,7 @@
 use std::cell::{RefCell, Cell};
 use std::collections::HashMap;
 
-use crate::source::SourceFile;
+use crate::SourceFile;
 
 #[derive(Debug, Default, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct FileId(pub usize);

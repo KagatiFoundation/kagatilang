@@ -6,7 +6,7 @@ pub mod compiler;
 use std::io::Error;
 
 use compiler::CompilerPipeline;
-use kagc_comp_unit::source::SourceFile;
+use kagc_comp_unit::SourceFile;
 use kagc_comp_unit::source_map::SourceMap;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
