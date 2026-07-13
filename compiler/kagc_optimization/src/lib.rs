@@ -40,7 +40,7 @@ impl OptimizationPipeline {
 		Self {
 			passes: vec![
 				Box::new(ConstantFolder::default()),
-				Box::new(DeadCodeElimination)
+				Box::new(DeadCodeElimination) // DCE pass should run after other optimization passes
 			]
 		}
 	}

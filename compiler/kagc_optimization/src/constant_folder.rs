@@ -49,33 +49,53 @@ impl ConstantFolder {
 				inst
 			}
 
-			IrInstruction::Add { lhs, rhs, result } => {
-				match (lhs, rhs) {
-						(IrValue::Constant(lhs), IrValue::Constant(rhs)) => {
-							let new_result = lhs + rhs;
-							self.known_constants.insert(result, new_result);
-							IrInstruction::Mov { result, src: IrValue::Constant(new_result) }
-						},
-						(IrValue::Register(ir_value_id), IrValue::Constant(lhs))
-						| (IrValue::Constant(lhs), IrValue::Register(ir_value_id)) => {
-							if let Some(&rhs) = self.known_constants.get(&ir_value_id) {
-								self.known_constants.insert(result, lhs + rhs);
-								return IrInstruction::Mov { result, src: IrValue::Constant(lhs + rhs) };
-							}
-							inst
-						},
-						(IrValue::Register(lhs), IrValue::Register(rhs)) => {
-							let lhs_const = self.known_constants.get(&lhs);
-							let rhs_const = self.known_constants.get(&rhs);
-							if let (Some(&lhs), Some(&rhs)) = (lhs_const, rhs_const) {
-								self.known_constants.insert(result, lhs + rhs);
-								return IrInstruction::Mov { result, src: IrValue::Constant(lhs + rhs) };
-							}
-							inst
-						}
-					}
-			}
+			IrInstruction::Divide 	{ result, lhs, rhs } => self.fold_binary_op("/", lhs, rhs, result, inst),
+			IrInstruction::Multiply { result, lhs, rhs } => self.fold_binary_op("*", lhs, rhs, result, inst),
+			IrInstruction::Subtract { result, lhs, rhs } => self.fold_binary_op("-", lhs, rhs, result, inst),
+			IrInstruction::Add 		{ result, lhs, rhs } => self.fold_binary_op("+", lhs, rhs, result, inst),
 			_ => inst
 		}
 	}
+
+	fn fold_binary_op(
+        &mut self,
+        op: &str,
+        lhs: IrValue,
+        rhs: IrValue,
+        result: IrValueId,
+        fallback_inst: IrInstruction,
+    ) -> IrInstruction {
+        let eval_math = |l: i64, r: i64| -> Option<i64> {
+            match op {
+                "+" => Some(l + r),
+                "-" => Some(l - r),
+                "*" => Some(l * r),
+                "/" => if r != 0 { Some(l / r) } else { None },
+				_ => None
+            }
+        };
+
+        let left_val = match lhs {
+            IrValue::Constant(val) => Some(val),
+            IrValue::Register(id) => self.known_constants.get(&id).copied(),
+        };
+
+        let right_val = match rhs {
+            IrValue::Constant(val) => Some(val),
+            IrValue::Register(id) => self.known_constants.get(&id).copied(),
+        };
+
+        if let (Some(l), Some(r)) = (left_val, right_val) {
+            if let Some(new_result) = eval_math(l, r) {
+                self.known_constants.insert(result, new_result);
+                return IrInstruction::Mov {
+                    result,
+                    src: IrValue::Constant(new_result),
+                };
+            }
+        }
+
+		// epxression cannot be folded
+        fallback_inst
+    }
 }
