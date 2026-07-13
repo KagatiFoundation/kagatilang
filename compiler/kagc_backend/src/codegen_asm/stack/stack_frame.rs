@@ -52,8 +52,6 @@ impl StackFrame {
             size,
         };
 
-		println!("next offset {:#?} for {object:#?}", self.next_offset);
-
         self.next_offset += size;
         self.frame_size += size;
 

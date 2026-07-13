@@ -19,5 +19,6 @@ kagc_errors = { path = "../kagc_errors" }
 runtime = { path = "../../runtime" }
 kagc_parser = { path = "../kagc_parser" }
 kagc_scope = { path = "../kagc_scope" }
+kagc_comp_unit = { path = "../kagc_comp_unit" }
 
 [dev-dependencies]

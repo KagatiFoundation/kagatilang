@@ -2,7 +2,6 @@
 // Copyright (c) 2023 Kagati Foundation
 
 pub mod compiler;
-mod comp_unit;
 
 use std::io::Error;
 

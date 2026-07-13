@@ -19,7 +19,7 @@ use kagc_sema::TypeChecker;
 use kagc_sema::binder::NameBinder;
 use kagc_utils::bug;
 
-use crate::comp_unit::CompUnit;
+use kagc_comp_unit::CompUnit;
 
 pub struct CompilerPipeline<'tcx> {
     compilation_units: HashMap<String, CompUnit<'tcx>>,
@@ -84,7 +84,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
 				self.diagnostics.report_all(self.source_map);
 			}
 
-            // let _ = ast_lowerer.lower_node(&mut unit.asts);
+            ast_lowerer.lower_comp_unit(unit);
         }
         
         let mir_mod = ast_lowerer.ir_builder.build();

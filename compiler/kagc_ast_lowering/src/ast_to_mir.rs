@@ -5,6 +5,7 @@ use core::panic;
 use std::vec;
 
 use kagc_ast::*;
+use kagc_comp_unit::CompUnit;
 use kagc_mir::loop_ctx::IrLoopContext;
 use kagc_symbol::*;
 use kagc_types::*;
@@ -46,14 +47,25 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         }
     }
 
-    pub fn lower_node(&mut self, node: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
+	pub fn lower_comp_unit(&mut self, unit: &mut CompUnit<'_>) {
+		for ast in &mut unit.asts {
+			match ast.op {
+				AstOp::Func => {
+					_ = self.lower_function(ast);
+				},
+				AstOp::Import
+				| AstOp::RecDecl => {},
+            	_ => todo!("{node_type:#?}", node_type = ast.op),
+			}
+		}
+	}
+
+    fn lower_node(&mut self, node: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         match node.op {
             AstOp::Func    => self.lower_function(node),
             AstOp::FuncCall => self.lower_function_call(node, fn_ctx),
             AstOp::VarDecl  => self.lower_variable_declaration(node, fn_ctx),
             AstOp::Return   => self.lower_return(node, fn_ctx),
-            AstOp::Import   => self.lower_import(),
-            AstOp::RecDecl  => self.lower_record_declaration(node),
             AstOp::Loop     => self.lower_infinite_loop(node, fn_ctx),
             AstOp::If       => self.lower_if_else_tree(node, fn_ctx),
             AstOp::Else     => self.lower_else_block(node, fn_ctx),
@@ -423,7 +435,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(merge_block)
     }
 
-    pub fn lower_linear_sequence(&mut self, stmts: &mut [&mut AstNode], fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
+    fn lower_linear_sequence(&mut self, stmts: &mut [&mut AstNode], fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let mut current = self.ir_builder.current_block_id_unchecked();
         let stmts_len = stmts.len();
         for (idx, stmt) in stmts.iter_mut().enumerate() {
@@ -465,13 +477,5 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         self.scope.pop();
         Ok(last_block_id)
-    }
-
-    fn lower_import(&mut self) -> StmtLoweringResult {
-        Ok(self.ir_builder.current_block_id_unchecked()) 
-    }
-
-    fn lower_record_declaration(&mut self, _node: &mut AstNode) -> StmtLoweringResult {
-        Ok(self.ir_builder.current_block_id_unchecked()) 
     }
 }
