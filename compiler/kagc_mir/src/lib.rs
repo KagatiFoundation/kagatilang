@@ -18,3 +18,4 @@ pub mod mir_builder;
 pub mod types;
 pub mod module;
 pub mod loop_ctx;
+pub mod liveness;

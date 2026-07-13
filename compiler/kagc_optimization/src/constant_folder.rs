@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use kagc_mir::block::IrBasicBlock;
 use kagc_mir::instruction::IrInstruction;
+use kagc_mir::function::IrFunction;
 use kagc_mir::value::{IrValueId, IrValue};
 
 use crate::FunctionPass;
@@ -16,10 +17,10 @@ pub struct ConstantFolder {
 
 impl FunctionPass for ConstantFolder {
 	fn name(&self) -> &'static str {
-		"Constant folder"
+		"Constant Folder"
 	}
 
-	fn run_on_function(&mut self, func: &mut kagc_mir::function::IrFunction) -> bool {
+	fn run_on_function(&mut self, func: &mut IrFunction) -> bool {
 		func
 			.blocks
 			.values_mut()
@@ -31,8 +32,8 @@ impl ConstantFolder {
 	fn fold_block(&mut self, block: &mut IrBasicBlock) -> bool {
 		let mut folded_instructions = vec![];
 
-		for inst in &block.instructions {
-			folded_instructions.push(self.fold_inst(inst.clone()));
+		for inst in block.instructions.drain(..) {
+			folded_instructions.push(self.fold_inst(inst));
 		}
 
 		block.instructions = folded_instructions;

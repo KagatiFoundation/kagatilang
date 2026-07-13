@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
-use crate::codegen_asm::stack::LiveRange;
+use kagc_mir::liveness::LiveRange;
 use kagc_mir::value::IrValueId;
 use kagc_mir::value::StackSlotId;
 
 use crate::regalloc::register::RegisterFile;
 use crate::regalloc::register::RegClass;
-
 use crate::regalloc::register::Register;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq)]

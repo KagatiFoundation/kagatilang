@@ -3,8 +3,6 @@
 
 mod stack_frame;
 mod stack_frame_builder;
-mod liveness_analyzer;
 
 pub use stack_frame::*;
 pub use stack_frame_builder::*;
-pub use liveness_analyzer::*;

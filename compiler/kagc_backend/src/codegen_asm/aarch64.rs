@@ -16,8 +16,7 @@ use crate::codegen_asm::stack::{StackFrameBuilder, StackObject};
 use crate::regalloc::register::{RegClass, Register};
 use crate::{CodeGenerator, OffsetGenerator};
 
-use kagc_optimization::constant_folder::ConstantFolder;
-use kagc_optimization::FunctionPass;
+use kagc_optimization::OptimizationPipeline;
 
 use lazy_static::lazy_static;
 
@@ -64,8 +63,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
             return;
         }
 
-		let mut const_folder = ConstantFolder::default();
-		const_folder.run_on_function(function);
+		let mut optimization_pipeline = OptimizationPipeline::standard_pipeline();
+		optimization_pipeline.apply(function);
 
 		self.current_function_ctx.reinit();
 		self.current_function_ctx.stack_frame = StackFrameBuilder::build_for_function(function);
