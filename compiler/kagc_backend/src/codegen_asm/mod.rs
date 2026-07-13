@@ -4,5 +4,4 @@
 pub mod aarch64;
 
 mod cg_function_ctx;
-mod eval_stack;
 pub mod stack;

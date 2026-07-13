@@ -4,12 +4,10 @@
 use kagc_mir::function::IrFunction;
 use kagc_mir::instruction::IrInstruction;
 
-use crate::codegen_asm::eval_stack::EvalStack;
 use crate::codegen_asm::stack::StackFrame;
 
 pub struct CodeGenFunctionContext {
 	pub stack_frame: StackFrame,
-	pub eval_stack: EvalStack,
 	pub is_leaf: bool
 }
 
@@ -18,7 +16,6 @@ impl CodeGenFunctionContext {
 	pub fn new() -> Self {
 		Self {
 			stack_frame: StackFrame::new(),
-			eval_stack: EvalStack::new(),
 			is_leaf: true
 		}
 	}
@@ -36,6 +33,5 @@ impl CodeGenFunctionContext {
 
 	pub fn reinit(&mut self) {
 		self.stack_frame.clear();
-		self.eval_stack.clear();
 	}
 }

@@ -74,15 +74,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
 
             name_binder.bind();
 
-			if self.diagnostics.has_errors() {
-				self.diagnostics.report_all(self.source_map);
-			}
-
             ty_checker.check(&mut unit.asts);
-
-			if self.diagnostics.has_errors() {
-				self.diagnostics.report_all(self.source_map);
-			}
 
             ast_lowerer.lower_comp_unit(unit);
         }
@@ -99,15 +91,17 @@ impl<'tcx> CompilerPipeline<'tcx> {
             return None;
         }
 
-        let Ok(file) = ImportResolver::resolve(
+        let file = ImportResolver::resolve(
             file_path, 
             self.str_arena
-        )
-        else {
-            panic!("File not found: '{file_path}'");
+        );
+
+        if let Err(err) = file {
+			println!("err: {err:#?}");
+            return None;
         };
 
-        let file_id = self.source_map.insert(file);
+        let file_id = self.source_map.insert(file.expect("what"));
         Self::tokenize_and_parse(
             self.source_map, 
             self.diagnostics, 
@@ -117,8 +111,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
     }
 
     fn tokenize_and_parse(
-        source_map: &'tcx SourceMap<'tcx>, 
-        diagnostics: &'tcx DiagnosticBag, 
+        source_map: &SourceMap<'tcx>, 
+        diagnostics: &DiagnosticBag, 
         str_interner: &'tcx StringInterner<'tcx>,
         file_id: FileId,
     ) -> Option<CompUnit<'tcx>> {
