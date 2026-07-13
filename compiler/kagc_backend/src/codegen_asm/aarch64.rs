@@ -127,6 +127,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::Store       { src, location } => self.emit_store(*src, *location),
 			IrInstruction::Load        { location, result } => self.emit_load(*location, *result),
 			IrInstruction::Call        { func, args, result } => self.emit_call(func, args, *result),
+			IrInstruction::CondJump    { lhs, rhs, cond, result } => self.emit_cond_jump(*lhs, *rhs, *cond, *result),
 			IrInstruction::Param 	   { index, var_id } => self.emit_param(*index, *var_id),
 			_ => todo!()
 		}
@@ -185,6 +186,73 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
     fn emit_raw_code(&mut self, code: &str) {
         self.current_function_code.push_str(code);
     }
+
+	fn emit_cond_jump(&mut self, lhs: IrValue, rhs: IrValue, cond: IrCondition, result: IrValueId) {
+        let cmp_code = match cond {
+            IrCondition::EqEq   => "b.eq",
+            IrCondition::NEq    => "b.ne",
+            IrCondition::GTEq   => "b.ge",
+            IrCondition::LTEq   => "b.le",
+            IrCondition::GThan  => "b.gt",
+            IrCondition::LThan  => "b.lt",
+        };
+
+		match (lhs, rhs) {
+			(IrValue::Constant(lhs), IrValue::Constant(rhs)) => {
+				self.current_function_code.push_str(
+					&format!(
+						"\nmov {}, #{lhs}\nmov {}, #{rhs}\ncmp {}, {}", 
+						SCRATCH_REGISTER_0.name, 
+						SCRATCH_REGISTER_1.name,
+						SCRATCH_REGISTER_0.name, 
+						SCRATCH_REGISTER_1.name
+					)
+				);
+			},
+			(IrValue::Register(rhs), IrValue::Constant(lhs))
+			| (IrValue::Constant(lhs), IrValue::Register(rhs)) => {
+				let offset = self
+					.current_function_ctx
+					.stack_frame
+					.offset_with_object_unchecked(StackObject::Value(rhs));
+
+				self.current_function_code.push_str(
+					&format!(
+						"\nmov {}, #{lhs}\nldr {}, [sp, #{offset}]",
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_1.name,
+					)
+				);
+			},
+			(IrValue::Register(lhs), IrValue::Register(rhs)) => {
+				let lhs_offset = self
+					.current_function_ctx
+					.stack_frame
+					.offset_with_object_unchecked(StackObject::Value(lhs));
+
+				let rhs_offset = self
+					.current_function_ctx
+					.stack_frame
+					.offset_with_object_unchecked(StackObject::Value(rhs));
+
+				let result_offset = self
+					.current_function_ctx
+					.stack_frame
+					.offset_with_object_unchecked(StackObject::Value(result));
+
+				self.current_function_code.push_str(
+					&format!(
+						"\nldr {}, [sp, #{lhs_offset}]\nldr {}, [sp, #{rhs_offset}]\ncmp {}, {}\nstr {}, [sp, #{result_offset}]",
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_1.name,
+						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_1.name,
+						SCRATCH_REGISTER_0.name,
+					)
+				);
+			},
+		}
+	}
 
 	fn emit_mov(&mut self, src: IrValue, result: IrValueId) {
 		let store_off = self

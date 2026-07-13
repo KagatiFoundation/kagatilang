@@ -130,11 +130,11 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.user_types.borrow().contains(rec_name)
     }
 
-    pub fn root(&self) -> &'tcx Scope<'tcx> {
+    pub fn root(&self) -> &Scope<'tcx> {
         self.scope_db.get_scope(ScopeId(0)).expect("No root scope set")
     }
 
-    pub fn lookup_sym(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&'tcx Sym<'tcx>> {
+    pub fn lookup_sym(&self, scope_id: Option<ScopeId>, name: &str) -> Option<&Sym<'tcx>> {
         let starting_id = scope_id.unwrap_or_else(|| self.live_id());
         if let Some(scope) = self.scope_db.get_scope(starting_id) {
             if let Some(sym) = scope.get_sym(name) {
@@ -149,17 +149,17 @@ impl<'tcx> ScopeCtx<'tcx> {
         }
     }
 
-    pub fn declare_sym_in_scope(&self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+    pub fn declare_sym_in_scope(&self, scope_id: ScopeId, sym: Sym<'tcx>) -> Result<&Sym<'tcx>, &Sym<'tcx>> {
         let scope = self.scope_db.get_scope(scope_id).unwrap_or_else(|| panic!("Couldn't find scope '{:#?}'", scope_id));
         scope.add_sym(sym)
     }
 
-    pub fn declare_sym(&self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+    pub fn declare_sym(&self, sym: Sym<'tcx>) -> Result<&Sym<'tcx>, &Sym<'tcx>> {
         let scope = self.scope_db.get_scope(self.live_id()).expect("Missing active traversal scope");
         scope.add_sym(sym)
     }
 
-    pub fn declare_fn(&self, name: &'tcx str, func: Func<'tcx>) -> Result<&'tcx Func<'tcx>, &'tcx Func<'tcx>> {
+    pub fn declare_fn(&self, name: &'tcx str, func: Func<'tcx>) -> Result<&Func<'tcx>, &Func<'tcx>> {
         self.functions.add(name, func)
     }
 
@@ -167,7 +167,7 @@ impl<'tcx> ScopeCtx<'tcx> {
         self.functions.get_by_id(id)
     }
 
-    pub fn lookup_fn_by_name(&self, name: &str) -> Option<&'tcx Func<'tcx> > {
+    pub fn lookup_fn_by_name(&self, name: &str) -> Option<&Func<'tcx> > {
         self.functions.get(name)
     }
 
@@ -198,11 +198,11 @@ impl<'tcx> ScopeCtx<'tcx> {
         false
     }
 
-    pub fn lookup_scope(&self, scope_id: ScopeId) -> Option<&'tcx Scope<'tcx>> {
+    pub fn lookup_scope(&self, scope_id: ScopeId) -> Option<&Scope<'tcx>> {
         self.scope_db.get_scope(scope_id)
     }
 
-    pub fn lookup_node_scope(&self, node_id: NodeId) -> Option<&'tcx Scope<'tcx>> {
+    pub fn lookup_node_scope(&self, node_id: NodeId) -> Option<&Scope<'tcx>> {
         let scope_id = *self.node_scope_map.borrow().get(&node_id)?;
         self.scope_db.get_scope(scope_id)
     }

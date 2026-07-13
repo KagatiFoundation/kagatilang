@@ -31,7 +31,7 @@ impl<'tcx> SymTable<'tcx> {
         }
     }
 
-    pub fn add(&self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+    pub fn add(&self, sym: Sym<'tcx>) -> Result<&Sym<'tcx>, &Sym<'tcx>> {
         let mut syms = self.symbols.borrow_mut();
         if let Some(existing) = syms.get(sym.name) {
             return Err(*existing);
@@ -45,7 +45,7 @@ impl<'tcx> SymTable<'tcx> {
         Ok(alloced)
     }
 
-    pub fn get(&'tcx self, name: &str) -> Option<&'tcx Sym<'tcx>> {
+    pub fn get(&self, name: &str) -> Option<&Sym<'tcx>> {
         let syms = self.symbols.borrow();
         let sym = syms.get(name)?;
         Some(sym)

@@ -281,7 +281,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
-        let sym = self.scope.lookup_sym(None, ident_expr.sym_name).unwrap(); 
+        let sym = self.scope.lookup_sym(None, ident_expr.sym_name).expect(&format!("{} not found", ident_expr.sym_name)); 
 
 		let var_id = fn_ctx.get_mapped_var_unchecked(sym.name.to_string());
 

@@ -34,7 +34,13 @@ pub struct Scope<'tcx> {
 
 impl Debug for Scope<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Scope").field("symt", &self.symt).field("parent", &self.parent).field("ty", &self.ty).field("id", &self.id).finish()
+        f
+			.debug_struct("Scope")
+			.field("symt", &self.symt)
+			.field("parent", &self.parent)
+			.field("ty", &self.ty)
+			.field("id", &self.id)
+			.finish()
     }
 }
 
@@ -52,11 +58,11 @@ impl<'tcx> Scope<'tcx> {
         }
     }
 
-    pub fn add_sym(&self, sym: Sym<'tcx>) -> Result<&'tcx Sym<'tcx>, &'tcx Sym<'tcx>> {
+    pub fn add_sym(&self, sym: Sym<'tcx>) -> Result<&Sym<'tcx>, &Sym<'tcx>> {
         self.symt.add(sym)
     }
 
-    pub fn get_sym(&'tcx self, name: &str) -> Option<&'tcx Sym<'tcx>> {
+    pub fn get_sym(&self, name: &str) -> Option<&Sym<'tcx>> {
         self.symt.get(name)
     }
 }
@@ -108,12 +114,12 @@ impl<'tcx> ScopeDatabase<'tcx> {
         current_id
     }
 
-	pub fn get_scope(&self, id: ScopeId) -> Option<&'tcx Scope<'tcx>> {
+	pub fn get_scope(&self, id: ScopeId) -> Option<&Scope<'tcx>> {
         let scopes = self.scopes.borrow();
         scopes.get(&id).copied()
     }
 
-	pub fn lookup_sym(&self, starting_scope: ScopeId, name: &str) -> Option<&'tcx Sym<'tcx>> {
+	pub fn lookup_sym(&self, starting_scope: ScopeId, name: &str) -> Option<&Sym<'tcx>> {
         let scopes = self.scopes.borrow();
         let current_scope = scopes.get(&starting_scope)?;
         
@@ -129,7 +135,7 @@ impl<'tcx> ScopeDatabase<'tcx> {
         }
     }
 
-	pub fn iter(&self) -> impl Iterator<Item = &'tcx Scope<'tcx>> {
+	pub fn iter(&self) -> impl Iterator<Item = &Scope<'tcx>> {
         let scopes = self.scopes.borrow();
         scopes.values().copied().collect::<Vec<_>>().into_iter()
     }

@@ -1,6 +1,10 @@
 import "std/io";
 
 def main(argc: integer) -> void {
-	let num = 12334;
+	let num = 36;
 	let num2 = 12 + 12 + 12;
+
+	if (num == num2) {
+		print_int(num + num2);
+	}
 }
