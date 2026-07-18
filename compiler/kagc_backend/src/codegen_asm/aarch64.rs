@@ -14,7 +14,7 @@ use kagc_symbol::StorageClass;
 use crate::codegen_asm::cg_function_ctx::CodeGenFunctionContext;
 use crate::codegen_asm::stack::{StackFrameBuilder, StackObject};
 use crate::regalloc::register::{RegClass, Register};
-use crate::{CodeGenerator, OffsetGenerator};
+use crate::CodeGenerator;
 
 use kagc_optimization::OptimizationPipeline;
 
@@ -38,7 +38,6 @@ lazy_static! {
 pub struct Aarch64CodeGenerator<'cg> {
     function_entry_block: Option<BlockId>,
     const_pool: &'cg ConstPool,
-    offset_generator: OffsetGenerator,
     current_function_code: String,
 
 	current_function_ctx: CodeGenFunctionContext
@@ -51,7 +50,6 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
             const_pool,
 			current_function_ctx: CodeGenFunctionContext::new(), 
             current_function_code: String::new(),
-            offset_generator: OffsetGenerator::new(8) // 8-byte offset generator
         }
     }
 }
@@ -89,7 +87,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 
         if let Some(entry_block) = self.function_entry_block {
             if entry_block != block.id {
-                self.emit_label(block.id.0);
+                self.push_code(format!("_L{}:", block.id.0));
             }
         }
         else {
@@ -101,10 +99,11 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
         }
 
         match block.terminator {
-            Terminator::Jump(block_id) => self.current_function_code.push_str(&format!("\nb _L{}", block_id.0)),
-            Terminator::Return { .. } => {
-				todo!()
-            },
+            Terminator::Jump(block_id) => {
+				self.push_code(format!("b _L{}", block_id.0))
+			}
+			Terminator::Return { .. }
+            | Terminator::Fallthrough(_) => {},
             Terminator::CondJump { cond, then_block, else_block, .. } => {
                 let cmp_code = match cond {
                     IrCondition::EqEq   => "b.eq",
@@ -114,8 +113,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
                     IrCondition::GThan  => "b.gt",
                     IrCondition::LThan  => "b.lt",
                 };
-                self.emit_raw_code(&format!("\n{cmp_code} _L{bid}", bid = then_block.0));
-                self.emit_raw_code(&format!("\nb _L{bid}", bid = else_block.0));
+                self.push_code(format!("{cmp_code} _L{bid}", bid = then_block.0));
+                self.push_code(format!("b _L{bid}", bid = else_block.0));
             },
         }
     }
@@ -124,10 +123,11 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 		match instr {
 			IrInstruction::Mov         { result, src } => self.emit_mov(*src, *result),
 			IrInstruction::Add         { result, lhs, rhs } => self.emit_add(*lhs, *rhs, *result),
+			IrInstruction::Cmp 		   { result, lhs, rhs, condition } => self.emit_conditional(*lhs, *rhs, *result, *condition),
 			IrInstruction::Store       { src, location } => self.emit_store(*src, *location),
 			IrInstruction::Load        { location, result } => self.emit_load(*location, *result),
 			IrInstruction::Call        { func, args, result } => self.emit_call(func, args, *result),
-			IrInstruction::CondJump    { lhs, rhs, cond, result } => self.emit_cond_jump(*lhs, *rhs, *cond, *result),
+			IrInstruction::CondJump    { lhs, rhs, cond, .. } => self.emit_cond_jump(*lhs, *rhs, *cond),
 			IrInstruction::Param 	   { index, var_id } => self.emit_param(*index, *var_id),
 			_ => todo!()
 		}
@@ -144,10 +144,10 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 			else {
 				panic!("function not found. obvious bug");
 			};
+
 			self.gen_function(function);
 
             self.current_function_code = String::new();
-            self.offset_generator.next_off = 0;
 		}
 	}
 
@@ -157,12 +157,12 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 		for (index, block_id) in block_ids.iter().enumerate() {
 			let block = function.blocks.get(block_id).expect("block not found");
-			
+
 			if block.instructions.is_empty() && block.predecessors.is_empty() {
 				continue;
 			}
 
-			self.emit_label(block_id.0); // block label
+			self.push_code(format!("_L{}:", block_id.0));
 
 			self.gen_block_instructions(block);
 
@@ -171,7 +171,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 				if Some(jump_bid) == next_block.map(|b| b.id) {
 					// fallthrough
 				} else {
-					self.emit_raw_code(&format!("\nb _L{}", jump_bid.0));
+					self.push_code(format!("b _L{}", jump_bid.0));
 				}
 			}
 		}
@@ -183,25 +183,21 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		}
 	}
 
-    fn emit_raw_code(&mut self, code: &str) {
-        self.current_function_code.push_str(code);
-    }
-
-	fn emit_cond_jump(&mut self, lhs: IrValue, rhs: IrValue, cond: IrCondition, result: IrValueId) {
+	fn emit_cond_jump(&mut self, lhs: IrValue, rhs: IrValue, cond: IrCondition) {
         let cmp_code = match cond {
-            IrCondition::EqEq   => "b.eq",
-            IrCondition::NEq    => "b.ne",
-            IrCondition::GTEq   => "b.ge",
-            IrCondition::LTEq   => "b.le",
-            IrCondition::GThan  => "b.gt",
-            IrCondition::LThan  => "b.lt",
+            IrCondition::EqEq   => "b.ne",
+            IrCondition::NEq    => "b.eq",
+            IrCondition::GTEq   => "b.le",
+            IrCondition::LTEq   => "b.lge",
+            IrCondition::GThan  => "b.lt",
+            IrCondition::LThan  => "b.gt",
         };
 
 		match (lhs, rhs) {
 			(IrValue::Constant(lhs), IrValue::Constant(rhs)) => {
-				self.current_function_code.push_str(
-					&format!(
-						"\nmov {}, #{lhs}\nmov {}, #{rhs}\ncmp {}, {}", 
+				self.push_code(
+					format!(
+						"mov {}, #{lhs}\nmov {}, #{rhs}\ncmp {}, {}\n{cmp_code} _some_label", 
 						SCRATCH_REGISTER_0.name, 
 						SCRATCH_REGISTER_1.name,
 						SCRATCH_REGISTER_0.name, 
@@ -216,9 +212,9 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 					.stack_frame
 					.offset_with_object_unchecked(StackObject::Value(rhs));
 
-				self.current_function_code.push_str(
-					&format!(
-						"\nmov {}, #{lhs}\nldr {}, [sp, #{offset}]",
+				self.push_code(
+					format!(
+						"mov {}, #{lhs}\nldr {}, [sp, #{offset}]",
 						SCRATCH_REGISTER_0.name,
 						SCRATCH_REGISTER_1.name,
 					)
@@ -235,19 +231,13 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 					.stack_frame
 					.offset_with_object_unchecked(StackObject::Value(rhs));
 
-				let result_offset = self
-					.current_function_ctx
-					.stack_frame
-					.offset_with_object_unchecked(StackObject::Value(result));
-
-				self.current_function_code.push_str(
-					&format!(
-						"\nldr {}, [sp, #{lhs_offset}]\nldr {}, [sp, #{rhs_offset}]\ncmp {}, {}\nstr {}, [sp, #{result_offset}]",
+				self.push_code(
+					format!(
+						"ldr {}, [sp, #{lhs_offset}]\nldr {}, [sp, #{rhs_offset}]\ncmp {}, {}\n{cmp_code}",
 						SCRATCH_REGISTER_0.name,
 						SCRATCH_REGISTER_1.name,
 						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_1.name,
-						SCRATCH_REGISTER_0.name,
+						SCRATCH_REGISTER_1.name
 					)
 				);
 			},
@@ -255,106 +245,89 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 	}
 
 	fn emit_mov(&mut self, src: IrValue, result: IrValueId) {
-		let store_off = self
-			.current_function_ctx
-			.stack_frame
-			.offset_with_object_unchecked(StackObject::Value(result));
+		self.load_operand(src, &SCRATCH_REGISTER_0.name);
+		self.store_result(result);
+	}
 
-		match src {
-			IrValue::Constant(src) => {
-				self.current_function_code.push_str(
-					&format!(
-						"\nmov {}, #{src}\nstr {}, [sp, #{store_off}]",
-						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_0.name,
-					)
-				);
-			},
-			IrValue::Register(src_value) => {
-				let slot_id = self
-					.current_function_ctx
-					.stack_frame
-					.slot_id_unchecked(StackObject::Value(src_value));
+	fn emit_conditional(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId, condition: IrCondition) {
+        let cmp_code = match condition {
+            IrCondition::EqEq   => "eq",
+            IrCondition::NEq    => "ne",
+            IrCondition::GTEq   => "lge",
+            IrCondition::LTEq   => "le",
+            IrCondition::GThan  => "gt",
+            IrCondition::LThan  => "lt",
+        };
 
-				let load_off = self.current_function_ctx.stack_frame.offset_unchecked(slot_id);
+		self.load_operands(lhs, rhs);
 
-				self.current_function_code.push_str(
-					&format!(
-						"\nldr {}, [sp, #{load_off}]\nstr {}, #{store_off}",
-						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_0.name,
-					)
-				);
-			},
-		}
+		self.push_code(
+			format!(
+				"cmp {sr1}, {sr2}\ncset {sr1}, {cmp_code}",
+				sr1 = SCRATCH_REGISTER_0.name,
+				sr2 = SCRATCH_REGISTER_1.name,
+			)
+		);
+
+		self.store_result(result);
 	}
 
 	fn emit_add(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId) {
-		match (lhs, rhs) {
-			(IrValue::Constant(lhs), IrValue::Constant(rhs)) => {
-				self.current_function_code.push_str(
-					&format!(
-						"\nmov {}, #{lhs}\nmov {}, #{rhs}\nadd {}, {}, {}", 
-						SCRATCH_REGISTER_0.name, 
-						SCRATCH_REGISTER_1.name,
-						SCRATCH_REGISTER_0.name, 
-						SCRATCH_REGISTER_0.name, 
-						SCRATCH_REGISTER_1.name
-					)
-				);
-			},
-			(IrValue::Register(rhs), IrValue::Constant(lhs))
-			| (IrValue::Constant(lhs), IrValue::Register(rhs)) => {
-				let offset = self
-					.current_function_ctx
-					.stack_frame
-					.offset_with_object_unchecked(StackObject::Value(rhs));
+		self.load_operands(lhs, rhs);
 
-				self.current_function_code.push_str(
-					&format!(
-						"\nmov {}, #{lhs}\nldr {}, [sp, #{offset}]",
-						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_1.name,
-					)
-				);
-			},
-			(IrValue::Register(lhs), IrValue::Register(rhs)) => {
-				let lhs_offset = self
-					.current_function_ctx
-					.stack_frame
-					.offset_with_object_unchecked(StackObject::Value(lhs));
+		self.push_code(
+			format!(
+				"add {sr0}, {sr0}, {sr1}", 
+				sr0 = SCRATCH_REGISTER_0.name, 
+				sr1 = SCRATCH_REGISTER_1.name,
+			)
+		);
 
-				let rhs_offset = self
-					.current_function_ctx
-					.stack_frame
-					.offset_with_object_unchecked(StackObject::Value(rhs));
-
-				let result_offset = self
-					.current_function_ctx
-					.stack_frame
-					.offset_with_object_unchecked(StackObject::Value(result));
-
-				self.current_function_code.push_str(
-					&format!(
-						"\nldr {}, [sp, #{lhs_offset}]\nldr {}, [sp, #{rhs_offset}]\nadd {}, {}, {}\nstr {}, [sp, #{result_offset}]",
-						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_1.name,
-						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_0.name,
-						SCRATCH_REGISTER_1.name,
-						SCRATCH_REGISTER_0.name,
-					)
-				);
-			},
-		}
+		self.store_result(result);
 	}
+
+	fn load_operand(&mut self, value: IrValue, scratch_reg_name: &str) {
+        let asm = match value {
+            IrValue::Constant(val) => {
+                format!("mov {scratch_reg_name}, #{val}")
+            }
+            IrValue::Register(reg_id) => {
+                let offset = self
+                    .current_function_ctx
+                    .stack_frame
+                    .offset_with_object_unchecked(StackObject::Value(reg_id));
+                format!("ldr {scratch_reg_name}, [sp, #{offset}]")
+            }
+        };
+
+		self.push_code(asm);
+	}
+
+	fn load_operands(&mut self, lhs: IrValue, rhs: IrValue) {
+        self.load_operand(lhs, &SCRATCH_REGISTER_0.name);
+        self.load_operand(rhs, &SCRATCH_REGISTER_1.name);
+    }
+
+	fn store_result(&mut self, result: IrValueId) {
+        let result_offset = self
+            .current_function_ctx
+            .stack_frame
+            .offset_with_object_unchecked(StackObject::Value(result));
+
+        self.push_code(
+			format!(
+            	"str {}, [sp, #{result_offset}]",
+            	SCRATCH_REGISTER_0.name
+        	)
+		);
+    }
 
 	fn emit_store(&mut self, src: IrValueId, location: IrLocation) {
 		let offset = self.get_value_stack_offset_unchecked(src);
 
-		self.current_function_code.push_str(
-			&format!(
-				"\nldr {}, [sp, #{offset}]",
+		self.push_code(
+			format!(
+				"ldr {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
@@ -362,9 +335,9 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		let IrLocation::Variable(var_id) = location;
 		let offset = self.get_variable_stack_offset_unchecked(var_id);
 
-		self.current_function_code.push_str(
-			&format!(
-				"\nstr {}, [sp, #{offset}]",
+		self.push_code(
+			format!(
+				"str {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
@@ -374,20 +347,14 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		let IrLocation::Variable(var_id) = location;
 		let offset = self.get_variable_stack_offset_unchecked(var_id);
 
-		self.current_function_code.push_str(
-			&format!(
-				"\nldr {}, [sp, #{offset}]",
+		self.push_code(
+			format!(
+				"ldr {}, [sp, #{offset}]",
 				SCRATCH_REGISTER_0.name,
 			)
 		);
 
-		let offset = self.get_value_stack_offset_unchecked(result);
-		self.current_function_code.push_str(
-			&format!(
-				"\nstr {}, [sp, #{offset}]",
-				SCRATCH_REGISTER_0.name,
-			)
-		);
+		self.store_result(result);
 	}
 
 	fn emit_call(&mut self, name: &str, args: &[IrValueId], result: Option<IrValueId>) {
@@ -396,20 +363,20 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         for (reg_counter, param) in args.iter().enumerate() {
 			let offset = self.get_value_stack_offset_unchecked(*param);
 
-			self.current_function_code.push_str(
-				&format!(
-					"\nldr x{reg_counter}, [sp, #{offset}]"
+			self.push_code(
+				format!(
+					"ldr x{reg_counter}, [sp, #{offset}]"
 				)
 			);
         }
 
-		self.current_function_code.push_str(&format!("\nbl _{name}"));
+		self.push_code(format!("bl _{name}"));
 
 		if let Some(result) = result {
 			let offset = self.get_value_stack_offset_unchecked(result);
-			self.current_function_code.push_str(
-				&format!(
-					"\nstr x0, [sp, #{offset}]"
+			self.push_code(
+				format!(
+					"str x0, [sp, #{offset}]"
 				)
 			);
 		}
@@ -418,9 +385,9 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 	fn emit_param(&mut self, index: usize, var_id: IrVariableId) {
 		let offset = self.get_variable_stack_offset_unchecked(var_id);
 
-		self.current_function_code.push_str(
-			&format!(
-				"\nstr x{index}, [sp, #{offset}]"
+		self.push_code(
+			format!(
+				"str x{index}, [sp, #{offset}]"
 			)
 		);
 	}
@@ -429,19 +396,15 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         let curr_func_is_leaf = self.current_function_ctx.is_leaf;
         let stack_size = self.current_function_ctx.stack_frame.size();
 
-        self.current_function_code.push_str(
-			&format!(
-				".global _{name}\n_{name}:",
+        self.push_code(
+			format!(
+				".global _{name}\n_{name}:\nsub sp, sp, ${stack_size}",
 				name = function.name
 			)
 		);
 
-		self.current_function_code.push_str(&format!("\nsub sp, sp, #{stack_size}"));
-
-		let lr_offset = stack_size - 8;
-
 		if !curr_func_is_leaf {
-			self.current_function_code.push_str(&format!("\nstr x30, [sp, #{lr_offset}]"));
+			self.push_code(format!("str x30, [sp, #{off}]", off = stack_size - 8));
 		}
     }
 
@@ -449,20 +412,13 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         let curr_func_is_leaf = self.current_function_ctx.is_leaf;
         let stack_size = self.current_function_ctx.stack_frame.size();
 
-        self.current_function_code.push_str(&format!("\n_L{lbl}:", lbl = lir_func.exit_block.0));
-
-		let lr_offset = stack_size - 8;
+        self.push_code(format!("_L{lbl}:", lbl = lir_func.exit_block.0));
 
 		if !curr_func_is_leaf {
-			self.current_function_code.push_str(&format!("\nldr x30, [sp, #{lr_offset}]"));
+			self.push_code(format!("ldr x30, [sp, #{}]", stack_size - 8));
 		}
 
-		self.current_function_code.push_str(&format!("\nadd sp, sp, #{stack_size}"));
-		self.current_function_code.push_str("\nret");
-    }
-
-    fn emit_label(&mut self, id: usize) {
-        self.current_function_code.push_str(&format!("\n_L{id}:"));
+		self.push_code(format!("add sp, sp, #{stack_size}\nret"));
     }
 
     /// This function is public only for a short period of time.
@@ -513,6 +469,10 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         }
         output_str
     }
+
+	pub fn push_code(&mut self, code: String) {
+		self.current_function_code.push_str(&format!("\n{code}"));
+	}
 
 	fn get_value_stack_offset_unchecked(&self, value_id: IrValueId) -> i32 {
 		self

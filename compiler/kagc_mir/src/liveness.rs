@@ -25,18 +25,6 @@ pub fn compute_function_live_ranges(function: &IrFunction) -> HashMap<BlockId, B
     let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
     block_ids.sort_by_key(|b| b.0);
 
-    let mut instr_global_id = 0;
-    let mut instr_ranges_per_block = HashMap::new(); 
-
-    for bid in &block_ids {
-        let block = &function.blocks[bid];
-        let start_ip = instr_global_id;
-        instr_global_id += block.instructions.len();
-
-        let end_ip = instr_global_id;
-        instr_ranges_per_block.insert(*bid, (start_ip, end_ip));
-    }
-
     let mut local_use: HashMap<BlockId, HashSet<IrValueId>> = HashMap::new();
     let mut local_def: HashMap<BlockId, HashSet<IrValueId>> = HashMap::new();
 

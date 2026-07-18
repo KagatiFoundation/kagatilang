@@ -240,9 +240,45 @@ impl IrBuilder {
             .expect("create_divide: no value ID created")
     }
 
-    pub fn create_conditional_jump(&mut self, cond: IrCondition, lhs: IrValue, rhs: IrValue) -> IrValueId {
+	pub fn create_conditional_eqeq(
+		&mut self,
+		lhs: IrValue,
+		rhs: IrValue
+	) -> IrValueId {
+		self.create_conditional(IrCondition::EqEq, lhs, rhs)
+	}
+
+	pub fn create_conditional_neq(
+		&mut self,
+		lhs: IrValue,
+		rhs: IrValue
+	) -> IrValueId {
+		self.create_conditional(IrCondition::NEq, lhs, rhs)
+	}
+
+	pub fn create_conditional(
+		&mut self,
+		condition: IrCondition,
+		lhs: IrValue,
+		rhs: IrValue,
+	) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IrInstruction::CondJump { result, cond, lhs, rhs })
+		self.inst(
+			IrInstruction::Cmp {
+				lhs, rhs, result, condition
+			}
+		).expect("create_conditional_internal: no value ID created")
+	}
+
+    pub fn create_conditional_jump(
+		&mut self,
+		cond: IrCondition,
+		lhs: IrValue,
+		rhs: IrValue,
+		then_block: BlockId,
+		else_block: BlockId
+	) -> IrValueId {
+        self.inst(IrInstruction::CondJump { cond, lhs, rhs, then_block, else_block })
             .expect("create_conditional_jump: no value ID created")
     }
 

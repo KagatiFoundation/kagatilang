@@ -5,10 +5,10 @@ use core::panic;
 use std::vec;
 
 use kagc_ast::*;
-use kagc_comp_unit::CompUnit;
-use kagc_mir::loop_ctx::IrLoopContext;
 use kagc_symbol::*;
 use kagc_types::*;
+use kagc_comp_unit::CompUnit;
+use kagc_mir::loop_ctx::IrLoopContext;
 use kagc_types::builtins::obj::KObjType;
 use kagc_const::pool::{ConstPool, KagcConst};
 use kagc_scope::ScopeCtx;
@@ -281,7 +281,10 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
-        let sym = self.scope.lookup_sym(None, ident_expr.sym_name).expect(&format!("{} not found", ident_expr.sym_name)); 
+        let sym = self
+			.scope
+			.lookup_sym(None, ident_expr.sym_name)
+			.unwrap_or_else(|| panic!("symbol '{}' not found", ident_expr.sym_name)); 
 
 		let var_id = fn_ctx.get_mapped_var_unchecked(sym.name.to_string());
 
@@ -297,12 +300,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             AstOp::Subtract  => Ok(self.ir_builder.create_subtract(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             AstOp::Multiply  => Ok(self.ir_builder.create_multiply(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             AstOp::Divide    => Ok(self.ir_builder.create_divide(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
-            AstOp::EqEq      => Ok(self.ir_builder.create_conditional_jump(IrCondition::EqEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
-            AstOp::NEq       => Ok(self.ir_builder.create_conditional_jump(IrCondition::NEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
-            AstOp::LtEq      => Ok(self.ir_builder.create_conditional_jump(IrCondition::LTEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
-            AstOp::GtEq      => Ok(self.ir_builder.create_conditional_jump(IrCondition::GTEq, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
-            AstOp::LThan     => Ok(self.ir_builder.create_conditional_jump(IrCondition::LThan, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
-            AstOp::GThan     => Ok(self.ir_builder.create_conditional_jump(IrCondition::GThan, IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+			AstOp::EqEq 	 => Ok(self.ir_builder.create_conditional_eqeq(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::NEq       => Ok(self.ir_builder.create_conditional_neq(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             _ => unimplemented!()
         }
     }
@@ -354,37 +353,43 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         fn_ctx.enter_loop(IrLoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
 
-        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(loop_head_id));
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Fallthrough(loop_head_id));
         self.ir_builder.link_blocks(prev_block_id, loop_head_id);
 
         self.ir_builder.switch_to_block(loop_head_id);
-        self.ir_builder.set_terminator(loop_head_id, Terminator::Jump(loop_body_id));
+        self.ir_builder.set_terminator(loop_head_id, Terminator::Fallthrough(loop_body_id));
         self.ir_builder.link_blocks(loop_head_id, loop_body_id);
 
         self.ir_builder.switch_to_block(loop_body_id);
 
-        let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
-        let active_tail_block = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
+        if let Some(left_tree) = &mut ast.left {
+        	let Some(loop_scope) = self.scope.lookup_node_scope(left_tree.id) else {
+            	bug!("scope not found");
+        	};
 
-        if !self.ir_builder.has_terminator(active_tail_block) {
-            self.ir_builder.set_terminator(active_tail_block, Terminator::Jump(loop_head_id));
-            self.ir_builder.link_blocks(active_tail_block, loop_head_id);
-        }
+			self.scope.enter(loop_scope.id.get());
 
-        fn_ctx.exit_loop();
+        	let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
+        	let active_tail_block = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
+
+        	if !self.ir_builder.has_terminator(active_tail_block) {
+            	self.ir_builder.set_terminator(active_tail_block, Terminator::Jump(loop_head_id));
+            	self.ir_builder.link_blocks(active_tail_block, loop_head_id);
+        	}
+
+			self.scope.pop();
+        	fn_ctx.exit_loop();
+		}
         
         self.ir_builder.switch_to_block(loop_tail_id);
         Ok(loop_tail_id)
     }
 
     fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
-        if let NodeKind::StmtAST(Stmt::If) = &ast.kind {
-            self.scope.enter(ScopeId(0));
-        }
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 
         let conditional_block = self.ir_builder.create_block("if-header");
-        self.ir_builder.set_terminator(prev_block_id, Terminator::Jump(conditional_block));
+        self.ir_builder.set_terminator(prev_block_id, Terminator::Fallthrough(conditional_block));
         self.ir_builder.link_blocks(prev_block_id, conditional_block);
         
         self.ir_builder.switch_to_block(conditional_block);
@@ -407,31 +412,53 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         );
 
         self.ir_builder.switch_to_block(then_block);
+
         if let Some(mid_tree) = &mut ast.mid {
+        	let Some(then_scope) = self.scope.lookup_node_scope(mid_tree.id) else {
+            	bug!("scope not found");
+        	};
+
+			self.scope.enter(then_scope.id.get());
+
             let then_tail = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
+
             if !self.ir_builder.has_terminator(then_tail) {
                 self.ir_builder.set_terminator(then_tail, Terminator::Jump(merge_block));
                 self.ir_builder.link_blocks(then_tail, merge_block);
             }
-        } else if !self.ir_builder.has_terminator(then_block) {
+        }
+		else if !self.ir_builder.has_terminator(then_block) {
             self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
             self.ir_builder.link_blocks(then_block, merge_block);
         }
+
         self.scope.pop();
         
         self.ir_builder.switch_to_block(else_block);
+
         if let Some(right_tree) = &mut ast.right {
+        	let Some(then_scope) = self.scope.lookup_node_scope(right_tree.id) else {
+            	bug!("scope not found");
+        	};
+
+			self.scope.enter(then_scope.id.get());
+
             let else_tail = self.lower_linear_sequence(&mut right_tree.linearize_mut(), fn_ctx)?;
+
             if !self.ir_builder.has_terminator(else_tail) {
                 self.ir_builder.set_terminator(else_tail, Terminator::Jump(merge_block));
                 self.ir_builder.link_blocks(else_tail, merge_block);
             }
-        } else if !self.ir_builder.has_terminator(else_block) {
+        }
+		else if !self.ir_builder.has_terminator(else_block) {
             self.ir_builder.set_terminator(else_block, Terminator::Jump(merge_block));
             self.ir_builder.link_blocks(else_block, merge_block);
         }
 
+        self.scope.pop();
+
         self.ir_builder.switch_to_block(merge_block);
+
         Ok(merge_block)
     }
 

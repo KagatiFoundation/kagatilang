@@ -3,6 +3,7 @@
 
 use kagc_const::pool::PoolIdx;
 
+use crate::block::BlockId;
 use crate::builtin::BuiltinFn;
 use crate::variable::IrVariableId;
 use crate::value::*;
@@ -36,6 +37,13 @@ pub enum IrInstruction {
         result: IrValueId,
         lhs: IrValue,
         rhs: IrValue
+    },
+
+    Cmp {
+        result: IrValueId,
+        lhs: IrValue,
+        rhs: IrValue,
+		condition: IrCondition
     },
 
     Subtract {
@@ -83,15 +91,6 @@ pub enum IrInstruction {
         result: Option<IrValueId>
     },
 
-    #[deprecated]
-    MemAlloc {
-        size:       IrValue,
-        ob_ty:      IrValue,
-        result:     IrValueId,
-        pool_idx:   PoolIdx,
-        base_ptr_slot: StackSlotId,
-    },
-
     LoadConst {
         label_id: usize,
         result: IrValueId
@@ -106,7 +105,8 @@ pub enum IrInstruction {
         lhs: IrValue,
         rhs: IrValue,
         cond: IrCondition,
-        result: IrValueId
+		then_block: BlockId,
+		else_block: BlockId
     }
 }
 
@@ -123,8 +123,8 @@ impl IrInstruction {
             IrInstruction::Subtract     { result, .. } |
             IrInstruction::Divide       { result, .. } |
             IrInstruction::Multiply     { result, .. } |
-            IrInstruction::LoadGlobal   { result, .. } |
-            IrInstruction::CondJump     { result, .. } => Some(*result),
+            IrInstruction::Cmp  		{ result, .. } |
+            IrInstruction::LoadGlobal   { result, .. } => Some(*result),
             IrInstruction::Call         { result, .. } |
             IrInstruction::CallBuiltin  { result, .. } => *result,
             IrInstruction::LoadConst    { result, .. } => Some(*result),
@@ -152,6 +152,18 @@ impl IrInstruction {
             IrInstruction::Store { src, .. } => {
                 uses.push(*src);
             }
+			IrInstruction::Cmp { result, lhs, rhs, .. } => {
+				defs.push(*result);
+                if let IrValue::Register(v) = lhs { uses.push(*v); }
+                if let IrValue::Register(v) = rhs { uses.push(*v); }
+			}
+			IrInstruction::Call { args, result, .. } => {
+				if let Some(result) = result {
+					defs.push(*result);
+				}
+
+				uses.extend(args);
+			}
             IrInstruction::CondJump { lhs, rhs, .. } => {
                 if let IrValue::Register(r) = lhs { uses.push(*r); }
                 if let IrValue::Register(r) = rhs { uses.push(*r); }

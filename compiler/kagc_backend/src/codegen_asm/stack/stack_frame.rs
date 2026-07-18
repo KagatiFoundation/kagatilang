@@ -93,7 +93,13 @@ impl StackFrame {
     }
 
  	pub fn slot_id_unchecked(&self, object: StackObject) -> StackSlotId {
-        self.objects.get(&object).copied().expect("missing slot id")
+        self
+			.objects
+			.get(&object)
+			.copied()
+			.unwrap_or_else(|| {
+				panic!("missing slot id ({object:#?})");
+			})
     }
 
     pub fn slot(&self, id: StackSlotId) -> Option<StackSlot> {

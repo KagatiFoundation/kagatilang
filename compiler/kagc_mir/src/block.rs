@@ -57,8 +57,11 @@ impl UseDefSet {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Terminator {
-    /// Unconditional jump
+    /// Unconditional jump which generates 'bl' instruction.
     Jump(BlockId),
+
+	/// Does not generate 'bl' instruction.
+	Fallthrough(BlockId),
 
     CondJump {
         jump_value_id: IrValueId,

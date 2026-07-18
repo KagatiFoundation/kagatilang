@@ -60,12 +60,15 @@ impl StackFrameBuilder {
 			IrInstruction::Load { result, .. } => {
 				frame.allocate(StackObject::Value(*result), 0x8);
 			}
+			IrInstruction::Cmp { result, .. } => {
+				frame.allocate(StackObject::Value(*result), 0x8);
+			}
 			IrInstruction::Param { var_id, .. } => {
 				frame.allocate_variable(*var_id, 0x8);
 			}
 			IrInstruction::Call { result, .. } if result.is_some() => {
 				frame.allocate(StackObject::Value(result.unwrap()), 0x8);
-			}
+			},
 			_ => {}
 		 }
 	}

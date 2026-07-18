@@ -7,7 +7,6 @@ use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_scope::ScopeCtx;
-use kagc_scope::ScopeId;
 use kagc_symbol::Sym;
 use kagc_symbol::SymTy;
 use kagc_symbol::function::FuncId;
@@ -105,10 +104,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         op: AstOp, meta: &NodeMeta
     ) -> Option<TyKind<'tcx>> {
         match op {
-            AstOp::Add |
-            AstOp::Multiply |
-            AstOp::Subtract |
-            AstOp::Divide => {
+            AstOp::Add 
+			| AstOp::Multiply
+			| AstOp::Subtract 
+			| AstOp::Divide
+			| AstOp::EqEq => {
                 match (lhs, rhs) {
                     (TyKind::I64, TyKind::I64) => Some(TyKind::I64),
                     (TyKind::U8, TyKind::U8) => Some(TyKind::I64),
@@ -150,7 +150,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     fn check_bin_expr(&mut self, bin_expr: &mut BinExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
         let left_type = self.check_and_mutate_expr(&mut bin_expr.left, meta)?;
         let right_type = self.check_and_mutate_expr(&mut bin_expr.right, meta)?;
-        let result_type = self.are_types_compatible(left_type, right_type, bin_expr.operation, meta).unwrap();
+
+        let result_type = self
+			.are_types_compatible(left_type, right_type, bin_expr.operation, meta)
+			.unwrap_or_else(|| panic!("{left_type} and {right_type} are not compatible"));
+
         bin_expr.ty = result_type;
         Some(result_type)
     }
@@ -476,7 +480,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 
     fn check_if_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         node.expect_if_stmt();
-        self.scope.enter(ScopeId(0));
 
         // every 'if' has an expression attached with it in its left branch
         let Some(expr_node) = node.left.as_mut() else {
