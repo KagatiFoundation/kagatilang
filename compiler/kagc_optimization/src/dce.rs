@@ -27,6 +27,8 @@ impl DeadCodeElimination {
 			let mut currently_live = liveness_data[block_id].out_set.clone();
 			let mut optimized_instructions = Vec::new();
 
+			currently_live.extend(block.terminator.uses());
+
 			for inst in block.instructions.drain(..).rev() {
 				let (uses, defs) = inst.uses_and_defs();
 

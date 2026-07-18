@@ -81,3 +81,13 @@ impl Default for Terminator {
         Terminator::Jump(BlockId(0))
     }
 }
+
+impl Terminator {
+    pub fn uses(&self) -> Vec<IrValueId> {
+        match self {
+            Terminator::CondJump { jump_value_id, .. } => vec![*jump_value_id],
+            Terminator::Return { value: Some(val), .. } => vec![*val],
+            _ => vec![]
+        }
+    }
+}

@@ -163,16 +163,33 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 			}
 
 			self.push_code(format!("_L{}:", block_id.0));
-
 			self.gen_block_instructions(block);
 
-			if let Terminator::Jump(jump_bid) = block.terminator {
-				let next_block = function.blocks.get(&(BlockId(index + 1)));
-				if Some(jump_bid) == next_block.map(|b| b.id) {
-					// fallthrough
-				} else {
-					self.push_code(format!("b _L{}", jump_bid.0));
-				}
+			match block.terminator {
+				Terminator::Jump(jump_bid) => {
+					let next_block = function.blocks.get(&(BlockId(index + 1)));
+					if Some(jump_bid) == next_block.map(|b| b.id) {
+						// fallthrough
+					} else {
+						self.push_code(format!("b _L{}", jump_bid.0));
+					}
+				},
+				Terminator::CondJump { 
+					jump_value_id, 
+					else_block,
+					..
+				} => {
+					let stack_off = self.get_value_stack_offset_unchecked(jump_value_id);
+
+					self.push_code(
+						format!(
+							"ldr {sr1}, [sp, #{stack_off}]\ncmp {sr1}, #0\nb.eq _L{else_id}", // '0' means the condition evaluates to false
+							sr1 = SCRATCH_REGISTER_0.name,
+							else_id = else_block.0
+						)
+					);
+				},
+				_ => {}
 			}
 		}
 	}

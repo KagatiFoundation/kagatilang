@@ -264,9 +264,7 @@ impl IrBuilder {
 	) -> IrValueId {
         let result = self.next_value_id();
 		self.inst(
-			IrInstruction::Cmp {
-				lhs, rhs, result, condition
-			}
+			IrInstruction::Cmp { lhs, rhs, result, condition }
 		).expect("create_conditional_internal: no value ID created")
 	}
 

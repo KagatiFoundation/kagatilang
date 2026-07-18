@@ -8,4 +8,7 @@ def main(argc: integer) -> void {
 		print_int(num + num2);
 		let a = 111 + 111;
 	}
+	
+	let a = 111 + 111;
+	print_int(a);
 }

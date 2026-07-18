@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use crate::block::BlockId;
 use crate::function::IrFunction;
 use crate::value::IrValueId;
+use crate::block::Terminator;
 
 #[derive(Debug, Clone, Copy)]
 pub struct LiveRange {
@@ -32,6 +33,8 @@ pub fn compute_function_live_ranges(function: &IrFunction) -> HashMap<BlockId, B
         let block = &function.blocks[bid];
         let mut uses = HashSet::new();
         let mut defs = HashSet::new();
+
+		uses.extend(block.terminator.uses());
 
         for instr in &block.instructions {
             let (inst_uses, inst_defs) = instr.uses_and_defs();

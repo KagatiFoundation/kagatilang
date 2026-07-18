@@ -423,12 +423,12 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             let then_tail = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
 
             if !self.ir_builder.has_terminator(then_tail) {
-                self.ir_builder.set_terminator(then_tail, Terminator::Jump(merge_block));
+                self.ir_builder.set_terminator(then_tail, Terminator::Fallthrough(merge_block));
                 self.ir_builder.link_blocks(then_tail, merge_block);
             }
         }
 		else if !self.ir_builder.has_terminator(then_block) {
-            self.ir_builder.set_terminator(then_block, Terminator::Jump(merge_block));
+            self.ir_builder.set_terminator(then_block, Terminator::Fallthrough(merge_block));
             self.ir_builder.link_blocks(then_block, merge_block);
         }
 
