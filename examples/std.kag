@@ -9,7 +9,8 @@ def main(argc: integer) -> void {
 		let aaa = 111 + 111;
 	}
 	else {
-		print_int(123);
+		let aaa = 123;
+		print_int(aaa);
 	}
 	
 	let a = 111 + 111;

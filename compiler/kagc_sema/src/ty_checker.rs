@@ -513,17 +513,15 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         // else-block
-        if let Some(right_tree) = &mut node.right {
-            if let Some(else_body) = &mut right_tree.left {
-                let node_id = else_body.id;
-                let Some(else_scope) = self.scope.lookup_node_scope(node_id) else {
-                    bug!("No scope attached with node id '{:#?}'!", node_id);
-                };
+        if let Some(else_body) = &mut node.right {
+            let node_id = else_body.id;
+            let Some(else_scope) = self.scope.lookup_node_scope(node_id) else {
+                bug!("No scope attached with node id '{:#?}'!", node_id);
+            };
 
-                self.scope.enter(else_scope.id.get());
-                self.check_node(else_body)?;
-                self.scope.pop();
-            }
+            self.scope.enter(else_scope.id.get());
+            self.check_node(else_body)?;
+            self.scope.pop();
         }
         Some(TyKind::None)
     }
