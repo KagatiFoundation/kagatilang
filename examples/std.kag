@@ -6,7 +6,7 @@ def main(argc: integer) -> void {
 
 	if (12 == 12) {
 		print_int(num + num2);
-		let a = 111 + 111;
+		let aaa = 111 + 111;
 	}
 	
 	let a = 111 + 111;

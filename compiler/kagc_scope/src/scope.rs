@@ -81,6 +81,17 @@ pub struct ScopeDatabase<'tcx> {
     next_scope_id: Cell<usize>,
 }
 
+impl Debug for ScopeDatabase<'_> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f
+			.debug_struct("ScopeDatabase")
+			.field("scopes", &self.scopes)
+			.field("node_to_scope_map", &self.node_to_scope_map)
+			.field("next_scope_id", &self.next_scope_id)
+			.finish()
+	}
+}
+
 impl<'tcx> ScopeDatabase<'tcx> {
     pub fn new(scope_arena: &'tcx typed_arena::Arena<Scope<'tcx>>) -> Self {
         Self {

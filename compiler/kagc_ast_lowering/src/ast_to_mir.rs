@@ -415,7 +415,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         if let Some(mid_tree) = &mut ast.mid {
         	let Some(then_scope) = self.scope.lookup_node_scope(mid_tree.id) else {
-            	bug!("scope not found");
+            	bug!("then scope not found");
         	};
 
 			self.scope.enter(then_scope.id.get());
@@ -437,11 +437,11 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         self.ir_builder.switch_to_block(else_block);
 
         if let Some(right_tree) = &mut ast.right {
-        	let Some(then_scope) = self.scope.lookup_node_scope(right_tree.id) else {
-            	bug!("scope not found");
+        	let Some(else_scope) = self.scope.lookup_node_scope(right_tree.id) else {
+            	bug!("else scope not found");
         	};
 
-			self.scope.enter(then_scope.id.get());
+			self.scope.enter(else_scope.id.get());
 
             let else_tail = self.lower_linear_sequence(&mut right_tree.linearize_mut(), fn_ctx)?;
 
@@ -449,13 +449,13 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 self.ir_builder.set_terminator(else_tail, Terminator::Jump(merge_block));
                 self.ir_builder.link_blocks(else_tail, merge_block);
             }
+
+        	self.scope.pop(); // come out of 'else' scope
         }
 		else if !self.ir_builder.has_terminator(else_block) {
             self.ir_builder.set_terminator(else_block, Terminator::Jump(merge_block));
             self.ir_builder.link_blocks(else_block, merge_block);
         }
-
-        self.scope.pop();
 
         self.ir_builder.switch_to_block(merge_block);
 

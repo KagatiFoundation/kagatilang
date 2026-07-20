@@ -26,7 +26,7 @@ pub struct ScopeMeta {
 pub struct ScopeCtx<'tcx> {
     pub(crate) functions:      FuncTable<'tcx>,
     pub(crate) records:        RecordTable<'tcx>,
-    pub(crate) scope_db:       crate::ScopeDatabase<'tcx>,
+    pub scope_db:       crate::ScopeDatabase<'tcx>,
     pub(crate) user_types:     RefCell<HashSet<String>>,
     pub(crate) next_id:        Cell<crate::ScopeId>,
     pub(crate) stack:          RefCell<Vec<crate::ScopeId>>,

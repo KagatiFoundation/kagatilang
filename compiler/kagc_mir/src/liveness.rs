@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use crate::block::BlockId;
 use crate::function::IrFunction;
 use crate::value::IrValueId;
-use crate::block::Terminator;
 
 #[derive(Debug, Clone, Copy)]
 pub struct LiveRange {

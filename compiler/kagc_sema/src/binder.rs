@@ -11,12 +11,30 @@ use kagc_symbol::function::{Func, FuncId};
 use kagc_types::record::{RecordFieldType, RecordType};
 use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag, Severity};
 
+#[derive(Debug, Default)]
+struct NameBinderFnCtx {
+	pub(crate) function_id: Option<FuncId>
+}
+
+impl NameBinderFnCtx {
+	pub fn fn_id_unchecked(&self) -> FuncId {
+		self.function_id.expect("no function id found, a potential bug")
+	}
+
+	pub fn set_fn_id(&mut self, fn_id: FuncId) {
+		self.function_id = Some(fn_id);
+	}
+
+	pub fn unset_fn_id(&mut self) {
+		self.function_id = None;
+	}
+}
+
 pub struct NameBinder<'r, 'tcx> where 'tcx: 'r {
-    _local_offset: usize,
     diagnostics: &'r DiagnosticBag,
     scope: &'tcx ScopeCtx<'tcx>,
     ast_nodes: &'r Vec<AstNode<'tcx>>,
-	current_function_id: Option<FuncId>,
+	fn_ctx: NameBinderFnCtx
 }
 
 pub type BindingResult = Option<SymId>;
@@ -30,9 +48,8 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         Self {
             diagnostics: diags,
             scope,
-            _local_offset: 0,
             ast_nodes: asts,
-			current_function_id: None,
+			fn_ctx: NameBinderFnCtx::default()
         }
     }
 
@@ -58,13 +75,13 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         let node_id = node.id;
         let block_stmt = node.expect_block_stmt();
 
-        self.scope.push(node_id, scope_type); // create a new scope and enter
+        let _ = self.scope.push(node_id, scope_type); // create a new scope and enter
 
         for stmt in &block_stmt.statements {
             let _ = self.bind_sym(stmt);
         }
 
-        self.scope.pop(); // exit the scope
+        let _ = self.scope.pop(); // exit the scope
         None
     }
 
@@ -80,6 +97,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                 self.bind_block_stmt(else_block_tree, ScopeType::If);
             }
         }
+
         None
     }
 
@@ -117,7 +135,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
 
         let sym_id = insert_res.ok().unwrap().id.get(); // safe to unwrap as insert succeeded
 
-		self.current_function_id = Some(FuncId(sym_id.0));
+		self.fn_ctx.set_fn_id(FuncId(sym_id.0));
 
         let mut func_params = vec![];
         for param in &func_decl.params {
@@ -178,7 +196,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             self.scope.pop();
         }
 
-		self.current_function_id = None; // done with the function
+		self.fn_ctx.unset_fn_id(); // done with the function
 
         Some(sym_id)
     }
@@ -197,7 +215,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             _ => bug!("Invalid node"),
         };
 
-		let func_id = self.current_function_id.expect("current function id must not be None");
+		let func_id = self.fn_ctx.fn_id_unchecked();
 
         let sym = Sym::new(
             stmt.sym_name, 

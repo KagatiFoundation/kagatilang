@@ -415,7 +415,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
         self.push_code(
 			format!(
-				".global _{name}\n_{name}:\nsub sp, sp, ${stack_size}",
+				".global _{name}\n_{name}:\nsub sp, sp, #{stack_size}",
 				name = function.name
 			)
 		);
