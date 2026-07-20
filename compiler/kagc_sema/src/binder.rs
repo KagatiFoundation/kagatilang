@@ -92,10 +92,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             self.bind_block_stmt(mid_tree, ScopeType::If);
         }
         if let Some(right_tree) = &node.right {
-            // right tree is the 'else' block
-            if let Some(else_block_tree) = &right_tree.left {
-                self.bind_block_stmt(else_block_tree, ScopeType::If);
-            }
+            self.bind_block_stmt(right_tree, ScopeType::Block);
         }
 
         None

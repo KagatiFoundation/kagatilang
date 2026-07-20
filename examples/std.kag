@@ -4,9 +4,12 @@ def main(argc: integer) -> void {
 	let num = 36;
 	let num2 = 12 + 12 + 12 + 2;
 
-	if (12 == 12) {
+	if (12 == 13) {
 		print_int(num + num2);
 		let aaa = 111 + 111;
+	}
+	else {
+		print_int(123);
 	}
 	
 	let a = 111 + 111;

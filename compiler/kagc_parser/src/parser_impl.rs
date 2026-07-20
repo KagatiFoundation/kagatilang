@@ -550,22 +550,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         let cond_ast = self.parse_conditional_stmt(TokenKind::KW_IF)?;
         let if_true_ast = self.parse_single_stmt()?;
 
-        let mut if_false_ast = None;
-        if self.peek().kind == TokenKind::KW_ELSE {
+        let if_false_ast = if self.peek().kind == TokenKind::KW_ELSE {
             self.advance(); // skip 'else'
 
-            let else_block = self.parse_block_stmt()?;
-            if_false_ast = Some(
-                AstNode::binary(
-                    self.next_node_id(),
-                    NodeKind::StmtAST(Stmt::Scoping),
-                    AstOp::Else,
-                    Some(else_block),
-                    None,
-                    None
-                )
-            );          
+            self.parse_block_stmt()
         }
+		else { None };
+
         Some(
             AstNode::ternary(
                 self.next_node_id(),
@@ -574,7 +565,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Some(cond_ast),
                 Some(if_true_ast),
                 if_false_ast,
-                None,
+                None
             )
         )
     }
