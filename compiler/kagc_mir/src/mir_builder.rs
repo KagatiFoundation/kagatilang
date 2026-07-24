@@ -2,10 +2,10 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::collections::HashSet;
-use std::hint::black_box;
 
 use indexmap::IndexMap;
 use kagc_symbol::StorageClass;
+use kagc_symbol::function::Func;
 use kagc_types::TyKind;
 use kagc_utils::bug;
 
@@ -115,7 +115,7 @@ impl IrBuilder {
 	}
 
     pub fn create_block(&mut self, name: &str) -> BlockId {
-        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let fid = self.current_fn_id_unchecked();
         let bid = self.next_block_id();
         
         let func = self.functions.get_mut(&fid).unwrap();
@@ -126,7 +126,7 @@ impl IrBuilder {
     }
 
 	pub fn reserve_block(&mut self, name: &str) -> BlockId {
-        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let fid = self.current_fn_id_unchecked();
         let bid = self.next_block_id();
         
         let func = self.functions.get_mut(&fid).unwrap();
@@ -136,7 +136,7 @@ impl IrBuilder {
 	}
 
 	pub fn commit_block(&mut self, bid: BlockId) {
-        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let fid = self.current_fn_id_unchecked();
 
         let func = self.functions.get_mut(&fid).unwrap();
 		let block = func
@@ -153,15 +153,15 @@ impl IrBuilder {
 	}
 
 	pub fn remove_block(&mut self, bid: BlockId) {
-        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let fid = self.current_fn_id_unchecked();
 
         let func = self.functions.get_mut(&fid).unwrap();
         func.blocks.shift_remove(&bid);
 	}
 
     pub fn inst(&mut self, instruction: IrInstruction) -> Option<IrValueId> {
-        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
-        let bid = self.current_block.unwrap_or_else(|| bug!("No active block context"));
+        let fid = self.current_fn_id_unchecked();
+        let bid = self.current_block_id_unchecked();
         
         let func = self.functions.get_mut(&fid).unwrap();
         let block = func.blocks.get_mut(&bid).unwrap();
@@ -176,14 +176,14 @@ impl IrBuilder {
     }
 
     pub fn set_terminator(&mut self, bid: BlockId, term: Terminator) {
-        let fid = self.current_function.expect("No active function context");
+        let fid = self.current_fn_id_unchecked();
         let func = self.functions.get_mut(&fid).unwrap();
         let block = func.blocks.get_mut(&bid).unwrap();
         block.terminator = Some(term);
     }
 
 	pub fn link_blocks(&mut self, from: BlockId, to: BlockId) {
-        let fid = self.current_function.expect("No active function context");
+        let fid = self.current_fn_id_unchecked();
         let func = self.functions.get_mut(&fid).unwrap();
 
 		if let Some(b) = func.blocks.get_mut(&from) {
@@ -202,8 +202,7 @@ impl IrBuilder {
     }
 
    	pub fn switch_to_block(&mut self, block_id: BlockId) {
-    	let fid = self.current_function.unwrap_or_else(|| bug!("cannot switch blocks outside a function"));
-
+    	let fid = self.current_fn_id_unchecked();
     	let func = self.functions.get(&fid).unwrap_or_else(|| bug!("active function not found in builder"));
 
     	if !func.blocks.contains_key(&block_id) {
@@ -214,7 +213,7 @@ impl IrBuilder {
 	}	
 
 	pub fn has_terminator(&self, block_id: BlockId) -> bool {
-    	let fid = self.current_function.unwrap_or_else(|| bug!("cannot switch blocks outside a function"));
+    	let fid = self.current_fn_id_unchecked();
     	let func = self.functions.get(&fid).unwrap_or_else(|| bug!("active function not found in builder"));
 
 		let block = func.blocks.iter().find(|b| *b.0 == block_id).expect("block not found");
@@ -239,9 +238,7 @@ impl IrBuilder {
     /// while others don't. It guarantees that lowering always has a valid,
     /// “active” block to continue emitting into.
     pub fn ensure_continuation_block(&mut self, continuation: BlockId) -> BlockId {
-        let fid = self
-			.current_function
-			.unwrap_or_else(|| bug!("No active function context"));
+        let fid = self.current_fn_id_unchecked();
 
         let func = self
 			.functions
@@ -453,8 +450,7 @@ impl IrBuilder {
     }
 
     pub fn current_block_mut_unchecked(&mut self) -> &mut BuilderBlock {
-        let fid = self.current_function
-            .unwrap_or_else(|| bug!("No active function context"));
+        let fid = self.current_fn_id_unchecked();
         let bid = self.current_block
             .unwrap_or_else(|| bug!("No active block context"));
 
@@ -463,6 +459,10 @@ impl IrBuilder {
             .and_then(|func| func.blocks.get_mut(&bid))
             .unwrap_or_else(|| bug!("Active block {:?} not found inside function {:?}", bid, fid))
     }
+
+	fn current_fn_id_unchecked(&self) -> IrFunctionId {
+		self.current_function.expect("No active function context")
+	}
 }
 
 impl BuilderBlock {
