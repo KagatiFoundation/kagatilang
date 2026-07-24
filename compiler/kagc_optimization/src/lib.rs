@@ -10,6 +10,7 @@ pub mod constant_folder;
 pub mod dce;
 
 use kagc_mir::function::IrFunction;
+use kagc_mir::mir_verifier::IrVerifier;
 
 use crate::constant_folder::ConstantFolder;
 use crate::dce::DeadCodeElimination;
@@ -29,6 +30,8 @@ impl OptimizationPipeline {
 	pub fn apply(&mut self, func: &mut IrFunction) {
 		for pass in &mut self.passes {
 			pass.run_on_function(func);
+
+			IrVerifier::verify_function(func);
 		}
 	}
 

@@ -409,7 +409,12 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             let then_tail = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
 
             if !self.ir_builder.has_terminator(then_tail) {
-                self.ir_builder.set_terminator(then_tail, Terminator::Jump(merge_block));
+				if ast.right.is_some() { // if there is an 'else' statement, skip (or jump over) it
+                	self.ir_builder.set_terminator(then_tail, Terminator::Jump(merge_block));
+				}
+				else { // otherwise it is safe to fallthrough to the 'merge' block
+                	self.ir_builder.set_terminator(then_tail, Terminator::Fallthrough(merge_block));
+				}
             }
         	
             self.ir_builder.link_blocks(then_tail, merge_block);
@@ -420,8 +425,9 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 			bug!("mid-tree cannot be None for an 'if' AST node")
 		};
 
-        let else_block = self.ir_builder.create_block("else");
         let jump_block = if let Some(right_tree) = &mut ast.right {
+        	let else_block = self.ir_builder.create_block("else");
+			
 			self.ir_builder.link_blocks(conditional_block, else_block);
         	self.ir_builder.switch_to_block(else_block);
 
@@ -441,8 +447,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         	self.scope.pop(); // come out of 'else' scope
 			else_block
         }
-		else {
-			self.ir_builder.remove_block(else_block);
+		else { 
+			self.ir_builder.link_blocks(conditional_block, merge_block);
 			merge_block
 		};
 

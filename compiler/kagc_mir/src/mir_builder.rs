@@ -5,7 +5,6 @@ use std::collections::HashSet;
 
 use indexmap::IndexMap;
 use kagc_symbol::StorageClass;
-use kagc_symbol::function::Func;
 use kagc_types::TyKind;
 use kagc_utils::bug;
 

@@ -7,8 +7,8 @@ use kagc_mir::instruction::IrInstruction;
 use crate::codegen_asm::stack::StackFrame;
 
 pub struct CodeGenFunctionContext {
-	pub stack_frame: StackFrame,
-	pub is_leaf: bool
+	pub(crate) stack_frame: StackFrame,
+	pub(crate) is_leaf: bool,
 }
 
 impl CodeGenFunctionContext {
@@ -16,7 +16,7 @@ impl CodeGenFunctionContext {
 	pub fn new() -> Self {
 		Self {
 			stack_frame: StackFrame::new(),
-			is_leaf: true
+			is_leaf: true,
 		}
 	}
 
