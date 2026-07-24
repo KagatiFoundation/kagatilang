@@ -2,6 +2,7 @@
 // Copyright (c) 2023 Kagati Foundation
 
 use std::collections::HashSet;
+use std::hint::black_box;
 
 use indexmap::IndexMap;
 use kagc_symbol::StorageClass;
@@ -9,12 +10,12 @@ use kagc_types::TyKind;
 use kagc_utils::bug;
 
 use crate::function::*;
+use crate::types::*;
+use crate::block::*;
 use crate::instruction::IrCondition;
 use crate::instruction::IrInstruction;
 use crate::instruction::IrLocation;
 use crate::module::MirModule;
-use crate::types::*;
-use crate::block::*;
 use crate::value::{IrValue, IrValueId};
 
 #[derive(Debug, Default)]
@@ -35,9 +36,10 @@ pub struct BuilderFunction {
     pub signature: IrFunctionSignature,
     pub anchor: IrFunctionAnchor,
     pub blocks: IndexMap<BlockId, BuilderBlock>,
+	reserved_blocks: IndexMap<BlockId, BuilderBlock>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BuilderBlock {
     pub name: String,
     pub instructions: Vec<IrInstruction>,
@@ -54,6 +56,8 @@ impl IrBuilder {
         return_type: IrType,
         class: StorageClass,
     ) -> IrFunctionContext {
+		self.reset_internal_state();
+
         let function_id = self.next_function_id();
         self.current_function = Some(function_id);
 
@@ -85,13 +89,14 @@ impl IrBuilder {
         let mut blocks = IndexMap::new();
         
         blocks.insert(entry_block, BuilderBlock::new("function-entry"));
-        blocks.insert(exit_block, BuilderBlock::new("function-exit"));
+        // blocks.insert(exit_block, BuilderBlock::new("function-exit"));
 
         let builder_func = BuilderFunction {
             name,
             signature,
             anchor,
             blocks,
+			reserved_blocks: IndexMap::new()
         };
 
         self.functions.insert(function_id, builder_func);
@@ -105,6 +110,10 @@ impl IrBuilder {
 		function_ctx
     }
 
+	pub fn reset_internal_state(&mut self) {
+		self.block_id = 0;
+	}
+
     pub fn create_block(&mut self, name: &str) -> BlockId {
         let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
         let bid = self.next_block_id();
@@ -115,6 +124,40 @@ impl IrBuilder {
         self.current_block = Some(bid);
         bid
     }
+
+	pub fn reserve_block(&mut self, name: &str) -> BlockId {
+        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+        let bid = self.next_block_id();
+        
+        let func = self.functions.get_mut(&fid).unwrap();
+		func.reserved_blocks.insert(bid, BuilderBlock::new(name));
+        
+        bid
+	}
+
+	pub fn commit_block(&mut self, bid: BlockId) {
+        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+
+        let func = self.functions.get_mut(&fid).unwrap();
+		let block = func
+			.reserved_blocks
+			.shift_remove(&bid)
+			.unwrap_or_else(|| bug!("block to be committed doesn't exist"));
+
+		func.blocks.insert(bid, block.clone());
+	}
+
+	pub fn commit_and_switch_block(&mut self, bid: BlockId) {
+		self.commit_block(bid);
+		self.switch_to_block(bid);
+	}
+
+	pub fn remove_block(&mut self, bid: BlockId) {
+        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
+
+        let func = self.functions.get_mut(&fid).unwrap();
+        func.blocks.shift_remove(&bid);
+	}
 
     pub fn inst(&mut self, instruction: IrInstruction) -> Option<IrValueId> {
         let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
@@ -143,8 +186,19 @@ impl IrBuilder {
         let fid = self.current_function.expect("No active function context");
         let func = self.functions.get_mut(&fid).unwrap();
 
-        func.blocks.get_mut(&from).unwrap().successors.insert(to);
-        func.blocks.get_mut(&to).unwrap().predecessors.insert(from);
+		if let Some(b) = func.blocks.get_mut(&from) {
+			b.successors.insert(to);
+		}
+		else if let Some(b) = func.reserved_blocks.get_mut(&from) {
+			b.successors.insert(to);
+		}
+
+		if let Some(b) = func.blocks.get_mut(&to) {
+			b.predecessors.insert(from);
+		}
+		else if let Some(b) = func.reserved_blocks.get_mut(&to) {
+			b.predecessors.insert(from);
+		}
     }
 
    	pub fn switch_to_block(&mut self, block_id: BlockId) {
@@ -185,21 +239,26 @@ impl IrBuilder {
     /// while others don't. It guarantees that lowering always has a valid,
     /// “active” block to continue emitting into.
     pub fn ensure_continuation_block(&mut self, continuation: BlockId) -> BlockId {
-        let fid = self.current_function.unwrap_or_else(|| bug!("No active function context"));
-        let func = self.functions.get(&fid).unwrap_or_else(|| bug!("Active function missing"));
+        let fid = self
+			.current_function
+			.unwrap_or_else(|| bug!("No active function context"));
+
+        let func = self
+			.functions
+			.get(&fid)
+			.unwrap_or_else(|| bug!("Active function missing"));
+
         let block = func.blocks.get(&continuation).unwrap_or_else(|| {
             bug!("Continuation block {:?} does not exist in function {:?}", continuation, fid)
         });
 
-        if block.terminator.is_none() {
-            continuation
-        } 
-        else {
-            let new_block = self.create_block("continuation block");
-            self.link_blocks(continuation, new_block);
-            self.current_block = Some(new_block);
-            new_block
-        }
+		if !block.has_terminator() { return continuation; }
+
+        let new_block = self.create_block("continuation block");
+		self.set_terminator(continuation, Terminator::Jump(new_block));
+        self.link_blocks(continuation, new_block);
+        self.current_block = Some(new_block);
+        new_block
     }
 
     pub fn link_blocks_multiple(&mut self, from: BlockId, tos: Vec<BlockId>) {
@@ -311,9 +370,14 @@ impl IrBuilder {
         	let mut finalized_blocks = IndexMap::new();
 
         	for (block_id, b_block) in b_func.blocks {
-            	let terminator = b_block.terminator.unwrap_or(
-					Terminator::Jump(b_func.anchor.exit_block)
-				);
+				let terminator = b_block.terminator.unwrap_or_else(|| {
+    				if b_func.signature.class == StorageClass::EXTERN {
+    					Terminator::Fallthrough(BlockId(0))
+    				}
+					else {
+        				bug!("block '{block_id:#?}' doesn't have a terminator set ({})", b_func.name);
+					}
+				});
 
             	let ir_block = IrBasicBlock {
                 	id: block_id,
@@ -361,19 +425,22 @@ impl IrBuilder {
     }
 
     pub fn current_block_id(&self) -> Option<BlockId> {
-        let fid = self.current_function?;
-        let bid = self.current_block?;
-        
-        let func = self.functions.get(&fid)?;
-        if func.blocks.contains_key(&bid) {
-            Some(bid)
-        } else {
-            None
-        }
+		self.current_function.and_then(|fid| {
+			self.current_block.and_then(|bid| {
+				self
+					.functions
+					.get(&fid)
+					.unwrap()
+					.blocks
+					.contains_key(&bid)
+					.then_some(bid)
+			})
+		})
     }
 
     pub fn current_block_id_unchecked(&self) -> BlockId {
-        self.current_block_id()
+        self
+			.current_block_id()
             .unwrap_or_else(|| bug!("No active basic block set in the current context"))
     }
 

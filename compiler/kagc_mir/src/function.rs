@@ -48,11 +48,11 @@ pub struct IrFunctionAnchor {
 }
 
 impl IrFunctionAnchor {
-    pub fn new(id: IrFunctionId, entry: BlockId, exit: BlockId) -> Self {
+    pub fn new(id: IrFunctionId, entry_block: BlockId, exit_block: BlockId) -> Self {
         Self {
             id,
-            entry_block: entry,
-            exit_block: exit
+            entry_block,
+            exit_block
         }
     }
 }

@@ -1,0 +1,41 @@
+import "std/io";
+
+def main(argc: integer) -> void {
+	let num = 12;
+	let num2 = 12 + 12 + 12 + 2;
+
+	if (num == 12) {
+		print_int(num + num2);
+
+		if (num == 12) {
+			print_int(num + 12);
+		}
+
+		if (num == 13) {
+			print_int(1);
+		}
+		else {
+			print_int(2);
+		}
+	}
+	else {
+		let aaa = 123;
+		print_int(aaa);
+	}
+
+	print_int(1333);
+
+	if (num == 12) {
+		if (12 == num) {
+			if (num == 13) {
+				print_int(75);
+			}
+			else {
+				print_int(49);
+			}
+		}
+		else {
+			print_int(76);
+		}
+	}
+}

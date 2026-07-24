@@ -152,8 +152,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 	}
 
 	fn gen_function_blocks(&mut self, function: &IrFunction) {
-        let mut block_ids: Vec<_> = function.blocks.keys().cloned().collect();
-        block_ids.sort_by_key(|b| b.0);
+        let block_ids: Vec<_> = function.blocks.keys().cloned().collect();
 
 		for (index, block_id) in block_ids.iter().enumerate() {
 			let block = function.blocks.get(block_id).expect("block not found");
@@ -170,7 +169,8 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 					let next_block = function.blocks.get(&(BlockId(index + 1)));
 					if Some(jump_bid) == next_block.map(|b| b.id) {
 						// fallthrough
-					} else {
+					}
+					else {
 						self.push_code(format!("b _L{}", jump_bid.0));
 					}
 				},
@@ -183,8 +183,9 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 					self.push_code(
 						format!(
-							"ldr {sr1}, [sp, #{stack_off}]\ncmp {sr1}, #0\nb.eq _L{else_id}", // '0' means the condition evaluates to false
+							"ldr {sr1}, [sp, #{stack_off}]\nmov {sr2}, #0\ncmp {sr1}, {sr2}\nb.eq _L{else_id}", // '0' means the condition evaluates to false
 							sr1 = SCRATCH_REGISTER_0.name,
+							sr2 = SCRATCH_REGISTER_1.name,
 							else_id = else_block.0
 						)
 					);
@@ -435,7 +436,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 			self.push_code(format!("ldr x30, [sp, #{}]", stack_size - 8));
 		}
 
-		self.push_code(format!("add sp, sp, #{stack_size}\nret"));
+		self.push_code(format!("add sp, sp, #{stack_size}\nmov x0, #0\nret"));
     }
 
     /// This function is public only for a short period of time.

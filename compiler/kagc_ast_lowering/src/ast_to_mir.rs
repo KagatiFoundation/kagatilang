@@ -12,7 +12,6 @@ use kagc_mir::loop_ctx::IrLoopContext;
 use kagc_types::builtins::obj::KObjType;
 use kagc_const::pool::{ConstPool, KagcConst};
 use kagc_scope::ScopeCtx;
-use kagc_scope::ScopeId;
 
 use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
@@ -68,7 +67,6 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             AstOp::Return   => self.lower_return(node, fn_ctx),
             AstOp::Loop     => self.lower_infinite_loop(node, fn_ctx),
             AstOp::If       => self.lower_if_else_tree(node, fn_ctx),
-            AstOp::Else     => self.lower_else_block(node, fn_ctx),
             AstOp::Block    => self.lower_block(node, fn_ctx),
             _ => todo!("{node_type:#?}", node_type = node.op),
         }
@@ -387,33 +385,21 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_if_else_tree(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
-
         let conditional_block = self.ir_builder.create_block("if-header");
+
         self.ir_builder.set_terminator(prev_block_id, Terminator::Fallthrough(conditional_block));
         self.ir_builder.link_blocks(prev_block_id, conditional_block);
         
         self.ir_builder.switch_to_block(conditional_block);
         let if_stmt_cond_value = self.lower_expression_ast(ast.left.as_mut().unwrap(), fn_ctx)?;
 
-        let then_block = self.ir_builder.create_block("then");
-        let else_block = self.ir_builder.create_block("else");
-        let merge_block = self.ir_builder.create_block("merge");
+        let merge_block = self.ir_builder.reserve_block("if-else-merge");
 
-        self.ir_builder.link_blocks_multiple(conditional_block, vec![then_block, else_block]);
+        let then_block = if let Some(mid_tree) = &mut ast.mid {
+			let then_block = self.ir_builder.create_block("then");
+			self.ir_builder.link_blocks(conditional_block, then_block);
+        	self.ir_builder.switch_to_block(then_block);
 
-        self.ir_builder.set_terminator(
-            conditional_block, 
-            Terminator::CondJump { 
-                jump_value_id: if_stmt_cond_value, 
-                then_block, 
-                else_block,
-				cond: IrCondition::EqEq
-            }
-        );
-
-        self.ir_builder.switch_to_block(then_block);
-
-        if let Some(mid_tree) = &mut ast.mid {
         	let Some(then_scope) = self.scope.lookup_node_scope(mid_tree.id) else {
             	bug!("then scope not found");
         	};
@@ -423,20 +409,22 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             let then_tail = self.lower_linear_sequence(&mut mid_tree.linearize_mut(), fn_ctx)?;
 
             if !self.ir_builder.has_terminator(then_tail) {
-                self.ir_builder.set_terminator(then_tail, Terminator::Fallthrough(merge_block));
-                self.ir_builder.link_blocks(then_tail, merge_block);
+                self.ir_builder.set_terminator(then_tail, Terminator::Jump(merge_block));
             }
+        	
+            self.ir_builder.link_blocks(then_tail, merge_block);
+			self.scope.pop(); // come out of 'then' scope
+			then_block
         }
-		else if !self.ir_builder.has_terminator(then_block) {
-            self.ir_builder.set_terminator(then_block, Terminator::Fallthrough(merge_block));
-            self.ir_builder.link_blocks(then_block, merge_block);
-        }
+		else {
+			bug!("mid-tree cannot be None for an 'if' AST node")
+		};
 
-        self.scope.pop();
-        
-        self.ir_builder.switch_to_block(else_block);
+        let else_block = self.ir_builder.create_block("else");
+        let jump_block = if let Some(right_tree) = &mut ast.right {
+			self.ir_builder.link_blocks(conditional_block, else_block);
+        	self.ir_builder.switch_to_block(else_block);
 
-        if let Some(right_tree) = &mut ast.right {
         	let Some(else_scope) = self.scope.lookup_node_scope(right_tree.id) else {
             	bug!("else scope not found");
         	};
@@ -446,63 +434,39 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             let else_tail = self.lower_linear_sequence(&mut right_tree.linearize_mut(), fn_ctx)?;
 
             if !self.ir_builder.has_terminator(else_tail) {
-                self.ir_builder.set_terminator(else_tail, Terminator::Jump(merge_block));
-                self.ir_builder.link_blocks(else_tail, merge_block);
+                self.ir_builder.set_terminator(else_tail, Terminator::Fallthrough(merge_block));
             }
 
+            self.ir_builder.link_blocks(else_tail, merge_block);
         	self.scope.pop(); // come out of 'else' scope
+			else_block
         }
-		else if !self.ir_builder.has_terminator(else_block) {
-            self.ir_builder.set_terminator(else_block, Terminator::Jump(merge_block));
-            self.ir_builder.link_blocks(else_block, merge_block);
-        }
+		else {
+			self.ir_builder.remove_block(else_block);
+			merge_block
+		};
 
-        self.ir_builder.switch_to_block(merge_block);
+        self.ir_builder.set_terminator(
+            conditional_block, 
+            Terminator::CondJump { 
+                jump_value_id: if_stmt_cond_value, 
+                then_block, 
+                else_block: jump_block,
+				cond: IrCondition::EqEq
+            }
+        );
 
+		self.ir_builder.commit_and_switch_block(merge_block);
         Ok(merge_block)
     }
 
     fn lower_linear_sequence(&mut self, stmts: &mut [&mut AstNode], fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let mut current = self.ir_builder.current_block_id_unchecked();
-        let stmts_len = stmts.len();
-        for (idx, stmt) in stmts.iter_mut().enumerate() {
-            if self.ir_builder.has_terminator(current) {
-                break;
-            }
-            
+
+        for stmt in stmts.iter_mut() {
             current = self.lower_node(stmt, fn_ctx)?;
-            
-            if idx < stmts_len - 1 {
-                current = self.ir_builder.ensure_continuation_block(current);
-            }
         }
+  
         Ok(current)
-    }
-
-    fn lower_else_block(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
-        if let NodeKind::StmtAST(Stmt::Scoping) = &ast.kind {
-            self.scope.enter(ScopeId(0)); 
-        } else {
-            bug!("provided AST tree is not of type 'AST_ELSE'");
-        }
-
-        let mut last_block_id = self.ir_builder.current_block_id_unchecked();
-        let else_ast_linearized = ast.left.as_mut().unwrap().linearize_mut();
-        
-        for body_ast in else_ast_linearized {
-            if self.ir_builder.has_terminator(last_block_id) {
-                break;
-            }
-            let body_block_id = self.lower_node(body_ast, fn_ctx)?;
-            if last_block_id != body_block_id {
-                let new_body_block = self.ir_builder.create_block("else-body-block");
-                self.ir_builder.link_blocks(body_block_id, new_body_block);
-                self.ir_builder.switch_to_block(new_body_block);
-                last_block_id = new_body_block;
-            }
-        }
-
-        self.scope.pop();
-        Ok(last_block_id)
     }
 }
