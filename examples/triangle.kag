@@ -1,0 +1,16 @@
+import "std/io";
+
+def triangle(n: integer) -> void {
+    let i = 1;
+    let sum = 0;
+
+    loop if i < n + 1 {
+        sum = sum + i;
+        print_int(sum);
+        i = i + 1;
+    }
+}
+
+def main() -> void {
+    triangle(10);
+}

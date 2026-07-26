@@ -1,0 +1,12 @@
+import "std/io";
+
+def countdown(n: integer) -> void {
+    loop if n > 0 {
+        print_int(n);
+        n = n - 1;
+    }
+}
+
+def main() -> void {
+    countdown(10);
+}

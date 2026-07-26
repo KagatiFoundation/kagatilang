@@ -1,0 +1,17 @@
+import "std/io";
+
+def factorial(x: integer) -> void {
+    let i = 1;
+    let result = 1;
+
+    loop if i < x + 1 {
+        result = result * i;
+        i = i + 1;
+    }
+
+    print_int(result);
+}
+
+def main() -> void {
+    factorial(5);
+}

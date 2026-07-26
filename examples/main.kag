@@ -9,6 +9,10 @@ def print_table(x: integer) -> void {
 }
 
 def main() -> void {
-	print_table(10);
-	print_table(13);
+	let number: integer = 1;
+
+	loop if number < 11 {
+		print_table(number);
+		number = number + 1;
+	}
 }
