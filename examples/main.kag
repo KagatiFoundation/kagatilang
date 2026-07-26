@@ -7,7 +7,7 @@ def main() -> void {
 		loop {
 			print_int(12345);
 			if (3 == 3) {
-				break;
+				continue;
 			}
 		}
 

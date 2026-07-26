@@ -123,6 +123,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::KW_LET => self.parse_var_decl_stmt(),
             TokenKind::KW_RETURN => self.parse_return_stmt(),
             TokenKind::KW_BREAK => self.parse_break_stmt(),
+            TokenKind::KW_CONTINUE => self.parse_continue_stmt(),
             TokenKind::T_IDENTIFIER => self.assign_stmt_or_func_call(),
             TokenKind::KW_DEF => self.parse_function_stmt(),
             TokenKind::KW_IF => self.parse_if_stmt(),
@@ -497,12 +498,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_loop_stmt(&mut self) -> ParseOutput<'tcx> {
-		self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?;
+		self.consume(TokenKind::KW_LOOP, "'loop' expected")?;
 
 		let next_token = self.peek();
 
 		let loop_condition_expr = if next_token.kind == TokenKind::KW_IF { // the 'loop' statement has a condition
-			self.consume(TokenKind::KW_IF, "expected the keyword 'if'")?;
+			self.consume(TokenKind::KW_IF, "'if' expected")?;
 			self.parse_equality()
 		}
 		else { None };
@@ -525,6 +526,21 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             AstNode::binary(
                 self.next_node_id(),
                 NodeKind::StmtAST(Stmt::Break),
+                AstOp::Break,
+                None,
+                None,
+                None
+            )
+        )
+    }
+
+    fn parse_continue_stmt(&mut self) -> ParseOutput<'tcx> {
+        self.consume(TokenKind::KW_CONTINUE, "'continue' expected")?;
+        self.expect_semicolon();
+        Some(
+            AstNode::binary(
+                self.next_node_id(),
+                NodeKind::StmtAST(Stmt::Continue),
                 AstOp::Break,
                 None,
                 None,

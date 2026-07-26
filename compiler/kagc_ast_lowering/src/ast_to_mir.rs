@@ -69,6 +69,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             AstOp::If       => self.lower_if_else_tree(node, fn_ctx),
             AstOp::Block    => self.lower_block(node, fn_ctx),
 			AstOp::Break	=> self.lower_break(node, fn_ctx),
+			AstOp::Continue	=> self.lower_continue(node, fn_ctx),
             _ => todo!("{node_type:#?}", node_type = node.op),
         }
     }
@@ -347,18 +348,20 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         let prev_block_id = self.ir_builder.current_block_id_unchecked();
 		let loop_head_id = self.ir_builder.create_block("loop_head");
-        let loop_body_id = self.ir_builder.reserve_block("loop_body");
-        let loop_tail_id = self.ir_builder.reserve_block("loop_exit");
+        let loop_body_id = self.ir_builder.create_block("loop_body");
+        let loop_tail_id = self.ir_builder.create_block("loop_exit");
 
-        fn_ctx.enter_loop(IrLoopContext { head_block: loop_body_id, exit_block: loop_tail_id });
+        fn_ctx.enter_loop(IrLoopContext { head_block: loop_head_id, exit_block: loop_tail_id });
 
-        self.ir_builder.set_terminator(prev_block_id, Terminator::Fallthrough(loop_head_id));
-			  
+		if !self.ir_builder.has_terminator(prev_block_id) {
+        	self.ir_builder.set_terminator(prev_block_id, Terminator::Fallthrough(loop_head_id));
+		}
+		 
         self.ir_builder.link_blocks(prev_block_id, loop_head_id);
 
-        self.ir_builder.switch_to_block(loop_head_id);
-
 		if let Some(loop_condition_node) = &mut ast.right {
+        	self.ir_builder.switch_to_block(loop_head_id);
+
 			// if there is a condition for the loop to run, first lower it and insert
 			// an 'if' statement like 'conditional' jump terminator for the loop header block
 			let jump_value_id = self.lower_expression_ast(loop_condition_node, fn_ctx)?;
@@ -380,7 +383,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
   
 		self.ir_builder.link_blocks_multiple(loop_head_id, vec![loop_body_id, loop_tail_id]);
 
-        self.ir_builder.commit_and_switch_block(loop_body_id);
+        self.ir_builder.switch_to_block(loop_body_id);
 
         if let Some(left_tree) = &mut ast.left {
         	let Some(loop_scope) = self.scope.lookup_node_scope(left_tree.id) else {
@@ -392,16 +395,18 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         	let mut linearized_body = ast.left.as_mut().unwrap().linearize_mut();
         	let active_tail_block = self.lower_linear_sequence(&mut linearized_body, fn_ctx)?;
 
+			self.ir_builder.link_blocks(active_tail_block, loop_head_id);
+
         	if !self.ir_builder.has_terminator(active_tail_block) {
             	self.ir_builder.set_terminator(active_tail_block, Terminator::Jump(loop_head_id));
-            	self.ir_builder.link_blocks(active_tail_block, loop_head_id);
         	}
 
 			self.scope.pop();
-        	fn_ctx.exit_loop();
 		}
         
-        self.ir_builder.commit_and_switch_block(loop_tail_id);
+        fn_ctx.exit_loop(); // exit the current loop
+
+        self.ir_builder.switch_to_block(loop_tail_id);
         Ok(loop_tail_id)
     }
 
@@ -494,6 +499,15 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 		};
 
 		self.ir_builder.create_jump(current_loop.exit_block);
+		Ok(self.ir_builder.current_block_id_unchecked())
+	}
+
+	fn lower_continue(&mut self, _ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
+		let Some(current_loop) = fn_ctx.current_loop() else {
+			bug!("No current loop context is present");
+		};
+
+		self.ir_builder.create_jump(current_loop.head_block);
 		Ok(self.ir_builder.current_block_id_unchecked())
 	}
 

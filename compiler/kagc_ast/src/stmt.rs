@@ -99,6 +99,7 @@ pub enum Stmt<'tcx> {
     While,
     Loop,
     Break,
+	Continue,
     ArrVarDecl(ArrVarDeclStmt<'tcx>),
     FuncDecl(FuncDeclStmt<'tcx>),
     Return(ReturnStmt),

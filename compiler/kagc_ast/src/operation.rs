@@ -45,6 +45,7 @@ pub enum AstOp {
     Block,
     Loop,
     Break,
+	Continue,
     Func,
     FuncCall,
     Return,       // return statement AST node
