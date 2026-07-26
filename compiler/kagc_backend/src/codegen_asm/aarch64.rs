@@ -129,6 +129,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::Call        { func, args, result } => self.emit_call(func, args, *result),
 			IrInstruction::CondJump    { lhs, rhs, cond, .. } => self.emit_cond_jump(*lhs, *rhs, *cond),
 			IrInstruction::Param 	   { index, var_id } => self.emit_param(*index, *var_id),
+			IrInstruction::Jump 	   { block } => self.emit_jump(*block),
 			_ => todo!()
 		}
     }
@@ -288,6 +289,14 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		);
 
 		self.store_result(result);
+	}
+
+	fn emit_jump(&mut self, bid: BlockId) {
+		self.push_code(
+			format!(
+				"b _L{}", bid.0
+			)
+		);
 	}
 
 	fn emit_add(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId) {

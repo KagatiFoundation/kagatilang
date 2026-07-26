@@ -335,6 +335,12 @@ impl IrBuilder {
             .expect("create_conditional_jump: no value ID created")
     }
 
+	pub fn create_jump(&mut self, jump_block_id: BlockId) {
+		self.inst(
+			IrInstruction::Jump { block: jump_block_id }
+		);
+	}
+
     pub fn create_move(&mut self, value: IrValue) -> IrValueId {
         let result = self.next_value_id();
         self.inst(IrInstruction::Mov { result, src: value })

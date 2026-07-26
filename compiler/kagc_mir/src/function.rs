@@ -98,6 +98,10 @@ impl IrFunctionContext {
 		self.loop_stack.pop()
 	}
 
+	pub fn current_loop(&mut self) -> Option<&IrLoopContext> {
+		self.loop_stack.last()
+	}
+
 	pub fn map_var(&mut self, var_name: String) -> IrVariableId {
 		let var_id = self.next_variable_id();
 		self.var_map.insert(var_name, var_id);

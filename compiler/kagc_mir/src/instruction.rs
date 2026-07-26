@@ -107,7 +107,11 @@ pub enum IrInstruction {
         cond: IrCondition,
 		then_block: BlockId,
 		else_block: BlockId
-    }
+    },
+
+	Jump {
+		block: BlockId
+	}
 }
 
 impl IrInstruction {
