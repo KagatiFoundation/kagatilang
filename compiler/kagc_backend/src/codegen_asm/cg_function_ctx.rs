@@ -7,6 +7,7 @@ use kagc_mir::instruction::IrInstruction;
 use crate::codegen_asm::stack::StackFrame;
 
 pub struct CodeGenFunctionContext {
+	pub(crate) id: i64,
 	pub(crate) stack_frame: StackFrame,
 	pub(crate) is_leaf: bool,
 }
@@ -15,6 +16,7 @@ impl CodeGenFunctionContext {
 	#[allow(clippy::new_without_default)]
 	pub fn new() -> Self {
 		Self {
+			id: -1,
 			stack_frame: StackFrame::new(),
 			is_leaf: true,
 		}

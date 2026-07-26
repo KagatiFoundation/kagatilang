@@ -68,6 +68,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 		self.current_function_ctx.stack_frame = StackFrameBuilder::build_for_function(function);
         self.function_entry_block = Some(function.entry_block);
 		self.current_function_ctx.compute_is_leaf(function);
+		self.current_function_ctx.id = function.id.0 as i64;
 
         // manage function's stack
         self.emit_function_preamble(function);
@@ -87,7 +88,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 
         if let Some(entry_block) = self.function_entry_block {
             if entry_block != block.id {
-                self.push_code(format!("_L{}:", block.id.0));
+                self.push_code(format!("_L{}.{}:", self.current_function_ctx.id, block.id.0));
             }
         }
         else {
@@ -100,7 +101,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 
         match block.terminator {
             Terminator::Jump(block_id) => {
-				self.push_code(format!("b _L{}", block_id.0))
+				self.push_code(format!("b _L{}.{}", self.current_function_ctx.id, block_id.0))
 			}
 			Terminator::Return { .. }
             | Terminator::Fallthrough(_) => {},
@@ -113,8 +114,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
                     IrCondition::GThan  => "b.gt",
                     IrCondition::LThan  => "b.lt",
                 };
-                self.push_code(format!("{cmp_code} _L{bid}", bid = then_block.0));
-                self.push_code(format!("b _L{bid}", bid = else_block.0));
+                self.push_code(format!("{cmp_code} _L{}.{bid}", self.current_function_ctx.id, bid = then_block.0));
+                self.push_code(format!("b _L{}.{bid}", self.current_function_ctx.id, bid = else_block.0));
             },
         }
     }
@@ -123,6 +124,8 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 		match instr {
 			IrInstruction::Mov         { result, src } => self.emit_mov(*src, *result),
 			IrInstruction::Add         { result, lhs, rhs } => self.emit_add(*lhs, *rhs, *result),
+			IrInstruction::Subtract    { result, lhs, rhs } => self.emit_subtract(*lhs, *rhs, *result),
+			IrInstruction::Multiply    { result, lhs, rhs } => self.emit_multiply(*lhs, *rhs, *result),
 			IrInstruction::Cmp 		   { result, lhs, rhs, condition } => self.emit_conditional(*lhs, *rhs, *result, *condition),
 			IrInstruction::Store       { src, location } => self.emit_store(*src, *location),
 			IrInstruction::Load        { location, result } => self.emit_load(*location, *result),
@@ -130,7 +133,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::CondJump    { lhs, rhs, cond, .. } => self.emit_cond_jump(*lhs, *rhs, *cond),
 			IrInstruction::Param 	   { index, var_id } => self.emit_param(*index, *var_id),
 			IrInstruction::Jump 	   { block } => self.emit_jump(*block),
-			_ => todo!()
+			_ => todo!("{instr:#?}")
 		}
     }
 }
@@ -162,7 +165,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 				continue;
 			}
 
-			self.push_code(format!("_L{}:", block_id.0));
+			self.push_code(format!("_L{}.{}:", self.current_function_ctx.id, block_id.0));
 			self.gen_block_instructions(block);
 
 			match block.terminator {
@@ -172,7 +175,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 						// fallthrough
 					}
 					else {
-						self.push_code(format!("b _L{}", jump_bid.0));
+						self.push_code(format!("b _L{}.{}", self.current_function_ctx.id, jump_bid.0));
 					}
 				},
 				Terminator::CondJump { 
@@ -184,9 +187,10 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 					self.push_code(
 						format!(
-							"ldr {sr1}, [sp, #{stack_off}]\nmov {sr2}, #0\ncmp {sr1}, {sr2}\nb.eq _L{else_id}", // '0' means the condition evaluates to false
+							"ldr {sr1}, [sp, #{stack_off}]\nmov {sr2}, #0\ncmp {sr1}, {sr2}\nb.eq _L{fid}.{else_id}", // '0' means the condition evaluates to false
 							sr1 = SCRATCH_REGISTER_0.name,
 							sr2 = SCRATCH_REGISTER_1.name,
+							fid = self.current_function_ctx.id,
 							else_id = else_block.0
 						)
 					);
@@ -294,17 +298,35 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 	fn emit_jump(&mut self, bid: BlockId) {
 		self.push_code(
 			format!(
-				"b _L{}", bid.0
+				"b _L{}.{}", self.current_function_ctx.id, bid.0
 			)
 		);
 	}
 
 	fn emit_add(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId) {
+		self.emit_binary_op(lhs, rhs, result, "add");
+	}
+
+	fn emit_subtract(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId) {
+		self.emit_binary_op(lhs, rhs, result, "sub");
+	}
+
+	fn emit_multiply(&mut self, lhs: IrValue, rhs: IrValue, result: IrValueId) {
+		self.emit_binary_op(lhs, rhs, result, "mul");
+	}
+
+	fn emit_binary_op(
+		&mut self,
+		lhs: IrValue,
+		rhs: IrValue,
+		result: IrValueId,
+		op: &str,
+	) {
 		self.load_operands(lhs, rhs);
 
 		self.push_code(
 			format!(
-				"add {sr0}, {sr0}, {sr1}", 
+				"{op} {sr0}, {sr0}, {sr1}", 
 				sr0 = SCRATCH_REGISTER_0.name, 
 				sr1 = SCRATCH_REGISTER_1.name,
 			)
@@ -439,7 +461,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         let curr_func_is_leaf = self.current_function_ctx.is_leaf;
         let stack_size = self.current_function_ctx.stack_frame.size();
 
-        self.push_code(format!("_L{lbl}:", lbl = lir_func.exit_block.0));
+        self.push_code(format!("_L{}.{lbl}:", self.current_function_ctx.id, lbl = lir_func.exit_block.0));
 
 		if !curr_func_is_leaf {
 			self.push_code(format!("ldr x30, [sp, #{}]", stack_size - 8));

@@ -17,23 +17,24 @@ use std::collections::HashMap;
 pub struct IrFunctionId(pub usize);
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct IrFunctionParam {
+pub struct IrFunctionParam<'tcx> {
+	pub name: &'tcx str,
     pub id: IrVariableId,
     pub ty: IrType
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct IrFunctionSignature {
-    pub params: Vec<IrFunctionParam>,
+pub struct IrFunctionSignature<'tcx> {
+    pub params: Vec<IrFunctionParam<'tcx>>,
     pub return_type: IrType,
     pub class: StorageClass
 }
 
 #[derive(Default, Debug)]
-pub struct IrFunction {
+pub struct IrFunction<'tcx> {
     pub id: IrFunctionId,
     pub name: String,
-    pub signature: IrFunctionSignature,
+    pub signature: IrFunctionSignature<'tcx>,
     pub blocks: IndexMap<BlockId, IrBasicBlock>,
     pub entry_block: BlockId,
     pub exit_block: BlockId,

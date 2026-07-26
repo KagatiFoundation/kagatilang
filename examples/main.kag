@@ -1,10 +1,14 @@
 import "std/io";
 
-def main() -> void {
-	let counter = 0;
+def print_table(x: integer) -> void {
+	let counter = 1;
     loop if counter < 11 {
-		print_int(counter);
-
+		print_int(counter * x);
 		counter = counter + 1;
 	}
+}
+
+def main() -> void {
+	print_table(10);
+	print_table(13);
 }

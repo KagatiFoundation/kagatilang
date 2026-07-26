@@ -164,7 +164,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                         severity: Severity::Error,
                         primary_span: node.meta.span,
                         secondary_spans: Vec::with_capacity(0),
-                        message: format!("symbol '{}' already defined", sym.name),
+                        message: format!("symbol '{}' is already defined", sym.name),
                         notes: Vec::with_capacity(0)
                     }
                 );
@@ -178,7 +178,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: Vec::with_capacity(0),
-                    message: format!("function '{}' already defined", func.name),
+                    message: format!("function '{}' is already defined", func.name),
                     notes: Vec::with_capacity(0)
                 }
             );

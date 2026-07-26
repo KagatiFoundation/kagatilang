@@ -49,7 +49,10 @@ impl StackFrameBuilder {
 			IrInstruction::Mov { result, .. } => {
 				frame.allocate(StackObject::Value(*result), 0x8);
 			},
-			IrInstruction::Add { result, .. } => {
+			IrInstruction::Add { result, .. }
+			| IrInstruction::Subtract { result, .. }
+			| IrInstruction::Multiply { result, .. }
+			| IrInstruction::Divide { result, .. } => {
 				frame.allocate(StackObject::Value(*result), 0x8);
 			}
 			IrInstruction::Store { location, .. } => {

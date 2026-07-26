@@ -145,7 +145,10 @@ impl IrInstruction {
                 defs.push(*result);
                 if let IrValue::Register(v) = src { uses.push(*v); }
             }
-            IrInstruction::Add { lhs, rhs, result } => {
+            IrInstruction::Add { lhs, rhs, result }
+            | IrInstruction::Subtract { lhs, rhs, result }
+            | IrInstruction::Multiply { lhs, rhs, result }
+			| IrInstruction::Divide { lhs, rhs, result} => {
                 defs.push(*result);
                 if let IrValue::Register(v) = lhs { uses.push(*v); }
                 if let IrValue::Register(v) = rhs { uses.push(*v); }

@@ -412,9 +412,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_parameter(&mut self) -> Option<FuncParam<'tcx>> {
         let param_name = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
-        let _ = self.consume(TokenKind::T_COLON, "':' expected")?;
+
+        self.consume(TokenKind::T_COLON, "':' expected")?;
+  
         let param_type = self.parse_id_type()?;
-        _ = self.advance();
+  
+        self.advance();
+  
         Some(
             FuncParam {
                 ty: param_type,

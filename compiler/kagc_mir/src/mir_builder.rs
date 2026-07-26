@@ -18,11 +18,11 @@ use crate::module::MirModule;
 use crate::value::{IrValue, IrValueId};
 
 #[derive(Debug, Default)]
-pub struct IrBuilder {
+pub struct IrBuilder<'tcx> {
     current_function: Option<IrFunctionId>,
     current_block: Option<BlockId>,
 
-    pub functions: IndexMap<IrFunctionId, BuilderFunction>,
+    pub functions: IndexMap<IrFunctionId, BuilderFunction<'tcx>>,
 
     function_id: usize,
     block_id: usize,
@@ -30,9 +30,9 @@ pub struct IrBuilder {
 }
 
 #[derive(Debug)]
-pub struct BuilderFunction {
+pub struct BuilderFunction<'tcx> {
     pub name: String,
-    pub signature: IrFunctionSignature,
+    pub signature: IrFunctionSignature<'tcx>,
     pub anchor: IrFunctionAnchor,
     pub blocks: IndexMap<BlockId, BuilderBlock>,
 	reserved_blocks: IndexMap<BlockId, BuilderBlock>
@@ -47,11 +47,11 @@ pub struct BuilderBlock {
     pub predecessors: HashSet<BlockId>,
 }
 
-impl IrBuilder {
+impl<'tcx> IrBuilder<'tcx> {
     pub fn create_function(
         &mut self, 
         name: String, 
-        params: Vec<TyKind<'_>>, 
+        params: Vec<(&'tcx str, TyKind<'_>)>, 
         return_type: IrType,
         class: StorageClass,
     ) -> IrFunctionContext {
@@ -70,13 +70,20 @@ impl IrBuilder {
 
 		let mut function_params = vec![];
 
-		for param in &params {
+		let mut param_instrs = vec![];
+
+		for (index, (name, ty)) in params.iter().enumerate() {
+			let param_var_id = function_ctx.map_var(name.to_string());
+
 			function_params.push(
 				IrFunctionParam {
-					id: function_ctx.next_variable_id(),
-					ty: IrType::from(*param)
+					id: param_var_id,
+					ty: IrType::from(*ty),
+					name
 				}
 			);
+
+			param_instrs.push(IrInstruction::Param { index, var_id: param_var_id });
 		}
 
         let signature = IrFunctionSignature { 
@@ -100,11 +107,9 @@ impl IrBuilder {
 
         self.functions.insert(function_id, builder_func);
 
-		for (index, param) in function_params.iter().enumerate() {
-			self.inst(
-				IrInstruction::Param { index, var_id: param.id }
-			);
-		}
+		param_instrs
+			.iter()
+			.for_each(|inst| { self.inst(inst.clone()); });
 
 		function_ctx
     }
@@ -381,7 +386,7 @@ impl IrBuilder {
             .expect("create_load_const: no value ID created")
     }
 
-    pub fn build(self) -> MirModule {
+    pub fn build(self) -> MirModule<'tcx> {
     	let mut module = MirModule::new();
 
     	for (func_id, b_func) in self.functions {

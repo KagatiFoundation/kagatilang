@@ -32,7 +32,7 @@ type StmtLoweringResult = Result<BlockId, Diagnostic>;
 pub struct AstToMirLowerer<'a, 'tcx> {
     scope: &'tcx ScopeCtx<'tcx>,
     const_pool: &'a mut ConstPool,
-    pub ir_builder: IrBuilder,
+    pub ir_builder: IrBuilder<'tcx>,
     current_function: Option<Func<'tcx>>,
 }
 
@@ -112,16 +112,20 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
         self.scope.enter(func_scope.id.get()); 
 
-        let func_ir_params = self
-            .scope
-            .collect_params(func_scope.id.get())
-            .iter()
-            .map(|&sym| sym.ty.get())
-			.collect::<Vec<TyKind<'_>>>();
+		let mut func_params = vec![];
+
+		for param in &func_decl.params {
+			let sym = self
+				.scope
+				.lookup_sym(None, param.name)
+				.expect("function parameter missing from scope");
+
+			func_params.push(sym);
+		}
 
         let mut func_context = self.ir_builder.create_function(
             func.name.to_string(),
-            func_ir_params,
+            func_params.iter().map(|sym| (sym.name, sym.ty.get())).collect(),
             IrType::from(ast.ty.unwrap_or_else(|| bug!("Function return type must be defined"))),
             storage_class
         );
