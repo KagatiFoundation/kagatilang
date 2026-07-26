@@ -51,9 +51,9 @@ pub struct ArrVarDeclStmt<'tcx> {
 }
 
 #[derive(Clone, Debug)]
-pub struct AssignStmt {
+pub struct AssignStmt<'tcx> {
     /// Name of the symbol
-    pub sym_name: String
+    pub sym_name: &'tcx str
 }
 
 #[derive(Clone, Debug)]
@@ -103,7 +103,7 @@ pub enum Stmt<'tcx> {
     ArrVarDecl(ArrVarDeclStmt<'tcx>),
     FuncDecl(FuncDeclStmt<'tcx>),
     Return(ReturnStmt),
-    Assignment(AssignStmt),
+    Assignment(AssignStmt<'tcx>),
     VarDecl(VarDeclStmt<'tcx>),
     LValue(usize), // usize for symbol table position of this left value
     LValue2 {
@@ -130,6 +130,20 @@ impl<'tcx> Stmt<'tcx> {
     pub fn as_block_mut(&mut self) -> Option<&mut BlockStmt<'tcx>> {
         match self {
             Stmt::Block(stmt) => Some(stmt),
+            _ => None
+        }
+    }
+
+	pub fn as_assignment(&self) -> Option<&AssignStmt<'tcx>> {
+        match self {
+            Stmt::Assignment(stmt) => Some(stmt),
+            _ => None
+        }
+	}
+
+    pub fn as_assignment_mut(&mut self) -> Option<&mut AssignStmt<'tcx>> {
+        match self {
+            Stmt::Assignment(stmt) => Some(stmt),
             _ => None
         }
     }

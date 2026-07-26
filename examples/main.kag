@@ -1,16 +1,10 @@
 import "std/io";
 
 def main() -> void {
-    loop if 2 == 2 {
-		print_int(1234);
-		
-		loop {
-			print_int(12345);
-			if (3 == 3) {
-				continue;
-			}
-		}
+	let counter = 0;
+    loop if counter < 11 {
+		print_int(counter);
 
-		break;
+		counter = counter + 1;
 	}
 }

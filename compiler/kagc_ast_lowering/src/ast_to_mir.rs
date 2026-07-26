@@ -70,7 +70,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             AstOp::Block    => self.lower_block(node, fn_ctx),
 			AstOp::Break	=> self.lower_break(node, fn_ctx),
 			AstOp::Continue	=> self.lower_continue(node, fn_ctx),
-            _ => todo!("{node_type:#?}", node_type = node.op),
+			AstOp::Assign	=> self.lower_assignment(node, fn_ctx),
+            _ => todo!("{node_type:#?} not supported right now", node_type = node.op),
         }
     }
 
@@ -189,10 +190,27 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         Ok(self.ir_builder.current_block_id_unchecked())
     }
 
+	fn lower_assignment(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
+        let assigned_expr = ast.left.as_mut().unwrap(); 
+		let assigned_expr_value_id = self.lower_expression_ast(assigned_expr, fn_ctx)?;
+
+		let assignment = ast.expect_assignment_stmt_mut();
+
+		let var_id = fn_ctx.get_mapped_var_unchecked(assignment.sym_name.to_string());
+
+        self.ir_builder.inst(
+            IrInstruction::Store { 
+                src: assigned_expr_value_id, 
+                location: IrLocation::Variable(var_id)
+            }
+        );
+
+		Ok(self.current_block_unchecked())
+	}
+
     fn lower_expression_ast(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
-        if !ast.kind.is_expr() {
-            bug!("needed an Expr--but found {ast:#?}");
-        }
+		let _ = ast.expect_expr();
+
         let expr = ast
             .kind
             .as_expr_mut()
@@ -302,6 +320,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             AstOp::Divide    => Ok(self.ir_builder.create_divide(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
 			AstOp::EqEq 	 => Ok(self.ir_builder.create_conditional_eqeq(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             AstOp::NEq       => Ok(self.ir_builder.create_conditional_neq(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::LThan     => Ok(self.ir_builder.create_conditional_lthan(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
+            AstOp::GThan     => Ok(self.ir_builder.create_conditional_gthan(IrValue::Register(lhs_value_id), IrValue::Register(rhs_value_id))),
             _ => unimplemented!()
         }
     }
@@ -346,7 +366,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_infinite_loop(&mut self, ast: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
-        let prev_block_id = self.ir_builder.current_block_id_unchecked();
+        let prev_block_id = self.current_block_unchecked();
 		let loop_head_id = self.ir_builder.create_block("loop_head");
         let loop_body_id = self.ir_builder.create_block("loop_body");
         let loop_tail_id = self.ir_builder.create_block("loop_exit");
@@ -520,4 +540,8 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
   
         Ok(current)
     }
+
+	fn current_block_unchecked(&self) -> BlockId {
+		self.ir_builder.current_block_id_unchecked()
+	}
 }

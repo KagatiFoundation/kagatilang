@@ -199,10 +199,12 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
     }
 
     fn bind_loop_stmt(&mut self, node: &AstNode<'tcx>) -> BindingResult {
-        node.expect_loop_stmt();
+        node.expect_loop_stmt(); // panics if the provided 'node' is not a loop
+  
         if let Some(left) = &node.left {
             return self.bind_block_stmt(left, ScopeType::Loop);
         }
+
         None
     }
 

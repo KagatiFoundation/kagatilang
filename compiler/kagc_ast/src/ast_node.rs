@@ -4,7 +4,7 @@
 use kagc_span::span::{HasSpan, SourcePos, Span};
 use kagc_types::TyKind;
 
-use crate::{AstOp, BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, RecordDeclStmt, ReturnStmt, Stmt, VarDeclStmt};
+use crate::{AssignStmt, AstOp, BlockStmt, Expr, FuncCallExpr, FuncDeclStmt, RecordDeclStmt, ReturnStmt, Stmt, VarDeclStmt};
 
 use super::NodeKind;
 
@@ -226,6 +226,18 @@ impl<'tcx> AstNode<'tcx> {
         stmt.as_block().expect("expected block stmt")
     }
 
+	/// This function panics if the statement is not an assignment statement.
+	pub fn expect_assignment_stmt(&self) -> &AssignStmt<'tcx> {
+		let stmt = self.as_stmt().expect("ecpected stmt");
+		stmt.as_assignment().expect("expected assignment stmt")
+	}
+
+	/// This function panics if the statement is not an assignment statement.
+	pub fn expect_assignment_stmt_mut(&mut self) -> &mut AssignStmt<'tcx> {
+		let stmt = self.as_stmt_mut().expect("ecpected stmt");
+		stmt.as_assignment_mut().expect("expected assignment stmt")
+	}
+
     pub fn expect_if_stmt(&self) {
         let stmt = self.as_stmt().expect("expected stmt");
         stmt.as_if().expect("expected if stmt");
@@ -270,6 +282,10 @@ impl<'tcx> AstNode<'tcx> {
         let stmt = self.as_stmt_mut().expect("expect statment");
         stmt.as_var_decl_mut().expect("expected var decl stmt")
     }
+
+	pub fn expect_expr(&self) -> &Expr<'tcx> {
+		self.as_expr().expect("not a expr")
+	}
 }
 
 #[macro_export]

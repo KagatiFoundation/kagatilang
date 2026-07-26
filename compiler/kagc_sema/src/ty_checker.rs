@@ -56,17 +56,21 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             AstOp::Import       => Some(TyKind::Void),
             AstOp::RecDecl      => self.check_record_decl_stmt(node),
             AstOp::Block        => self.check_block_stmt(node),
+			AstOp::Assign		=> self.check_and_mutate_assignment_stmt(node),
             AstOp::None 
-            | AstOp::Break      => Some(TyKind::None),
+            | AstOp::Break
+			| AstOp::Continue   => Some(TyKind::None),
             _ => panic!("Operation '{:#?}' not supported!", node.op)
         }
     }
 
     fn check_block_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
-        let block_stmt = node.expect_block_stmt_mut();
+        let block_stmt = node.expect_block_stmt_mut(); // panic if the provided 'node' is not a block statement node
+
         for s in &mut block_stmt.statements {
             self.check_node(s)?;
         }
+  
         Some(TyKind::None)
     }
 
@@ -108,7 +112,9 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 			| AstOp::Multiply
 			| AstOp::Subtract 
 			| AstOp::Divide
-			| AstOp::EqEq => {
+			| AstOp::EqEq
+			| AstOp::LThan
+			| AstOp::GThan => {
                 match (lhs, rhs) {
                     (TyKind::I64, TyKind::I64) => Some(TyKind::I64),
                     (TyKind::U8, TyKind::U8) => Some(TyKind::I64),
@@ -446,6 +452,35 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 
         Some(var_type)
     }
+
+	fn check_and_mutate_assignment_stmt(
+		&mut self, 
+		node: &mut AstNode<'tcx>
+	) -> Option<TyKind<'tcx>> {
+		let assign_stmt = node.expect_assignment_stmt();
+
+		let Some(sym) = self.scope.lookup_sym(None, assign_stmt.sym_name) else {
+            self.diagnostics.push(
+                Diagnostic {
+                    code: Some(ErrCode::SEM2000),
+                    severity: Severity::Error,
+                    primary_span: node.meta.span,
+                    secondary_spans: vec![],
+                    message: format!("undefined symbol '{}'", assign_stmt.sym_name),
+                    notes: vec![]
+                }
+            );
+			return None;
+		};
+
+		if let Some(left_tree) = &mut node.left {
+			let node_meta = left_tree.meta.clone();
+			let expr = left_tree.as_expr_mut().unwrap_or_else(|| panic!("not an expr"));
+			self.check_and_mutate_expr(expr, &node_meta);
+		}
+
+		Some(sym.ty.get())
+	}
 
     fn check_and_mutate_var_decl_stmt(
         &mut self, 

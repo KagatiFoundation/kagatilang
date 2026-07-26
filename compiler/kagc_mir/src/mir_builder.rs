@@ -311,6 +311,22 @@ impl IrBuilder {
 		self.create_conditional(IrCondition::NEq, lhs, rhs)
 	}
 
+	pub fn create_conditional_lthan(
+		&mut self,
+		lhs: IrValue,
+		rhs: IrValue
+	) -> IrValueId {
+		self.create_conditional(IrCondition::LThan, lhs, rhs)
+	}
+	
+	pub fn create_conditional_gthan(
+		&mut self,
+		lhs: IrValue,
+		rhs: IrValue
+	) -> IrValueId {
+		self.create_conditional(IrCondition::GThan, lhs, rhs)
+	}
+
 	pub fn create_conditional(
 		&mut self,
 		condition: IrCondition,

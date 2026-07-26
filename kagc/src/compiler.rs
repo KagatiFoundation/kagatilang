@@ -85,6 +85,24 @@ impl<'tcx> CompilerPipeline<'tcx> {
         Ok(())
     }
 
+    fn resolve_dependencies(&mut self, file_path: &str) {
+        // Prevent circular imports and redundant parsing
+        if self.compilation_units.contains_key(file_path) {
+            return;
+        }
+
+        let Some(unit) = self.compile_path_into_unit(file_path) else {
+            return;
+        };
+
+        for import in unit.extract_imports() {
+            self.resolve_dependencies(import.path);
+        }
+
+        self.compilation_units.insert(file_path.to_string(), unit);
+        self.compile_order.push(file_path.to_string());
+    }
+
     fn compile_path_into_unit(&mut self, file_path: &str) -> Option<CompUnit<'tcx>> {
         if self.compilation_units.contains_key(file_path) {
             return None;
@@ -131,24 +149,6 @@ impl<'tcx> CompilerPipeline<'tcx> {
             tokens
         );
         Some(CompUnit { asts: parser.parse() })
-    }
-
-    fn resolve_dependencies(&mut self, file_path: &str) {
-        // Prevent circular imports and redundant parsing
-        if self.compilation_units.contains_key(file_path) {
-            return;
-        }
-
-        let Some(unit) = self.compile_path_into_unit(file_path) else {
-            return;
-        };
-
-        for import in unit.extract_imports() {
-            self.resolve_dependencies(import.path);
-        }
-
-        self.compilation_units.insert(file_path.to_string(), unit);
-        self.compile_order.push(file_path.to_string());
     }
 
     fn compile_mir_modules_into_asm(&mut self, modules: &mut [MirModule]) {

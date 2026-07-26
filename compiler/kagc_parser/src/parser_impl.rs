@@ -124,7 +124,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::KW_RETURN => self.parse_return_stmt(),
             TokenKind::KW_BREAK => self.parse_break_stmt(),
             TokenKind::KW_CONTINUE => self.parse_continue_stmt(),
-            TokenKind::T_IDENTIFIER => self.assign_stmt_or_func_call(),
+            TokenKind::T_IDENTIFIER => self.parse_assign_stmt_or_func_call(),
             TokenKind::KW_DEF => self.parse_function_stmt(),
             TokenKind::KW_IF => self.parse_if_stmt(),
             TokenKind::KW_WHILE => self.parse_while_stmt(),
@@ -146,21 +146,27 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     // parse a block statement(statement starting with '{' and ending with '}')
     fn parse_block_stmt(&mut self) -> ParseOutput<'tcx> {
-        self.consume(TokenKind::T_LBRACE, "'{' expected")?;
+        self.consume(TokenKind::T_LBRACE, "'{' expected")?; // parse and ignore '{'
+
         let mut statements = vec![];
+
         loop {
             if self.peek().kind == TokenKind::T_RBRACE {
                 self.consume(TokenKind::T_RBRACE, "'}' expected")?;
                 break;
             }
+
             if let Some(statement) = self.parse_single_stmt() {
                 statements.push(statement);
             }
         }
+
         if statements.is_empty() {
             return Some(AstNode::empty());
         }
+
         let block_stmt_ast = Stmt::Block(BlockStmt { statements });
+
         Some(
             AstNode::leaf(
                 self.next_node_id(),
@@ -676,11 +682,30 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         ))
     }
 
-    fn _next_str_label(&mut self) -> usize {
-        let l = self._str_label_;
-        self._str_label_ += 1;
-        l
-    }
+	fn parse_assignment_stmt(&mut self) -> ParseOutput<'tcx> {
+		let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
+		
+		self.consume(TokenKind::T_EQUAL, "expected '='")?; // parse and ignore '='
+
+		let assignment_expr = self.parse_record_or_expr(Some(id_token.lexeme))?;
+
+		Some(
+			AstNode::binary(
+				self.next_node_id(), 
+				NodeKind::StmtAST(
+					Stmt::Assignment(
+						AssignStmt {
+							sym_name: id_token.lexeme
+						}
+					)
+				), 
+				AstOp::Assign,
+				Some(assignment_expr),
+				None,
+				None
+			)
+		)
+	}
 
     /// Parses the current token as a literal type keyword and returns the 
     /// corresponding `LitTypeVariant`.
@@ -704,15 +729,22 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     // TODO: Write comments
-    fn assign_stmt_or_func_call(&mut self) -> ParseOutput<'tcx> {
-        let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
-        let tok_kind_after_id_tok: TokenKind = self.peek().kind;
-        if tok_kind_after_id_tok != TokenKind::T_LPAREN {
-            panic!("Cannot parse an assignment statement right now!");
-        } else {
-            let assignment = self.parse_func_call_expr(id_token.lexeme, &id_token);
+    fn parse_assign_stmt_or_func_call(&mut self) -> ParseOutput<'tcx> {
+		if self.peek().kind != TokenKind::T_IDENTIFIER {
+			self.report_unexpected_token();
+			return None;
+		}
+
+        if self.look_ahead(1).kind == TokenKind::T_EQUAL { // '=' means that we are delaing with an assignment statement
+			let stmt = self.parse_assignment_stmt();
+			self.expect_semicolon();
+			stmt
+        }
+		else {
+        	let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
+            let stmt = self.parse_func_call_expr(id_token.lexeme, &id_token);
             self.expect_semicolon();
-            assignment
+            stmt
         }
     }
 
