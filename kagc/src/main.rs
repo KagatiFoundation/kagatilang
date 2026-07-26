@@ -27,5 +27,5 @@ use std::io::Error;
 use kagc::compile_file;
 
 fn main() -> Result<(), Error> {
-    compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/nested-if-else.kag")
+    compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/main.kag")
 }

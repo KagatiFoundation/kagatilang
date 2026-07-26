@@ -497,14 +497,23 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_loop_stmt(&mut self) -> ParseOutput<'tcx> {
-        self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?;
+		self.consume(TokenKind::KW_LOOP, "expected the keyword 'loop'")?;
+
+		let next_token = self.peek();
+
+		let loop_condition_expr = if next_token.kind == TokenKind::KW_IF { // the 'loop' statement has a condition
+			self.consume(TokenKind::KW_IF, "expected the keyword 'if'")?;
+			self.parse_equality()
+		}
+		else { None };
+
         let loop_body: AstNode = self.parse_block_stmt()?;
         Some(AstNode::binary(
             self.next_node_id(),
             NodeKind::StmtAST(Stmt::Loop),
             AstOp::Loop,
             Some(loop_body),
-            None,
+            loop_condition_expr,
             None,
         ))
     }

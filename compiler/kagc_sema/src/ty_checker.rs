@@ -529,6 +529,12 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
     fn check_loop_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
         node.expect_loop_stmt();
 
+		if let Some(loop_condition) = &mut node.right {
+			if let Some(expr) = loop_condition.as_expr_mut() {
+				self.check_and_mutate_expr(expr, &node.meta);
+			}
+		}
+
         if let Some(loop_body) = &mut node.left {
             let node_id = loop_body.id;
             let Some(loop_scope) = self.scope.lookup_node_scope(node_id) else {
@@ -539,6 +545,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             self.check_node(loop_body)?;
             self.scope.pop();
         }
+
         None
     }
 }

@@ -1,24 +1,11 @@
-import "raylib";
 import "std/io";
 
 def main() -> void {
-    let c = rl_Color {
-        r = 255,
-        g = 255,
-        b = 255
-    };
+    loop if 2 == 2 {
+		print_int(1234);
+	}
 
-    // initialize a raylib window
-    rl_init_window(600, 400, "hello world from raylib");
-    
-    loop {
-        let close = rl_window_should_close();
-        if (close == 1) {
-            println("Cannot close the window right now");
-        }
-        rl_begin_drawing();
-        rl_clear_bg(c);
-        rl_end_drawing();
-    }
-    rl_close_window();
+	loop {
+		print_int(12345);
+	}
 }
