@@ -1,17 +1,13 @@
 #include "print.h"
 #include <stdio.h>
 
-void print(Object *obj) {
-    if (obj->ob_type == K_REC) {
-        fputs("Record {}", stdout);
-        return;
-    }
-    if (obj->ob_type == K_STR) {
-        fprintf(stdout, "%s", (char*) obj->data);
-    }
-    else if (obj->ob_type == K_INT) {
-        fprintf(stdout, "%llu\n", *((uint64_t*) obj->data));
-    }
+void print(char* value) {
+    fprintf(stdout, "%s", value);
+    fflush(stdout);
+}
+
+void println(char* value) {
+    fprintf(stdout, "%s\n", value);
     fflush(stdout);
 }
 

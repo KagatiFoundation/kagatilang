@@ -92,7 +92,7 @@ pub enum IrInstruction {
     },
 
     LoadConst {
-        label_id: usize,
+        pool_idx: usize,
         result: IrValueId
     },
 

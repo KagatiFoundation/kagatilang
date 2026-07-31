@@ -1,5 +1,5 @@
 #pragma once
 
-#include "../gc/object.h"
+void print(char* value);
 
-void print(Object *obj);
+void println(char* value);

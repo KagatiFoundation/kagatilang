@@ -18,7 +18,6 @@ use kagc_mir::block::{BlockId, Terminator, INVALID_BLOCK_ID};
 use kagc_mir::instruction::{IrCondition, IrInstruction};
 use kagc_mir::mir_builder::IrBuilder;
 use kagc_mir::types::IrType;
-use kagc_mir::builtin::BuiltinFn;
 use kagc_mir::instruction::IrLocation;
 use kagc_mir::function::IrFunctionContext;
 
@@ -262,30 +261,6 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
     }
 
     fn lower_literal_value_expr(&mut self, lit_expr: &LitValExpr, _fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
-        if let Literal::RawStr(str_value) = &lit_expr.value {
-            let const_value = self.ir_builder.occupy_value_id();
-            let pool_index = self.const_pool.insert(KagcConst::Str(str_value.to_string()), KObjType::KStr, None);
-            let const_size = self.const_pool.size(pool_index).unwrap_or_else(|| bug!("cannot find const entry"));
-
-            self.ir_builder.inst(
-                IrInstruction::LoadConst { 
-                    label_id: pool_index,
-                    result: const_value
-                }
-            );
-
-            let const_size_value = self.ir_builder.create_move(IrValue::Constant(const_size as i64));
-            let call_result_value = self.ir_builder.occupy_value_id();
-
-            self.ir_builder.inst(
-                IrInstruction::CallBuiltin { 
-                    builtin: BuiltinFn::AllocStr, 
-                    args: vec![const_value, const_size_value],
-                    result: Some(call_result_value)
-                }
-            );
-            return Ok(call_result_value);
-        }
         match lit_expr.ty {
             TyKind::I64 => {
                 let const_value = *lit_expr.value.unwrap_i64().expect("No i64 value!");
@@ -295,6 +270,20 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 let const_value = *lit_expr.value.unwrap_u8().expect("No u8 value!") as i64;
                 Ok(self.ir_builder.create_move(IrValue::Constant(const_value)))
             },
+			TyKind::Str => {
+				let Literal::RawStr(str_value) = lit_expr.value else {
+					bug!("literal expression is not of type string but treated as such");
+				};
+
+            	let pool_index = self
+					.const_pool
+					.insert(
+						KagcConst::Str(str_value.to_string()),
+						KObjType::KStr, None
+					);
+
+				Ok(self.ir_builder.create_load_const(pool_index))
+			}
             _ => unimplemented!("{lit_expr:#?}")
         }
     }

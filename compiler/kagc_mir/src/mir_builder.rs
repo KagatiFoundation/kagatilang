@@ -382,7 +382,7 @@ impl<'tcx> IrBuilder<'tcx> {
 
     pub fn create_load_const(&mut self, pool_index: usize) -> IrValueId {
         let result = self.next_value_id();
-        self.inst(IrInstruction::LoadConst { label_id: pool_index, result })
+        self.inst(IrInstruction::LoadConst { pool_idx: pool_index, result })
             .expect("create_load_const: no value ID created")
     }
 

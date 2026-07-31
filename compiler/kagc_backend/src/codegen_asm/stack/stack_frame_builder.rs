@@ -63,6 +63,9 @@ impl StackFrameBuilder {
 			IrInstruction::Load { result, .. } => {
 				frame.allocate(StackObject::Value(*result), 0x8);
 			}
+			IrInstruction::LoadConst { result, .. } => {
+				frame.allocate(StackObject::Value(*result), 0x8);
+			}
 			IrInstruction::Cmp { result, .. } => {
 				frame.allocate(StackObject::Value(*result), 0x8);
 			}

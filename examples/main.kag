@@ -1,7 +1,12 @@
 import "std/io";
 
 def square(x: integer) -> integer {
-	return x * x;
+	if (x < 5) {
+		return 0;
+	}
+	else {
+		return x * x;
+	}
 }
 
 def print_table(x: integer) -> void {
@@ -20,6 +25,6 @@ def main() -> void {
 		number = number + 1;
 	}
 
-	let s = square(2);
+	let s = square(square(5));
 	print_int(s);
 }

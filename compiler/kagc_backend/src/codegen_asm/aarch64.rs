@@ -10,6 +10,7 @@ use kagc_mir::instruction::{IrCondition, IrInstruction, IrLocation};
 use kagc_mir::value::{IrValue, IrValueId};
 use kagc_mir::variable::IrVariableId;
 use kagc_symbol::StorageClass;
+use kagc_utils::bug;
 
 use crate::codegen_asm::cg_function_ctx::CodeGenFunctionContext;
 use crate::codegen_asm::stack::{StackFrameBuilder, StackObject};
@@ -133,6 +134,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::CondJump    { lhs, rhs, cond, .. } => self.emit_cond_jump(*lhs, *rhs, *cond),
 			IrInstruction::Param 	   { index, var_id } => self.emit_param(*index, *var_id),
 			IrInstruction::Jump 	   { block } => self.emit_jump(*block),
+			IrInstruction::LoadConst   { pool_idx, result } => self.emit_load_const(*pool_idx, *result),
 			_ => todo!("{instr:#?}")
 		}
     }
@@ -353,6 +355,27 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 		self.store_result(result);
 	}
 
+	fn emit_load_const(&mut self, pool_idx: usize, result: IrValueId) {
+		let Some(const_value) = self.const_pool.get(pool_idx) else {
+			bug!("the const value being queried has not been interned");
+		};
+
+		match const_value.value {
+			KagcConst::Str(_) => {
+				self.push_code(
+					format!(
+						"adrp {sr0}, .L.__c.{pool_idx}@PAGE\nadd {sr0}, {sr0}, .L.__c.{pool_idx}@PAGEOFF",
+						sr0 = SCRATCH_REGISTER_0.name
+					)
+				);
+
+				self.store_result(result);
+			},
+			_ => todo!()
+		}
+
+	}
+
 	fn load_operand(&mut self, value: IrValue, scratch_reg_name: &str) {
         let asm = match value {
             IrValue::Constant(val) => {
@@ -493,10 +516,13 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         if self.const_pool.is_empty() {
             return;
         }
+
         let mut global_vars_code = String::new();
+  
         for (index, c_item) in self.const_pool.iter_enumerated() {
             global_vars_code.push_str(&self.dump_const(index, c_item, false));
         }
+  
         println!("{global_vars_code}");
     }
 
@@ -504,34 +530,34 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
         let mut output_str = String::new();
         if let KagcConst::Str(str_value) = &c_item.value {
             if parent_is_record {
-                output_str.push_str(&format!("\t.xword .L.__c.{c_item_index}\n"));
+                output_str.push_str(&format!("\n\t.xword .L.__c.{c_item_index}"));
             }
             else {
-                output_str.push_str(&format!(".section __TEXT,__cstring\n\t.L.__c.{c_item_index}:\n\t.asciz \"{str_value}\"\n"));
+                output_str.push_str(&format!("\n.section __TEXT,__cstring\n\t.L.__c.{c_item_index}:\n\t.asciz \"{str_value}\""));
             }
         }
         else if let KagcConst::Int(int_value) = &c_item.value {
             if parent_is_record {
                 // output_str.push_str(&format!("\t.word {int_value}\n\t.zero 4\n"));
-                output_str.push_str(&format!("\t.xword .L.__c.{c_item_index}\n"));
+                output_str.push_str(&format!("\n\t.xword .L.__c.{c_item_index}"));
             }
             else {
-                output_str.push_str(&format!(".section __DATA,__const\n\t.L.__c.{c_item_index}:\n\t.xword {int_value}\n"));
+                output_str.push_str(&format!("\n.section __DATA,__const\n\t.L.__c.{c_item_index}:\n\t.xword {int_value}"));
             }
         }
         else if let KagcConst::Record(rec) = &c_item.value {
             if parent_is_record {
-                output_str.push_str(&format!("\t.xword .L.__c.{}\n", c_item_index));
+                output_str.push_str(&format!("\n\t.xword .L.__c.{}", c_item_index));
             }
             else {
                 output_str.push_str(
                     &format!(
-                        ".section __DATA,__const\n.align {}\n.L.__c.{}:\n", 
+                        "\n.section __DATA,__const\n.align {}\n.L.__c.{}:", 
                         rec.alignment, 
                         c_item_index
                     )
                 );
-                output_str.push_str(&"\t.xword 0\n".repeat(rec.fields.iter().len()));
+                output_str.push_str(&"\n\t.xword 0".repeat(rec.fields.iter().len()));
             }
         }
         output_str
