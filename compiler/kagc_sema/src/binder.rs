@@ -61,12 +61,12 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
 
     fn bind_sym(&mut self, node: &AstNode<'tcx>) -> BindingResult  {
         match node.op {
-            AstOp::If => self.bind_if_stmt(node),
-            AstOp::VarDecl => self.bind_let_stmt(node),
-            AstOp::Func => self.bind_func_decl_stmt(node),
-            AstOp::RecDecl => self.bind_record_decl_stmt(node),
-            AstOp::Block => self.bind_block_stmt(node, ScopeType::Block),
-            AstOp::Loop => self.bind_loop_stmt(node),
+            AstOp::If 		=> self.bind_if_stmt(node),
+            AstOp::VarDecl 	=> self.bind_let_stmt(node),
+            AstOp::Func 	=> self.bind_func_decl_stmt(node),
+            AstOp::RecDecl 	=> self.bind_record_decl_stmt(node),
+            AstOp::Block 	=> self.bind_block_stmt(node, ScopeType::Block),
+            AstOp::Loop 	=> self.bind_loop_stmt(node),
             _ => None
         }
     }

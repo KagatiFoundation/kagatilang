@@ -1099,7 +1099,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 Expr::LitVal(
                     LitValExpr {
                         value: value.clone(),
-                        ty: TyKind::None, // SHOULD NOT BE NONE
+                        ty: value.kind(),
                     }
                 )
             ),

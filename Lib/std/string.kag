@@ -1,0 +1,6 @@
+def extern __KG__strlen(x: string) -> integer;
+
+def strlen(x: string) -> integer {
+	let len = __KG__strlen(x);
+	return len;
+}

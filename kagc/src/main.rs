@@ -27,5 +27,5 @@ use std::io::Error;
 use kagc::compile_file;
 
 fn main() -> Result<(), Error> {
-    compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/more_strings_2.kag")
+    compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/http_server.kag")
 }

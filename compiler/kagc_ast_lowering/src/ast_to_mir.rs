@@ -60,7 +60,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
 
     fn lower_node(&mut self, node: &mut AstNode, fn_ctx: &mut IrFunctionContext) -> StmtLoweringResult {
         match node.op {
-            AstOp::Func    => self.lower_function(node),
+            AstOp::Func     => self.lower_function(node),
             AstOp::FuncCall => self.lower_function_call(node, fn_ctx),
             AstOp::VarDecl  => self.lower_variable_declaration(node, fn_ctx),
             AstOp::Return   => self.lower_return(node, fn_ctx),

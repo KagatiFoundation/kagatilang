@@ -1,0 +1,1 @@
+int __KG__strlen(char* v);

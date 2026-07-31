@@ -11,6 +11,11 @@ void println(char* value) {
     fflush(stdout);
 }
 
+void eprintln(char* value) {
+    fprintf(stderr, "%s\n", value);
+    fflush(stderr);
+}
+
 void print_int(long long x) {
     printf("%lld\n", x);
 }

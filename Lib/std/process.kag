@@ -1,0 +1,5 @@
+def extern __KG__exit(code: integer) -> void;
+
+def exit(code: integer) -> void {
+	__KG__exit(code);
+}

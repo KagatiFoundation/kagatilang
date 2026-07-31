@@ -104,8 +104,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 
     fn are_types_compatible(
         &mut self, 
-        lhs: TyKind<'tcx>, rhs: TyKind<'tcx>, 
-        op: AstOp, meta: &NodeMeta
+        lhs: TyKind<'tcx>, 
+		rhs: TyKind<'tcx>, 
+        op: AstOp, 
+		meta: &NodeMeta
     ) -> Option<TyKind<'tcx>> {
         match op {
             AstOp::Add 
@@ -114,27 +116,29 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 			| AstOp::Divide
 			| AstOp::EqEq
 			| AstOp::LThan
+			| AstOp::NEq
 			| AstOp::GThan => {
                 match (lhs, rhs) {
-                    (TyKind::I64, TyKind::I64) => Some(TyKind::I64),
-                    (TyKind::U8, TyKind::U8) => Some(TyKind::I64),
-                    _ => {
-                        self.diagnostics.push(
-                            Diagnostic {
-                                code: Some(ErrCode::TYP3002),
-                                severity: Severity::Error,
-                                primary_span: meta.span,
-                                secondary_spans: vec![],
-                                message: format!("'{:#?}' is not compatible with '{:#?}'", lhs, rhs),
-                                notes: vec![]
-                            }
-                        );
-                        None
-                    }
-                }
+                    (TyKind::I64, TyKind::I64) => return Some(TyKind::I64),
+                    (TyKind::U8, TyKind::U8) => return Some(TyKind::I64),
+					_ => {}
+                };
             }
-            _ => None
+            _ => {}
         }
+
+        self.diagnostics.push(
+            Diagnostic {
+                code: Some(ErrCode::TYP3002),
+                severity: Severity::Error,
+                primary_span: meta.span,
+                secondary_spans: vec![],
+                message: format!("'{:#?}' is not compatible with '{:#?}'", lhs, rhs),
+                notes: vec![]
+            }
+        );
+
+		None
     }
 
     pub fn is_type_coalesciable(src: TyKind, dest: TyKind) -> bool {
@@ -157,9 +161,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let left_type = self.check_and_mutate_expr(&mut bin_expr.left, meta)?;
         let right_type = self.check_and_mutate_expr(&mut bin_expr.right, meta)?;
 
-        let result_type = self
-			.are_types_compatible(left_type, right_type, bin_expr.operation, meta)
-			.unwrap_or_else(|| panic!("{left_type} and {right_type} are not compatible"));
+        let result_type = self.are_types_compatible(left_type, right_type, bin_expr.operation, meta)?;
 
         bin_expr.ty = result_type;
         Some(result_type)
@@ -344,7 +346,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let expected_ret_ty = self
             .scope
             .lookup_fn(self.curr_func_id)
-            .unwrap()
+            .unwrap_or_else(|| bug!("return outside function"))
             .ty;
             
         // if return statement returns some value

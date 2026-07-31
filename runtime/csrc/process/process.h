@@ -1,0 +1,1 @@
+void __KG__exit(int code);

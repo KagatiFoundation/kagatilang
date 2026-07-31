@@ -1,27 +1,35 @@
-import "std/net";
+import "std/io";
+import "std/socket";
+import "std/string";
+import "std/process";
 
-record Socket {
-    family: integer;
-    port: integer;
-    addr: integer;
+def handle_client(fd: integer) -> void {
+    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\nHello World!";
+
+    write_socket(fd, response, strlen(response));
+    close_socket(fd);
 }
 
 def main() -> void {
-    let server = Socket {
-        family = 2, // IPv4
-        port = 12345,
-        addr = 0
-    };
+    let server = create_socket(8080);
 
-    let fd = create_socket(server.port); 
-    listen_socket(fd, 5);
-    loop {
-        let client = accept_socket(fd);
-        println("a new client");
-        let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 38\r\nConnection: close\r\n\r\n<html><body>Hello World</body></html>";
-        write_socket(client, resp, 130);
-        close_socket(client);
-        println("client closed");
+    if (server == 0) {
+        eprintln("Failed to create socket");
+        exit(1);
     }
-    close_socket(fd);
+
+    listen_socket(server, 10);
+
+    println("Server listening on port 8080");
+
+    loop {
+        let client = accept_socket(server);
+		println("New client...");
+
+        if (client != 0) {
+            handle_client(client);
+        }
+    }
+
+    close_socket(server);
 }
