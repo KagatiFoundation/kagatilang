@@ -1,0 +1,13 @@
+import "std/io";
+
+def print_name_10_times(name: string) -> void {
+	let counter = 0;
+	loop if counter < 11 {
+		println(name);
+		counter = counter + 1;
+	}
+}
+
+def main() -> void {
+	print_name_10_times("ramesh poudel");
+}

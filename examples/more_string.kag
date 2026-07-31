@@ -1,0 +1,9 @@
+import "std/io";
+
+def return_some_str() -> string {
+	return "hello world!";
+}
+
+def main() -> void {
+	println(return_some_str());
+}

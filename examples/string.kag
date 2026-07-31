@@ -1,11 +1,12 @@
 import "std/io";
 
-def do_sth(name: string) -> void {
+def do_sth(name: string, address: string) -> void {
 	println(name);
+	println(address);
 }
 
 def main() -> void {
 	let name = "Ramesh Poudel";
 	println(name);
-	do_sth(name);
+	do_sth(name, "waling nepal");
 }
