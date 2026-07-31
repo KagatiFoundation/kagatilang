@@ -62,7 +62,6 @@ pub struct IrFunctionContext {
 	pub variable_id: usize,
 	pub anchor: IrFunctionAnchor,
 	loop_stack: Vec<IrLoopContext>,
-	return_label: Option<BlockId>,
 	var_map: HashMap<String, IrVariableId>
 }
 
@@ -72,18 +71,9 @@ impl IrFunctionContext {
 			anchor,
 			variable_id: 0,
 			loop_stack: vec![],
-			return_label: None,
 			var_map: HashMap::new()
 		}
 	}
-
-    pub fn set_return_label(&mut self, return_label: BlockId) {
-        self.return_label = Some(return_label);
-    }
-
-    pub fn get_return_label(&self) -> Option<BlockId> {
-        self.return_label
-    }
 
 	pub fn next_variable_id(&mut self) -> IrVariableId {
 		let var_id = self.variable_id;

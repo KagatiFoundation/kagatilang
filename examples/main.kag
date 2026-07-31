@@ -1,5 +1,9 @@
 import "std/io";
 
+def square(x: integer) -> integer {
+	return x * x;
+}
+
 def print_table(x: integer) -> void {
 	let counter = 1;
     loop if counter < 11 {
@@ -15,4 +19,7 @@ def main() -> void {
 		print_table(number);
 		number = number + 1;
 	}
+
+	let s = square(2);
+	print_int(s);
 }

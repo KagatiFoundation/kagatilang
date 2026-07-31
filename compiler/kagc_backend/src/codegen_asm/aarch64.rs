@@ -195,6 +195,24 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 						)
 					);
 				},
+				Terminator::Return { value, target } => {
+					if let Some(return_value) = value {
+						let ret_val_off = self.get_value_stack_offset_unchecked(return_value);
+
+						self.push_code(format!("ldr x0, [sp, #{ret_val_off}]"));
+
+						self.push_code(
+							format!(
+								"b _L{}.{}",
+								self.current_function_ctx.id,
+								target.0
+							)
+						);
+					}
+					else {
+						self.push_code("mov x0, #0".to_string());
+					}
+				}
 				_ => {}
 			}
 		}
@@ -467,7 +485,7 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 			self.push_code(format!("ldr x30, [sp, #{}]", stack_size - 8));
 		}
 
-		self.push_code(format!("add sp, sp, #{stack_size}\nmov x0, #0\nret"));
+		self.push_code(format!("add sp, sp, #{stack_size}\nret"));
     }
 
     /// This function is public only for a short period of time.

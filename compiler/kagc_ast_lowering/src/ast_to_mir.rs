@@ -134,9 +134,6 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             return Ok(INVALID_BLOCK_ID);
         }
 
-        let return_label = func_context.anchor.exit_block; 
-        func_context.set_return_label(return_label);
-
         let Some(func_body) = &mut ast.left else {
             bug!("no function body found");
         };
@@ -154,7 +151,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
                 current_block_id, 
                 Terminator::Return { 
                     value: None, 
-                    target: return_label 
+                    target: func_context.anchor.exit_block 
                 }
             );
         }
@@ -334,15 +331,14 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         if let Some(Stmt::Return(_)) = &ret_stmt.kind.as_stmt() {
             if let Some(curr_fn) = &self.current_function {
                 let curr_block = self.ir_builder.current_block_id_unchecked();
-                let func_exit_block = fn_ctx
-                    .get_return_label()
-                    .expect("Function's return block is not set! Aborting...");
+                let func_exit_block = fn_ctx.anchor.exit_block;
 
                 if !curr_fn.ty.is_void() {
                     let return_value_id = self.lower_expression_ast(
                         ret_stmt.left.as_mut().unwrap(), 
                         fn_ctx
                     )?;
+
                     self.ir_builder.set_terminator(
                         curr_block, 
                         Terminator::Return {
