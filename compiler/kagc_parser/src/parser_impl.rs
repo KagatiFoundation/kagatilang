@@ -4,6 +4,7 @@
 use kagc_ast::record::*;
 use kagc_ast::*;
 use kagc_comp_unit::source_map::FileId;
+use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
@@ -1251,7 +1252,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 unreachable!("EOF not at end of token stream");
             }
             Some(self.advance())
-        } else {
+        }
+		else {
             self.diagnostics.push(Diagnostic::from_single_token(
                 &tok,
                 self.current_file,

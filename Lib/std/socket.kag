@@ -23,7 +23,7 @@ def create_socket(port: integer) -> integer {
 
 def listen_socket(fd: integer, backlog: integer) -> void {
     if (fd < 0) {
-        eprintln("Invalid socket file descriptor")
+        eprintln("Invalid socket file descriptor");
     }
 	else {
     	__KG_POSIX__listen_socket(fd, backlog);

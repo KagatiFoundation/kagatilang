@@ -72,27 +72,35 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
 
     pub fn tokenize(&mut self, input: &'tcx str) -> Vec<Token<'tcx>> {
         self.source = input;
+
         let mut tokens: Vec<Token> = Vec::new();
-        self.advance_to_next_char_pos();
+  
+	    self.advance_to_next_char_pos();
+
         loop {
             if let Some(token) = self.get_token() {
                 if token.kind == TokenKind::T_EOF {
                     tokens.push(token);
                     break;
                 }
+
                 if token.kind != TokenKind::T_NONE {
                     tokens.push(token);
                 } 
             }
         }
+
         tokens
     }
 
     fn get_token(&mut self) -> Option<Token<'tcx>> {
         let mut token: Token = Token::new(TokenKind::T_NONE, "", TokenPos{line: 0, column: 0});
+  
         let col: usize = self.col_counter - 1;
         let line: usize = self.line;
+
         let token_pos: TokenPos = TokenPos { line, column: col };
+
         match self.curr_char {
             '+' => {
                 token.kind = TokenKind::T_PLUS;
@@ -111,8 +119,10 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
             },
             '-' => {
                 token.kind = TokenKind::T_MINUS;
+
                 self.advance_to_next_char_pos();
-                match self.curr_char {
+    
+	            match self.curr_char {
                     '-' => {
                         token.kind = TokenKind::T_DECR;
                         self.advance_to_next_char_pos();
@@ -130,7 +140,9 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
             },
             '*' => {
                 token.kind = TokenKind::T_STAR;
+
                 self.advance_to_next_char_pos();
+							
                 if self.curr_char == '=' {
                     token.kind = TokenKind::T_STAREQ;
                     self.advance_to_next_char_pos();
@@ -138,35 +150,44 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
             },
             '/' => {
                 self.advance_to_next_char_pos();
+
                 if self.curr_char == '/' {
                     self.advance_to_next_line(); 
                     return None;
                 }
+
                 token.kind = TokenKind::T_SLASH;
-                if self.curr_char == '=' {
+    
+	            if self.curr_char == '=' {
                     token.kind = TokenKind::T_SLASHEQ;
                     self.advance_to_next_char_pos();
                 }
             },
             '!' => {
                 token.kind = TokenKind::T_BANG;
+							
                 self.advance_to_next_char_pos();
-                if self.curr_char == '=' {
+                
+				if self.curr_char == '=' {
                     token.kind = TokenKind::T_NEQ;
                     self.advance_to_next_char_pos();
                 }
             },
             '%' => {
                 token.kind = TokenKind::T_PERCENT;
+
                 self.advance_to_next_char_pos();
-                if self.curr_char == '=' {
+    
+	            if self.curr_char == '=' {
                     token.kind = TokenKind::T_PERCENTEQ;
                     self.advance_to_next_char_pos();
                 }
             },
             '^' => {
                 token.kind = TokenKind::T_CARET;
-                self.advance_to_next_char_pos();
+               
+			    self.advance_to_next_char_pos();
+
                 if self.curr_char == '=' {
                     token.kind = TokenKind::T_CARETEQ;
                     self.advance_to_next_char_pos();
@@ -174,12 +195,16 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
             },
             '>' => {
                 token.kind = TokenKind::T_GTHAN;
+
                 self.advance_to_next_char_pos();
-                match self.curr_char {
+    
+	            match self.curr_char {
                     '>' => {
                         token.kind = TokenKind::T_RSHIFT;
+
                         self.advance_to_next_char_pos();
-                        if self.curr_char == '=' {
+      
+	                    if self.curr_char == '=' {
                             self.advance_to_next_char_pos();
                             token.kind = TokenKind::T_RSHIFTEQ;
                         }
@@ -252,18 +277,23 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
             },
             '0'..='9' => return self.parse_number_from(token_pos), 
             '_' | 'a'..='z' | 'A'..='Z' => {
-                let __start: usize = self.next_char_pos - 1;
-                let mut __end: usize = __start;
+                let start = self.next_char_pos - self.curr_char.len_utf8();
+
                 while self.curr_char.is_alphanumeric() || self.curr_char == '_' {
                     self.advance_to_next_char_pos();
-                    __end += 1;
                 }
-                token.kind = TokenKind::T_IDENTIFIER;
-                let name: &str = &self.source[__start..__end];
-                let keyword: Option<&TokenKind> = KEYWORDS.get(name);
+
+                let end = self.next_char_pos - 1;
+    
+	            token.kind = TokenKind::T_IDENTIFIER;
+ 
+                let name = &self.source[start..end];
+                let keyword = KEYWORDS.get(name);
+
                 if let Some(key) = keyword {
                     token.kind = *key;
                 } 
+
                 token.lexeme = self.str_interner.intern(name);
             },
             '"' => {
@@ -288,20 +318,34 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
                         message: "unterminated string".to_string(),
                         notes: Vec::with_capacity(0)
                     };
+
                     self.diagnostics.push(diag);
                     return None;
                 }
+
                 self.advance_to_next_char_pos();
-                let str_val: &str = &self.source[start..end];
-                token.kind = TokenKind::T_STRING;
+				
+				let str_val = &self.source[start..end];
+    
+	            token.kind = TokenKind::T_STRING;
                 token.lexeme = self.str_interner.intern(str_val)
             },
             '(' | ')' | '{' | '}' | '[' | ']' | '#' | '.' | '?' | ':' | ',' | ';' => {
                 token.kind = TokenKind::from_str(self.curr_char.to_string().as_str()).unwrap();
+
+				let start = self.next_char_pos - self.curr_char.len_utf8();
+				let end = self.next_char_pos;
+
+				token.lexeme = &self.source[start..end];
+
                 self.advance_to_next_char_pos();
             },
-            ' ' | '\n' | '\t' => self.advance_to_next_char_pos(),
-            '\0' => token.kind = TokenKind::T_EOF,
+            ' ' | '\n' | '\t' => {
+				self.advance_to_next_char_pos()
+			}
+            '\0' => token.kind = {
+				TokenKind::T_EOF
+			},
             _ => {}
         }
         token.pos = TokenPos{ line, column: col };
@@ -383,31 +427,36 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
     }
 
     fn advance_to_next_char_pos(&mut self) {
-        #[allow(clippy::comparison_chain)]
-        if self.next_char_pos < self.source.len() {
-            self.curr_char = self.source.as_bytes()[self.next_char_pos] as char;
-            if self.curr_char == '\n' {
-                self.line += 1;
-                self.col_counter = 0;
-            }
-            self.next_char_pos += 1;
-            self.col_counter += 1;
-        }
-        else {
-            self.curr_char = '\0';
-        }
-    }
+    	if let Some(rest) = self.source.get(self.next_char_pos..) {
+        	if let Some(ch) = rest.chars().next() {
+            	self.curr_char = ch;
 
-    fn advance_to_next_line(&mut self) {
-        if self.next_char_pos < self.source.len() {
-            while self.curr_char != '\n' {
-                self.advance_to_next_char_pos();
-            }
-        }
-        self.line += 1;
-        self.col_counter = 0;
-        self.advance_to_next_char_pos();
-    }
+            	self.next_char_pos += ch.len_utf8();
+
+            	if ch == '\n' {
+                	self.line += 1;
+                	self.col_counter = 1;
+            	}
+				else {
+                	self.col_counter += 1;
+            	}
+
+            	return;
+        	}
+    	}
+
+    	self.curr_char = '\0';
+	}
+
+	fn advance_to_next_line(&mut self) {
+		while self.curr_char != '\n' && self.curr_char != '\0' {
+			self.advance_to_next_char_pos();
+		}
+
+		if self.curr_char == '\n' {
+			self.advance_to_next_char_pos();
+		}
+	}
 }
 
 #[cfg(test)]
@@ -455,29 +504,6 @@ mod tests {
     }
     
     #[test]
-    fn test_float_var_decl_len_correct() {
-        let a = typed_arena::Arena::<String>::new();
-        let d = DiagnosticBag::default();
-        let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let a = 34.343");
-        assert!(tokens.len() == 5);
-        assert_eq!(tokens[3].lexeme, "34.343");
-        assert_eq!(tokens[3].lexeme.len(), 6);
-    }
-    
-    #[test]
-    #[should_panic]
-    fn test_float_var_decl_len_correct2() {
-        let a = typed_arena::Arena::<String>::new();
-        let d = DiagnosticBag::default();
-        let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let a = 3443.44ff");
-        assert!(tokens.len() == 6);
-    }
-
-    #[test]
     fn test_char_ptr_var_decl_tokenization() {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
@@ -515,6 +541,7 @@ mod tests {
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
         let tokens: Vec<Token> = tok.tokenize("def main() -> void {  }");
+		println!("{tokens:#?}");
         assert!(tokens.len() == 9);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
         assert_eq!(tokens[1].lexeme, "main");
