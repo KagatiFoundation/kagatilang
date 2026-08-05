@@ -20,6 +20,11 @@ use kagc_comp_unit::ImportResolver;
 use kagc_comp_unit::source_map::{FileId, SourceMap};
 use kagc_comp_unit::CompUnit;
 
+pub enum CompilationStatus {
+	Success,
+	Error
+}
+
 pub struct CompilerPipeline<'tcx> {
     compilation_units: HashMap<String, CompUnit<'tcx>>,
     compile_order: Vec<String>,
@@ -54,7 +59,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         }
     }
 
-    pub fn compile(&mut self, entry_file: &str) -> Result<(), std::io::Error> {
+    pub fn compile(&mut self, entry_file: &str) -> CompilationStatus {
         self.resolve_dependencies(entry_file);
 
         let mut ty_checker = TypeChecker::new(self.scope_ctx, self.diagnostics);
@@ -80,13 +85,13 @@ impl<'tcx> CompilerPipeline<'tcx> {
 			  
 		if self.diagnostics.has_errors() {
         	self.diagnostics.report_all(self.source_map);
-			return Ok(());
+			return CompilationStatus::Error;
 		}
         
         let mir_mod = ast_lowerer.ir_builder.build();
         self.compile_mir_modules_into_asm(&mut [mir_mod]);
 
-        Ok(())
+        CompilationStatus::Success
     }
 
     fn resolve_dependencies(&mut self, file_path: &str) {

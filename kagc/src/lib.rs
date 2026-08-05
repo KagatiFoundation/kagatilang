@@ -3,8 +3,6 @@
 
 pub mod compiler;
 
-use std::io::Error;
-
 use compiler::CompilerPipeline;
 use kagc_comp_unit::SourceFile;
 use kagc_comp_unit::source_map::SourceMap;
@@ -17,7 +15,9 @@ use kagc_types::record::RecordType;
 use kagc_scope::Scope;
 use kagc_ctx::StringInterner;
 
-pub fn compile_file(file_name: &str) -> Result<(), Error> {
+use crate::compiler::CompilationStatus;
+
+pub fn compile_file(file_name: &str) -> CompilationStatus {
     let str_arena = typed_arena::Arena::<String>::new();
     let file_arena = typed_arena::Arena::<SourceFile>::new();
     let fun_arena = typed_arena::Arena::<Func<'_>>::new();

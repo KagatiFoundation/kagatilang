@@ -15,8 +15,6 @@ use kagc_symbol::function::INVALID_FUNC_ID;
 use kagc_types::TyKind;
 use kagc_utils::bug;
 
-pub(crate) type TypeCheckResult<'t> = Option<TyKind<'t>>;
-
 pub struct TypeChecker<'t, 'tcx> {
     diagnostics: &'t DiagnosticBag,
     scope: &'tcx ScopeCtx<'tcx>,
@@ -45,7 +43,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    fn check_node(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_node(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         match node.op {
             AstOp::VarDecl      => self.check_var_decl_stmt(node),
             AstOp::Func         => self.check_func_decl_stmt(node),
@@ -53,43 +51,46 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             AstOp::FuncCall     => self.check_function_call(node),
             AstOp::Loop         => self.check_loop_stmt(node),
             AstOp::If           => self.check_if_stmt(node),
-            AstOp::Import       => Some(TyKind::Void),
+            AstOp::Import       => TyKind::None,
             AstOp::RecDecl      => self.check_record_decl_stmt(node),
             AstOp::Block        => self.check_block_stmt(node),
 			AstOp::Assign		=> self.check_and_mutate_assignment_stmt(node),
             AstOp::None 
             | AstOp::Break
-			| AstOp::Continue   => Some(TyKind::None),
+			| AstOp::Continue   => TyKind::None,
             _ => panic!("Operation '{:#?}' not supported!", node.op)
         }
     }
 
-    fn check_block_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_block_stmt(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         let block_stmt = node.expect_block_stmt_mut(); // panic if the provided 'node' is not a block statement node
 
         for s in &mut block_stmt.statements {
-            self.check_node(s)?;
+            self.check_node(s);
         }
   
-        Some(TyKind::None)
+        TyKind::None
     }
 
-    fn check_function_call(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_function_call(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         let meta = node.meta.clone();
         let call_expr = node.expect_func_call_expr_mut();
         self.check_func_call_expr(call_expr, &meta)
     }
 
-    fn check_expr(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_expr(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         let meta = node.meta.clone();
         let Some(expr) = node.as_expr_mut() else {
             bug!("expected expr")
         };
-        node.ty = self.check_and_mutate_expr(expr, &meta);
-        node.ty
+
+		let resulting_type = self.check_and_mutate_expr(expr, &meta);
+        node.ty = Some(resulting_type);
+
+        resulting_type
     }
 
-    fn check_and_mutate_expr(&mut self, expr: &mut Expr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_and_mutate_expr(&mut self, expr: &mut Expr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
         match expr {
             Expr::LitVal(litexpr) => self.check_literal_expr(litexpr),
             Expr::Binary(binexpr) => self.check_bin_expr(binexpr, meta),
@@ -97,7 +98,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             Expr::FuncCall(funccallexpr) => self.check_func_call_expr(funccallexpr, meta),
             Expr::RecordCreation(recexpr) => self.check_rec_creation_expr(recexpr, meta),
             Expr::RecordFieldAccess(recfieldexpr) => self.check_record_field_access_expr(recfieldexpr, meta),
-            Expr::Null => Some(TyKind::Null),
+            Expr::Null => TyKind::Null,
             _ => todo!()
         }
     }
@@ -108,7 +109,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 		rhs: TyKind<'tcx>, 
         op: AstOp, 
 		meta: &NodeMeta
-    ) -> Option<TyKind<'tcx>> {
+    ) -> TyKind<'tcx> {
         match op {
             AstOp::Add 
 			| AstOp::Multiply
@@ -119,8 +120,8 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 			| AstOp::NEq
 			| AstOp::GThan => {
                 match (lhs, rhs) {
-                    (TyKind::I64, TyKind::I64) => return Some(TyKind::I64),
-                    (TyKind::U8, TyKind::U8) => return Some(TyKind::I64),
+                    (TyKind::I64, TyKind::I64) => return TyKind::I64,
+                    (TyKind::U8, TyKind::U8) => return TyKind::I64,
 					_ => {}
                 };
             }
@@ -138,7 +139,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             }
         );
 
-		None
+		TyKind::Error
     }
 
     pub fn is_type_coalesciable(src: TyKind, dest: TyKind) -> bool {
@@ -157,17 +158,15 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    fn check_bin_expr(&mut self, bin_expr: &mut BinExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
-        let left_type = self.check_and_mutate_expr(&mut bin_expr.left, meta)?;
-        let right_type = self.check_and_mutate_expr(&mut bin_expr.right, meta)?;
+    fn check_bin_expr(&mut self, bin_expr: &mut BinExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
+        let left_type = self.check_and_mutate_expr(&mut bin_expr.left, meta);
+        let right_type = self.check_and_mutate_expr(&mut bin_expr.right, meta);
 
-        let result_type = self.are_types_compatible(left_type, right_type, bin_expr.operation, meta)?;
-
-        bin_expr.ty = result_type;
-        Some(result_type)
+        bin_expr.ty = self.are_types_compatible(left_type, right_type, bin_expr.operation, meta);
+        bin_expr.ty
     }
 
-    fn check_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
         if let Some(rec_sym) = self.scope.lookup_sym(None, field_access.rec_alias) {
             if let SymTy::Record { name } = rec_sym.sym_ty.get() {
                 if let Some(rec) = self.scope.lookup_record(name) {
@@ -175,7 +174,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                         field_access.rel_stack_off = field.rel_stack_off;
                         field_access.ty = field.ty;
                         field_access.rec_name = rec.name;
-                        return Some(field.ty);
+                        return field.ty;
                     }
                 }
             }
@@ -190,7 +189,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                         notes: vec![]
                     }
                 );
-                return None;
+                return TyKind::Error;
             }
         }
         self.diagnostics.push(
@@ -203,23 +202,23 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                 notes: vec![]
             }
         );
-        None
+        TyKind::Error
     }
 
-    fn check_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_rec_creation_expr(&mut self, rec_expr: &mut RecordCreationExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
         for field in &mut rec_expr.fields {
-            let field_ty = self.check_and_mutate_expr(&mut field.value, meta)?;
+            let field_ty = self.check_and_mutate_expr(&mut field.value, meta);
             if field_ty == TyKind::None {
                 bug!("record's field expression evaluation resulted in type None")
             }
         }
-        Some(TyKind::Record { name: rec_expr.name })
+        TyKind::Record { name: rec_expr.name }
     }
 
-    fn check_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_ident_expr(&mut self, ident_expr: &mut IdentExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
         if let Some(ident) = self.scope.lookup_sym(None, ident_expr.sym_name) {
             ident_expr.ty = ident.ty.get();
-            Some(ident_expr.ty)
+            ident_expr.ty
         }
         else {
             self.diagnostics.push(
@@ -232,11 +231,13 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            None
+
+			ident_expr.ty = TyKind::Error;
+			TyKind::Error
         }
     }
 
-    fn check_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TypeCheckResult<'tcx> {
+    fn check_func_call_expr(&mut self, func_call: &mut FuncCallExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
         let Some(func_symbol) = self.scope.lookup_sym(None, func_call.symbol_name) else {
             self.diagnostics.push(
                 Diagnostic {
@@ -248,8 +249,9 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
+            return TyKind::Error;
         };
+
         if func_symbol.sym_ty.get() != SymTy::Function {
             self.diagnostics.push(
                 Diagnostic {
@@ -261,13 +263,15 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
+            return TyKind::Error;
         }
+
         let func_details = self
             .scope
             .lookup_fn_by_name(func_call.symbol_name)
             .unwrap()
             .clone();
+
         func_call.id = func_details.id.get();
         let func_param_types = func_details.param_types.clone();
 
@@ -284,7 +288,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         );            
 
         func_call.ty = func_details.ty;
-        Some(func_details.ty)        
+        func_details.ty
     }
 
     /// Check if the function arguments match the parameter types
@@ -307,10 +311,14 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         for (arg, param_type) in args.iter_mut().zip(param_types.iter()) {
-            let Some(expr_res) = self.check_and_mutate_expr(arg, meta) else {
-                panic!("Argument's result type cannot be determined")
-            };
+            let expr_res = self.check_and_mutate_expr(arg, meta);
+
+			if expr_res == TyKind::Error {
+				continue;
+			}
+
             let assignable = (expr_res == *param_type) || TypeChecker::is_type_coalesciable(expr_res, *param_type);
+
             if !assignable {
                 self.diagnostics.push(
                     Diagnostic {
@@ -326,18 +334,17 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
     }
 
-    fn check_literal_expr(&self, expr: &mut LitValExpr<'tcx>) -> TypeCheckResult<'tcx> {
-        let lit_ty = expr.value.kind();
-        expr.ty = lit_ty;
-        Some(lit_ty)
+    fn check_literal_expr(&self, expr: &mut LitValExpr<'tcx>) -> TyKind<'tcx> {
+        expr.ty = expr.value.kind();
+        expr.ty
     }
 
-    fn check_record_decl_stmt(&mut self, node: &AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_record_decl_stmt(&mut self, node: &AstNode<'tcx>) -> TyKind<'tcx> {
         let record_decl = node.expect_record_decl_stmt();
-        Some(TyKind::Record { name: record_decl.name })
+        TyKind::Record { name: record_decl.name }
     }
 
-    fn check_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_return_stmt(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         node.expect_return_stmt(); // make sure its a return statement
 
         // 'return' statements can appear only inside functions.
@@ -351,7 +358,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             
         // if return statement returns some value
         let found_ret_ty = if let Some(return_expr) = &mut node.left {
-            self.check_expr(return_expr)?
+            self.check_expr(return_expr)
         }
         else {
             TyKind::Void
@@ -377,15 +384,15 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
+            return TyKind::Error;
         }  
 
         let return_stmt = node.expect_return_stmt_mut();
         return_stmt.func_id = self.curr_func_id;
-        Some(found_ret_ty)
+        found_ret_ty
     }
 
-    fn check_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_func_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         let meta_span = node.meta.span;
         let func_decl = node.expect_func_decl_stmt_mut();
 
@@ -400,7 +407,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
+            return TyKind::Error;
         };
 
         let func_ty = func.ty;
@@ -422,10 +429,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
 
         self.curr_func_id = FuncId(INVALID_FUNC_ID);
-        Some(func_ty)
+        func_ty
     }
 
-    fn check_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_var_decl_stmt(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         let var_decl = node.expect_var_decl_stmt();
 
         let Some(var_sym) = self.scope.lookup_sym(None, var_decl.sym_name) else {
@@ -439,11 +446,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
+			return TyKind::Error;
         };
 
-        let var_value_type = self.check_expr(node.left.as_mut().unwrap())?;
-        let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta)?;
+        let var_value_type = self.check_expr(node.left.as_mut().unwrap());
+        let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta);
             
         if let TyKind::Record{ name } = &var_value_type {
             var_sym.sym_ty.replace(SymTy::Record { name });
@@ -452,13 +459,13 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         var_sym.function_id.replace(self.curr_func_id);
         node.ty = Some(var_type);
 
-        Some(var_type)
+        var_type
     }
 
 	fn check_and_mutate_assignment_stmt(
 		&mut self, 
 		node: &mut AstNode<'tcx>
-	) -> Option<TyKind<'tcx>> {
+	) -> TyKind<'tcx> {
 		let assign_stmt = node.expect_assignment_stmt();
 
 		let Some(sym) = self.scope.lookup_sym(None, assign_stmt.sym_name) else {
@@ -472,7 +479,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-			return None;
+			return TyKind::Error;
 		};
 
 		if let Some(left_tree) = &mut node.left {
@@ -481,7 +488,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 			self.check_and_mutate_expr(expr, &node_meta);
 		}
 
-		Some(sym.ty.get())
+		sym.ty.get()
 	}
 
     fn check_and_mutate_var_decl_stmt(
@@ -489,7 +496,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         var_decl_sym: &'tcx Sym<'tcx>, 
         expr_type: TyKind<'tcx>, 
         meta: &NodeMeta
-    ) -> Option<TyKind<'tcx>> {
+    ) -> TyKind<'tcx> {
         if (var_decl_sym.ty.get() != expr_type) && expr_type.is_compatible_with(&var_decl_sym.ty.get()) {
             self.diagnostics.push(
                 Diagnostic {
@@ -505,24 +512,26 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
+            return TyKind::Error;
         }
         match expr_type {
             TyKind::U8 | TyKind::I64 => { var_decl_sym.ty.replace(TyKind::I64); },
             TyKind::Str => { var_decl_sym.ty.replace(TyKind::Str); },
             _ => ()
         };
-        Some(expr_type)
+        
+		expr_type
     }
 
-    fn check_if_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_if_stmt(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         node.expect_if_stmt();
 
         // every 'if' has an expression attached with it in its left branch
         let Some(expr_node) = node.left.as_mut() else {
             bug!("an If node without an expression node in its left branch is invalid")
         };
-        let cond_res = self.check_expr(expr_node)?;
+
+        let cond_res = self.check_expr(expr_node);
 
         if cond_res != TyKind::I64 {
             self.diagnostics.push(
@@ -535,7 +544,6 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
                     notes: vec![]
                 }
             );
-            return None;
         }
 
         if let Some(if_body) = &mut node.mid {
@@ -545,7 +553,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(then_scope.id.get());
-            self.check_node(if_body)?;
+            self.check_node(if_body);
             self.scope.pop();
         }
 
@@ -557,13 +565,14 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(else_scope.id.get());
-            self.check_node(else_body)?;
+            self.check_node(else_body);
             self.scope.pop();
         }
-        Some(TyKind::None)
+
+        TyKind::None
     }
 
-    fn check_loop_stmt(&mut self, node: &mut AstNode<'tcx>) -> TypeCheckResult<'tcx> {
+    fn check_loop_stmt(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         node.expect_loop_stmt();
 
 		if let Some(loop_condition) = &mut node.right {
@@ -579,11 +588,11 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             };
 
             self.scope.enter(loop_scope.id.get());
-            self.check_node(loop_body)?;
+            self.check_node(loop_body);
             self.scope.pop();
         }
 
-        None
+        TyKind::None
     }
 }
 

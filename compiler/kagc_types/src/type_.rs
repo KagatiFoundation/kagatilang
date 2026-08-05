@@ -23,7 +23,9 @@ pub enum TyKind<'tcx> {
     },
 
     /// None type
-    None
+    None,
+
+	Error // indicate type-related errors
 }
 
 impl<'tcx> TyKind<'tcx> {
@@ -51,7 +53,8 @@ impl Display for TyKind<'_> {
             TyKind::Str | TyKind::PoolStr       => "string",
             TyKind::Array { len}        => &format!("array({len})"),
             TyKind::Record { name }      => &format!("record({name})"),
-            TyKind::None => unimplemented!(),
+            TyKind::None 						=> "(none)",
+            TyKind::Error 						=> "(error)",
         };
         write!(f, "{ty_str}")
     }

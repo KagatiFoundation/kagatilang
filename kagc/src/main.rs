@@ -22,10 +22,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-use std::io::Error;
-
 use kagc::compile_file;
+use kagc::compiler::CompilationStatus;
 
-fn main() -> Result<(), Error> {
-    compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/http_server.kag")
+fn main() {
+    if let CompilationStatus::Error = compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/http_server.kag") {
+		std::process::exit(1);
+	}
+	else {
+		std::process::exit(0);
+	}
 }

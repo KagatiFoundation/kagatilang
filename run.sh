@@ -15,9 +15,12 @@ if [ "$1" = "build" ]; then
 
 elif [ "$1" = "run" ]; then
     RUST_BACKTRACE=1 KAGC_PATH=$KG_PTH cargo run --bin kagc > main.S
-    gcc -o out main.S -L$STD_LIB_PATH -l$STD_LIB_NAME
-    export DYLD_LIBRARY_PATH=./:$DYLD_LIBRARY_PATH
-    ./out
+
+	if [ $? -eq 0 ]; then
+    	gcc -o out main.S -L$STD_LIB_PATH -l$STD_LIB_NAME
+    	export DYLD_LIBRARY_PATH=./:$DYLD_LIBRARY_PATH
+    	./out
+	fi
 else
     echo "Usage: $0 {build|run}"
     exit 1

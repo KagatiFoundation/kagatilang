@@ -358,7 +358,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         let prev_block_id = self.current_block_unchecked();
 		let loop_head_id = self.ir_builder.create_block("loop_head");
         let loop_body_id = self.ir_builder.create_block("loop_body");
-        let loop_tail_id = self.ir_builder.create_block("loop_exit");
+        let loop_tail_id = self.ir_builder.reserve_block("loop_exit");
 
         fn_ctx.enter_loop(IrLoopContext { head_block: loop_head_id, exit_block: loop_tail_id });
 
@@ -415,7 +415,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
         
         fn_ctx.exit_loop(); // exit the current loop
 
-        self.ir_builder.switch_to_block(loop_tail_id);
+        self.ir_builder.commit_and_switch_block(loop_tail_id);
         Ok(loop_tail_id)
     }
 
