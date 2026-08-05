@@ -4,7 +4,6 @@
 use kagc_ast::record::*;
 use kagc_ast::*;
 use kagc_comp_unit::source_map::FileId;
-use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
@@ -91,18 +90,34 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         }
 
         let mut nodes: Vec<AstNode> = vec![];
+
         loop {
             let peek_kind = self.peek().kind;
             if peek_kind == TokenKind::T_EOF {
                 break;
             }
-            match self.parse_single_stmt() {
+
+            match self.parse_top_level_decl() {
                 Some(stmt) => nodes.push(stmt),
                 None => break
             }
         }
+
         nodes
     }
+
+	fn parse_top_level_decl(&mut self) -> ParseOutput<'tcx> {
+		match self.peek().kind {
+			TokenKind::KW_IMPORT => self.parse_import_stmt(),
+			TokenKind::KW_DEF => self.parse_function_stmt(),
+			TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
+
+			_ => {
+				self.report_unexpected_token();
+				None
+			}
+		}
+	}
 
     /// Parses a single statement based on the current token.
     ///
@@ -126,14 +141,11 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::KW_BREAK => self.parse_break_stmt(),
             TokenKind::KW_CONTINUE => self.parse_continue_stmt(),
             TokenKind::T_IDENTIFIER => self.parse_assign_stmt_or_func_call(),
-            TokenKind::KW_DEF => self.parse_function_stmt(),
             TokenKind::KW_IF => self.parse_if_stmt(),
             TokenKind::KW_WHILE => self.parse_while_stmt(),
             TokenKind::KW_FOR => self.parse_for_stmt(),
             TokenKind::T_LBRACE => self.parse_block_stmt(),
             TokenKind::KW_LOOP => self.parse_loop_stmt(),
-            TokenKind::KW_IMPORT => self.parse_import_stmt(),
-            TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
             _ => {
                 self.report_unexpected_token();
                 None
@@ -215,9 +227,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_record_decl_stmt(&mut self) -> ParseOutput<'tcx> {
         let start_tok = self.consume(TokenKind::KW_RECORD, "'record' expected")?.pos;
+
         // expect name of the record
         let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
+
         _ = self.consume(TokenKind::T_LBRACE, "'{' expected");
+
         let mut rec_fields = vec![];
 
         while self.peek().kind != TokenKind::T_RBRACE {
@@ -239,6 +254,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             ),
             vec![]
         );
+
         Some(
             AstNode::leaf(
                 self.next_node_id(),
@@ -285,6 +301,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         self.advance();
         _ = self.consume(TokenKind::T_SEMICOLON, "';' expected");
+
         Some(
             RecordField { 
                 typ: id_type, 
@@ -317,6 +334,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             column: id_token.pos.column,
             line: id_token.pos.line
         };
+
         let func_name_end_pos = SourcePos {
             column: id_token.pos.column + id_token.lexeme.len(),
             line: id_token.pos.line

@@ -77,11 +77,15 @@ impl<'tcx> CompilerPipeline<'tcx> {
 
             ast_lowerer.lower_comp_unit(unit);
         }
+			  
+		if self.diagnostics.has_errors() {
+        	self.diagnostics.report_all(self.source_map);
+			return Ok(());
+		}
         
         let mir_mod = ast_lowerer.ir_builder.build();
         self.compile_mir_modules_into_asm(&mut [mir_mod]);
 
-        self.diagnostics.report_all(self.source_map);
         Ok(())
     }
 

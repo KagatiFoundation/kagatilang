@@ -1,0 +1,13 @@
+import "std/io";
+
+if (13 == 13) {
+	println("13 == 13 is true");
+}
+
+if (3 == 3) {
+	
+}
+
+def main() -> integer {
+	let a = 2122;
+}
