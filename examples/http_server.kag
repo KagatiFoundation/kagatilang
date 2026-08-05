@@ -1,9 +1,10 @@
 import "std/io";
 import "std/socket";
 import "std/process";
+import "std/string";
 
 def handle_client(fd: integer) -> void {
-    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><b>Hello World!</b></html>";
+    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 96\r\n\r\n<html><b>Hello World!</b></html>";
 
     write_socket(fd, response, strlen(response));
     close_socket(fd);

@@ -26,7 +26,7 @@ use kagc::compile_file;
 use kagc::compiler::CompilationStatus;
 
 fn main() {
-    if let CompilationStatus::Error = compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/http_server.kag") {
+    if let CompilationStatus::Error = compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/process_example.kag") {
 		std::process::exit(1);
 	}
 	else {
