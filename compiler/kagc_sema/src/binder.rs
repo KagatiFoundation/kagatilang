@@ -116,7 +116,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         if let Err(sym) = insert_res {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2001),
+                    code: Some(ErrCode::DuplicateSymbol),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: Vec::with_capacity(0),
@@ -160,7 +160,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             if let Err(sym) = self.scope.declare_sym(param_sym) {
                 self.diagnostics.push(
                     Diagnostic {
-                        code: Some(ErrCode::SEM2001),
+                        code: Some(ErrCode::DuplicateSymbol),
                         severity: Severity::Error,
                         primary_span: node.meta.span,
                         secondary_spans: Vec::with_capacity(0),
@@ -174,7 +174,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         if let Err(func) = self.scope.declare_fn(func_decl.name, func) {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2001),
+                    code: Some(ErrCode::DuplicateSymbol),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: Vec::with_capacity(0),
@@ -231,7 +231,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
         else {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2001),
+                    code: Some(ErrCode::DuplicateSymbol),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: Vec::with_capacity(0),
@@ -260,7 +260,7 @@ impl<'r, 'tcx> NameBinder<'r, 'tcx> where 'tcx: 'r {
             if self.scope.create_record(stmt.name, record_entry).is_err() {
                 self.diagnostics.push(
                     Diagnostic {
-                        code: Some(ErrCode::SEM2001),
+                        code: Some(ErrCode::DuplicateSymbol),
                         severity: Severity::Error,
                         primary_span: node.meta.span,
                         secondary_spans: Vec::with_capacity(0),

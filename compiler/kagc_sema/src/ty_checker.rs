@@ -129,7 +129,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 
         self.diagnostics.push(
             Diagnostic {
-                code: Some(ErrCode::TYP3002),
+                code: Some(ErrCode::TypeMismatch),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -182,7 +182,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             else {
                 self.diagnostics.push(
                     Diagnostic {
-                        code: Some(ErrCode::SEM2000),
+                        code: Some(ErrCode::UndefinedSymbol),
                         severity: Severity::Error,
                         primary_span: meta.span,
                         secondary_spans: vec![],
@@ -195,7 +195,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         }
         self.diagnostics.push(
             Diagnostic {
-                code: Some(ErrCode::SEM2000),
+                code: Some(ErrCode::UndefinedSymbol),
                 severity: Severity::Error,
                 primary_span: meta.span,
                 secondary_spans: vec![],
@@ -224,7 +224,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         else {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2000),
+                    code: Some(ErrCode::UndefinedSymbol),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -240,7 +240,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let Some(func_symbol) = self.scope.lookup_sym(None, func_call.symbol_name) else {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2000),
+                    code: Some(ErrCode::UndefinedSymbol),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -253,7 +253,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         if func_symbol.sym_ty.get() != SymTy::Function {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::TYP3000),
+                    code: Some(ErrCode::NotCallable),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -292,7 +292,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         if args.len() != param_types.len() {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::TYP3001),
+                    code: Some(ErrCode::ArgumentCountMismatch),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -314,7 +314,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             if !assignable {
                 self.diagnostics.push(
                     Diagnostic {
-                        code: Some(ErrCode::TYP3002),
+                        code: Some(ErrCode::TypeMismatch),
                         severity: Severity::Error,
                         primary_span: meta.span,
                         secondary_spans: vec![],
@@ -365,7 +365,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         if missing_ret || incompatible_ret {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::TYP3002),
+                    code: Some(ErrCode::TypeMismatch),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
@@ -392,7 +392,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let Some(func) = self.scope.lookup_fn_by_name(func_decl.name) else {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2000),
+                    code: Some(ErrCode::UndefinedSymbol),
                     severity: Severity::Error,
                     primary_span: meta_span,
                     secondary_spans: vec![],
@@ -431,7 +431,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         let Some(var_sym) = self.scope.lookup_sym(None, var_decl.sym_name) else {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2000),
+                    code: Some(ErrCode::UndefinedSymbol),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
@@ -464,7 +464,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 		let Some(sym) = self.scope.lookup_sym(None, assign_stmt.sym_name) else {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::SEM2000),
+                    code: Some(ErrCode::UndefinedSymbol),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],
@@ -493,7 +493,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         if (var_decl_sym.ty.get() != expr_type) && expr_type.is_compatible_with(&var_decl_sym.ty.get()) {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::TYP3003),
+                    code: Some(ErrCode::AssignmentTypeMismatch),
                     severity: Severity::Error,
                     primary_span: meta.span,
                     secondary_spans: vec![],
@@ -527,7 +527,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         if cond_res != TyKind::I64 {
             self.diagnostics.push(
                 Diagnostic {
-                    code: Some(ErrCode::TYP3002),
+                    code: Some(ErrCode::TypeMismatch),
                     severity: Severity::Error,
                     primary_span: node.meta.span,
                     secondary_spans: vec![],

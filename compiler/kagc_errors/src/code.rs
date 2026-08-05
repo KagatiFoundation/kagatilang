@@ -1,35 +1,38 @@
 #[derive(Debug, Clone)]
 pub enum ErrCode {
     /// Missing semicolon
-    SYN1000     = 1000,
+    ExpectedSemicolon     		= 1000,
 
     /// Invalid numeric type
-    SYN1001     = 1001,
+    InvalidNumericLiteral     	= 1001,
 
 	/// Invalid syntax
-	SYN1002		= 1002,
+	InvalidSyntax				= 1002,
+
+	/// Unterminated string
+	UnterminatedString			= 1003,
 
     /// Symbol not found
-    SEM2000     = 2000,
+    UndefinedSymbol     		= 2000,
 
     /// Symbol already defined
-    SEM2001     = 2001,
+    DuplicateSymbol     		= 2001,
 
     /// Non-callable type
-    TYP3000     = 3000,
+    NotCallable     			= 3000,
 
     /// Argument length does not match
-    TYP3001     = 3001,
+    ArgumentCountMismatch     	= 3001,
 
     /// Types are not compatible
-    TYP3002     = 3002,
+    TypeMismatch     			= 3002,
 
     /// Assignment type mismatch
-    TYP3003     = 3003,
+    AssignmentTypeMismatch     = 3003,
 
     /// Unknown field
-    REC4000     = 4000,
+	UnknownField     		   = 4000,
 
     /// Missing field
-    REC4001     = 4001
+    MissingField     		   = 4001
 }

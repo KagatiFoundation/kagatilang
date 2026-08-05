@@ -154,7 +154,21 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn expect_semicolon(&mut self) {
-        _ = self.consume(TokenKind::T_SEMICOLON, "';' expected");
+		if self.peek().kind == TokenKind::T_SEMICOLON {
+			self.advance();
+		}
+		else {
+			let previous = self.previous();
+
+			let error = Diagnostic::missing_token(
+			    &previous,
+    			self.current_file,
+    			"expected ';' after statement",
+    			Severity::Error
+			);
+
+			self.diagnostics.push(error);
+		}
     }
 
     // parse a block statement(statement starting with '{' and ending with '}')
@@ -652,7 +666,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         if let Some(cond_ast) = &cond_ast {
             if (cond_ast.op < AstOp::EqEq) || (cond_ast.op > AstOp::LThan) {
 				let diag = Diagnostic {
-					code: Some(kagc_errors::code::ErrCode::SYN1002),
+					code: Some(kagc_errors::code::ErrCode::InvalidSyntax),
 					severity: Severity::Error,
 					primary_span: *kagc_span::span::HasSpan::span(cond_ast),
 					secondary_spans: vec![],
@@ -1270,6 +1284,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     fn peek(&self) -> Token<'tcx> {
         *self.tokens.get(self.current).unwrap_or(self.tokens.last().unwrap())
     }
+
+	fn previous(&self) -> Token<'tcx> {
+		*self.tokens.get(self.current - 1).unwrap_or(&self.peek())
+	}
 
     /// Look ahead N tokens
     fn look_ahead(&self, distance: usize) -> Token<'tcx> {

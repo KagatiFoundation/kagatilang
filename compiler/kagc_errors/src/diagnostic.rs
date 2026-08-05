@@ -39,7 +39,7 @@ impl Diagnostic {
             },
             SourcePos {
                 line: start_pos.line,
-                column: start_pos.column + lexeme.len()
+                column: start_pos.column + lexeme.chars().count()
             }
         );
         Self {
@@ -51,6 +51,36 @@ impl Diagnostic {
             notes: vec![]
         }
     }
+
+	pub fn missing_token(
+		tok: &Token,
+		file: FileId,
+		msg: &str,
+		severity: Severity
+	) -> Self {
+		let column = tok.pos.column + tok.lexeme.chars().count();
+
+		let span = Span::new(
+			file.0,
+			SourcePos {
+				line: tok.pos.line,
+				column,
+			},
+			SourcePos {
+				line: tok.pos.line,
+				column,
+			}
+		);
+
+		Self {
+			code: None,
+			message: msg.to_string(),
+			severity,
+			primary_span: span,
+			secondary_spans: vec![],
+			notes: vec![]
+		}
+	}
 
     pub fn report(&self, source_map: &SourceMap) {
         let source_file = source_map.get(FileId(self.primary_span.file_id))
@@ -73,12 +103,34 @@ impl Diagnostic {
 
         // print the source line
         let source_line = source_lines.get(line_num - 1).unwrap_or(&"");
-        eprintln!("{: >4} | {}", line_num, source_line);
+		let expanded = Self::expand_tabs(source_line);
+
+        eprintln!("{: >4} | {}", line_num, expanded);
 
         // print caret repeated to match token length
         let caret_line = " ".repeat(col_num) + &"^".repeat(span_len.max(1));
         eprintln!("     |{}", caret_line);
     }
+
+	fn expand_tabs(line: &str) -> String {
+		let tab_width = 4;
+
+		let mut out = String::new();
+		let mut col = 0;
+
+		for ch in line.chars() {
+			if ch == '\t' {
+				let spaces = tab_width - (col % tab_width);
+				out.extend(std::iter::repeat_n(' ', spaces));
+				col += spaces;
+			} else {
+				out.push(ch);
+				col += 1;
+			}
+		}
+
+		out
+	}
 }
 
 #[derive(Debug, Default, Clone)]
