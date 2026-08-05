@@ -2,7 +2,7 @@ import "std/process";
 import "std/string";
 
 def main() -> void {
-    let pid = execute("ls", "-la");
+    let pid = execute("", "-la");
 
     if (pid != 1000) {
         let status = wait_process(pid);

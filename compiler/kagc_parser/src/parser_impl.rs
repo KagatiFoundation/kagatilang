@@ -37,9 +37,6 @@ pub struct Parser<'p, 'tcx> where 'tcx: 'p {
     /// Counter which points to the current token index.
     current: usize,
 
-    /// Label generator that is going to be used by string literals only.
-    _str_label_: usize,
-
     current_file: FileId,
 
     pub diagnostics: &'p DiagnosticBag,
@@ -56,7 +53,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         Self {
             tokens,
             current: 0,
-            _str_label_: 0,
             current_file: FileId(0),
             options,
             diagnostics: diags,

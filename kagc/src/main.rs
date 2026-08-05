@@ -26,10 +26,22 @@ use kagc::compile_file;
 use kagc::compiler::CompilationStatus;
 
 fn main() {
-    if let CompilationStatus::Error = compile_file("/Users/rigelstar/KagatiFoundation/kagatilang/examples/process_example.kag") {
-		std::process::exit(1);
-	}
-	else {
-		std::process::exit(0);
-	}
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("usage: kagc <source_file>");
+        std::process::exit(1);
+    }
+
+    let file = &args[1];
+
+    match compile_file(file) {
+        CompilationStatus::Error => {
+            std::process::exit(1);
+        }
+
+        CompilationStatus::Success => {
+            std::process::exit(0);
+        }
+    }
 }

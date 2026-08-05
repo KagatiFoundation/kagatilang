@@ -1,0 +1,9 @@
+def extern __KG_POSIX__sleep(milli: integer) -> void;
+
+def sleep(s: integer) -> void {
+	if (s < 0) {
+		return;
+	}
+
+	__KG_POSIX__sleep(s);
+}

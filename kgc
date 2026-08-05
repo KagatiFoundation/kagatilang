@@ -1,0 +1,40 @@
+#!/bin/sh
+
+KG_PTH=$(pwd)/Lib
+KAGC=./target/release/kagc
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    STD_LIB_PATH=/tmp/kaglang
+    STD_LIB_NAME=kag
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    STD_LIB_PATH=/tmp/kaglang
+    STD_LIB_NAME=kag
+fi
+
+if [ "$#" -lt 2 ]; then
+    echo "Usage: $0 {build|run} <file>"
+    exit 1
+fi
+
+COMMAND=$1
+SOURCE=$2
+
+if [ "$COMMAND" = "build" ]; then
+    KAGC_PATH=$KG_PTH $KAGC "$SOURCE"
+
+elif [ "$COMMAND" = "run" ]; then
+    KAGC_PATH=$KG_PTH $KAGC "$SOURCE" > main.S
+
+    if [ $? -eq 0 ]; then
+        gcc -o out main.S -L"$STD_LIB_PATH" -l"$STD_LIB_NAME"
+
+        if [ $? -eq 0 ]; then
+            export DYLD_LIBRARY_PATH=./:$DYLD_LIBRARY_PATH
+            ./out
+        fi
+    fi
+
+else
+    echo "Usage: $0 {build|run} <file>"
+    exit 1
+fi

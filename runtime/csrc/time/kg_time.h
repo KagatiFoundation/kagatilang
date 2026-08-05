@@ -1,0 +1,1 @@
+void __KG_POSIX__sleep(int s);
