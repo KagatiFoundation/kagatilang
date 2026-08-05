@@ -159,19 +159,37 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     // parse a block statement(statement starting with '{' and ending with '}')
     fn parse_block_stmt(&mut self) -> ParseOutput<'tcx> {
-        self.consume(TokenKind::T_LBRACE, "'{' expected")?; // parse and ignore '{'
+        let open_brace = self.consume(TokenKind::T_LBRACE, "'{' expected")?; // parse and ignore '{'
 
         let mut statements = vec![];
 
         loop {
-            if self.peek().kind == TokenKind::T_RBRACE {
-                self.consume(TokenKind::T_RBRACE, "'}' expected")?;
-                break;
-            }
+			match self.peek().kind {
+				TokenKind::T_RBRACE => {
+                	self.consume(TokenKind::T_RBRACE, "'}' expected")?;
+                	break;
+				},
 
-            if let Some(statement) = self.parse_single_stmt() {
-                statements.push(statement);
-            }
+				TokenKind::T_EOF => {
+					let missing_closing_brace_err = Diagnostic::from_single_token(
+						&open_brace, 
+						self.current_file, 
+						"unclosed block", 
+						Severity::Error
+					);
+
+					self.diagnostics.push(missing_closing_brace_err);
+					return None;
+				},
+
+				_ => {
+					if let Some(statement) = self.parse_single_stmt() {
+						statements.push(statement);
+					} else {
+						return None;
+					}
+				}
+			}
         }
 
         if statements.is_empty() {
