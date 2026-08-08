@@ -1,9 +1,14 @@
 import "std/io";
 
-def main() -> void {
-	let a = -1234;
-	print_int(a);
+def check_if_prime(x: integer) -> integer {
+	if (x == 3) {
+		return 0;
+	}
 
-	let neg = -(1 + 2) - (9) + (2 * 3);
-	print_int(neg);
+	return -1;
+}
+
+def main() -> void {
+	let prime = check_if_prime(9);
+	print_int(prime);
 }

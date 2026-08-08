@@ -8,12 +8,12 @@ use kagc_token::{FromTokenKind, TokenKind};
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub enum AstOp {
     // below this are relational operators
-    EqEq = 0,  // equal equal
-    NEq,   // not equal
-    LtEq,  // less than or equal to
-    GtEq,  // greate than equal to
-    GThan, // greater than
-    LThan, // less than
+    EqEq 	= 1,  	// equal equal
+    NEq		= 2,   	// not equal
+    LtEq	= 3,  	// less than or equal to
+    GtEq	= 4,  	// greate than equal to
+    GThan	= 5, 	// greater than
+    LThan	= 6, 	// less than
 
     None,     // used as a placeholder
     Add = 10, // an AST node with "+" as the root node

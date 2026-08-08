@@ -662,28 +662,29 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         )
     }
 
-    // parses tokens that are in the form '(expression [< | > | >= | <= | == | !=] expression)'
     fn parse_conditional_stmt(&mut self, kind: TokenKind) -> ParseOutput<'tcx> {
-        _ = self.consume(kind, &format!("'{k}' expected ", k = kind.as_str()))?;
-        _ = self.consume(TokenKind::T_LPAREN, "'(' expected")?; // match and ignore '('
+        self.consume(kind, &format!("'{k}' expected ", k = kind.as_str()))?;
 
-        let cond_ast = self.parse_equality();
+        self.consume(TokenKind::T_LPAREN, "'(' expected")?;
 
-        if let Some(cond_ast) = &cond_ast {
-            if (cond_ast.op < AstOp::EqEq) || (cond_ast.op > AstOp::LThan) {
-				let diag = Diagnostic {
-					code: Some(kagc_errors::code::ErrCode::InvalidSyntax),
-					severity: Severity::Error,
-					primary_span: *kagc_span::span::HasSpan::span(cond_ast),
-					secondary_spans: vec![],
-					message: "invalid values for a relational operator".to_string(),
-					notes: vec![]
-				};
-				self.diagnostics.push(diag);
-            }
+        let cond_ast = self.parse_equality()?;
+
+        if (cond_ast.op < AstOp::EqEq) || (cond_ast.op > AstOp::LThan) {
+			let diag = Diagnostic {
+				code: Some(ErrCode::InvalidSyntax),
+				severity: Severity::Error,
+				primary_span: *kagc_span::span::HasSpan::span(&cond_ast),
+				secondary_spans: vec![],
+				message: "invalid values for a relational operator".to_string(),
+				notes: vec![]
+			};
+
+			self.diagnostics.push(diag);
         }
-        _ = self.consume(TokenKind::T_RPAREN, "')' expected")?; // match and ignore ')'
-        cond_ast
+			  
+       	self.consume(TokenKind::T_RPAREN, "')' expected")?;
+
+        Some(cond_ast)
     }
 
     /// Parses a variable declaration statement.
@@ -986,44 +987,43 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn try_parsing_binary(&mut self, left: AstNode<'tcx>, tokens: Vec<TokenKind>) -> ParseOutput<'tcx> {
         let current_token_kind = self.peek().kind;
+
         if !tokens.contains(&current_token_kind) {
             return Some(left);
         }
 
-        // start of the expression             
         let span_start = left.meta.span;
 
-        _ = self.advance(); // skip the operator
+        self.advance(); // skip the operator
 
-        let ast_op = AstOp::from_token_kind(current_token_kind).unwrap(); // DANGEROUS unwrap CALL
+		let Some(ast_op) = AstOp::from_token_kind(current_token_kind) else {
+			panic!("invalid token to Ast operation conversion. token: {:#?}", self.peek());
+		};
+
         let right = self.parse_equality()?;
+
         let left_expr = left.kind.expr().unwrap();
         let right_expr = right.kind.expr().unwrap();
 
-        // end of the expression
         let span_end = right.meta.span;
-
-        let combined_span = Span {
-            file_id: self.current_file.0,
-            start: span_start.start,
-            end: span_end.end
-        };
 
         Some(
             AstNode::leaf(
                 self.next_node_id(),
                 NodeKind::ExprAST(
-                    Expr::Binary(BinExpr {
-                        operation: ast_op,
-                        left: Box::new(left_expr),
-                        right: Box::new(right_expr),
-                        ty: TyKind::None,
-                    })
+                    Expr::Binary(
+						BinExpr {
+							operation: ast_op,
+							left: Box::new(left_expr),
+							right: Box::new(right_expr),
+							ty: TyKind::None,
+						}
+					)
                 ),
                 ast_op,
                 None,
                 NodeMeta::new(
-                    combined_span,
+                    span_start.covering(&span_end),
                     vec![]
                 )
             )
@@ -1048,8 +1048,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             vec![]
         );
 
-        let primary_expr_ast = match current_token.kind {
+        match current_token.kind {
             TokenKind::T_INT_NUM => {
+				self.advance();
+
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
@@ -1061,6 +1063,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             },
 
             TokenKind::T_CHAR => {
+				self.advance();
+
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
@@ -1072,6 +1076,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             },
 
             TokenKind::T_LONG_NUM => {
+				self.advance();
+
                 Some(
                     Parser::create_expr_ast(
                         self.next_node_id(),
@@ -1083,17 +1089,21 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             },
 
             TokenKind::T_FLOAT_NUM | TokenKind::T_DOUBLE_NUM => {
-               Some(
-                    Parser::create_expr_ast(
-                        self.next_node_id(),
-                        Literal::F64(current_token.lexeme.parse::<f64>().unwrap()),
-                        AstOp::IntLit,
-                        single_token_meta
-                    )
+				self.advance();
+
+               	Some(
+					Parser::create_expr_ast(
+						self.next_node_id(),
+						Literal::F64(current_token.lexeme.parse::<f64>().unwrap()),
+						AstOp::IntLit,
+						single_token_meta
+					)
                 ) 
             },
 
             TokenKind::T_STRING => { 
+				self.advance();
+
                 Some(
 					AstNode::leaf(
 						self.next_node_id(),
@@ -1113,25 +1123,16 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             }
 
             TokenKind::T_IDENTIFIER => {
-                // Identifiers in a global variable declaration expression are not allowed.
-                if current_token.kind == TokenKind::T_NONE {
-                    self.diagnostics.push(
-						Diagnostic::from_single_token(
-							&self.peek(), 
-							"initializer not a constant",
-							Severity::Error
-                    	)
-					);
-                    return None;
-                }
-                
-                let symbol_name = current_token.lexeme;
-                let curr_tok_kind: TokenKind = self.peek().kind;
+				let id_token = self.advance();
 
-                if curr_tok_kind == TokenKind::T_LPAREN {
+                let symbol_name = id_token.lexeme;
+
+                let current_tok_kind = self.peek().kind;
+
+                if current_tok_kind == TokenKind::T_LPAREN {
                     self.parse_func_call_expr(symbol_name, &current_token)
                 } 
-                else if curr_tok_kind == TokenKind::T_DOT {
+                else if current_tok_kind == TokenKind::T_DOT {
                     self.parse_record_field_access_expr(symbol_name, &current_token)
                 }
                 else {
@@ -1163,12 +1164,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 // group expression terminates with ')'
                 self.consume(TokenKind::T_RPAREN, "')' expected")?;
 				
-                return Some(group_expr); 
-				
+                Some(group_expr)
             },
 
             // null type
             TokenKind::KW_NULL => {
+				self.advance();
+
                 Some(
 					AstNode::leaf(
 						self.next_node_id(),
@@ -1183,15 +1185,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 self.report_unexpected_token(current_token);
                 None
             }
-        };
-
-		if primary_expr_ast.is_some() {
-			self.advance();
-			primary_expr_ast
-		}
-		else {
-			None
-		}
+        }
     }
 
     fn parse_identifier(&mut self) -> ParseOutput<'tcx> {
