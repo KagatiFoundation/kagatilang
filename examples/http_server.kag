@@ -6,14 +6,14 @@ import "std/string";
 def handle_client(fd: integer) -> void {
     let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 96\r\n\r\n<html><b>Hello World!</b></html>";
 
-    write_socket(fd, response, strlen(response));
+    write_socket(fd, response, 96);
     close_socket(fd);
 }
 
 def main() -> void {
     let server = create_socket(8080);
 
-    if (server == 0) {
+    if (server < 0) {
         eprintln("Failed to create socket");
         exit(1);
     }
@@ -26,7 +26,7 @@ def main() -> void {
         let client = accept_socket(server);
 		println("New client...");
 
-        if (client != 0) {
+        if (client != -1) {
             handle_client(client);
         }
     }

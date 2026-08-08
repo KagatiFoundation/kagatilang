@@ -9,6 +9,10 @@ def check_if_prime(x: integer) -> integer {
 }
 
 def main() -> void {
-	let prime = check_if_prime(9);
-	print_int(prime);
+	let pos = 569;
+	let neg = -pos;
+
+	print_int(neg + pos);
+	print_int(pos + 1);
+	print_int(-neg - 1);
 }

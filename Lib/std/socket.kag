@@ -12,10 +12,10 @@ def extern __KG_POSIX__close_socket(fd: integer) -> void;
 
 def create_socket(port: integer) -> integer {
     if (port < 0) {
-        return 0;
+        return -1;
     }
     if (port > 65535) {
-        return 0;
+        return -1;
     }
 	let result =  __KG_POSIX__create_socket(port);
 	return result;

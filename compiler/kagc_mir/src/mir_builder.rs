@@ -301,7 +301,11 @@ impl<'tcx> IrBuilder<'tcx> {
     }
 
 	pub fn create_negate(&mut self, value: IrValue) -> IrValueId {
-        let result = self.next_value_id();
+        let result = match value {
+			IrValue::Register(r) => r,
+			_ => self.next_value_id(),
+		};
+
         self.inst(IrInstruction::Neg { result, value })
             .expect("create_negate: no value ID created")
 	}

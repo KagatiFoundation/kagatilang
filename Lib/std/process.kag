@@ -18,14 +18,14 @@ def extern __KG_POSIX__wait_process(pid: integer) -> integer;
 def execute(program: string, args: string) -> integer {
     if (strlen(program) == 0) {
         eprintln("Program name cannot be empty");
-        return 1000;
+        return -1;
     }
 
     let pid = __KG_POSIX__execute(program, args);
 
     if (pid < 0) {
         eprintln("Failed to execute process");
-        return 1000;
+        return -1;
     }
 
     return pid;
@@ -35,7 +35,7 @@ def execute(program: string, args: string) -> integer {
 def wait_process(pid: integer) -> integer {
     if (pid < 0) {
         eprintln("Invalid process id");
-        return 1000;
+        return -1;
     }
 
     let status = __KG_POSIX__wait_process(pid);
