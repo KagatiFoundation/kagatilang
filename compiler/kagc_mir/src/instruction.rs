@@ -63,6 +63,11 @@ pub enum IrInstruction {
         lhs: IrValue,
         rhs: IrValue
     },
+
+	Neg {
+		result: IrValueId,
+		value: IrValue,
+	},
     
     Store {
         src: IrValueId,
@@ -127,6 +132,7 @@ impl IrInstruction {
             IrInstruction::Subtract     { result, .. } |
             IrInstruction::Divide       { result, .. } |
             IrInstruction::Multiply     { result, .. } |
+            IrInstruction::Neg     		{ result, .. } |
             IrInstruction::Cmp  		{ result, .. } |
             IrInstruction::LoadGlobal   { result, .. } => Some(*result),
             IrInstruction::Call         { result, .. } |
@@ -155,6 +161,11 @@ impl IrInstruction {
             }
             IrInstruction::Load { result, .. } => {
                 defs.push(*result);
+            }
+            IrInstruction::Neg { result, value } => {
+                defs.push(*result);
+
+                if let IrValue::Register(v) = value { uses.push(*v); }
             }
             IrInstruction::Store { src, .. } => {
                 uses.push(*src);

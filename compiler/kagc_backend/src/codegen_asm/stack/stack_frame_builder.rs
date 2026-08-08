@@ -46,12 +46,14 @@ impl StackFrameBuilder {
 
 	fn visit_instruction(instruction: &IrInstruction, frame: &mut StackFrame) {
 		 match instruction {
-			IrInstruction::Mov { result, .. } => {
-				frame.allocate(StackObject::Value(*result), 0x8);
-			},
 			IrInstruction::Add { result, .. }
+			| IrInstruction::Mov { result, .. }
 			| IrInstruction::Subtract { result, .. }
 			| IrInstruction::Multiply { result, .. }
+			| IrInstruction::Load { result, .. }
+			| IrInstruction::Cmp { result, .. }
+			| IrInstruction::Neg { result, .. }
+			| IrInstruction::LoadConst { result, .. }
 			| IrInstruction::Divide { result, .. } => {
 				frame.allocate(StackObject::Value(*result), 0x8);
 			}
@@ -59,15 +61,6 @@ impl StackFrameBuilder {
 				let IrLocation::Variable(var_id) = *location;
 
 				frame.allocate_variable(var_id, 0x8);
-			}
-			IrInstruction::Load { result, .. } => {
-				frame.allocate(StackObject::Value(*result), 0x8);
-			}
-			IrInstruction::LoadConst { result, .. } => {
-				frame.allocate(StackObject::Value(*result), 0x8);
-			}
-			IrInstruction::Cmp { result, .. } => {
-				frame.allocate(StackObject::Value(*result), 0x8);
 			}
 			IrInstruction::Param { var_id, .. } => {
 				frame.allocate_variable(*var_id, 0x8);

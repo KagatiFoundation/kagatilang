@@ -1,0 +1,9 @@
+import "std/io";
+
+def main() -> void {
+	let a = -1234;
+	print_int(a);
+
+	let neg = -(1 + 2) - (9) + (2 * 3);
+	print_int(neg);
+}

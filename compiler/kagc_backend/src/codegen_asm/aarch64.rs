@@ -128,6 +128,7 @@ impl<'cg> CodeGenerator for Aarch64CodeGenerator<'cg> {
 			IrInstruction::Subtract    { result, lhs, rhs } => self.emit_subtract(*lhs, *rhs, *result),
 			IrInstruction::Multiply    { result, lhs, rhs } => self.emit_multiply(*lhs, *rhs, *result),
 			IrInstruction::Cmp 		   { result, lhs, rhs, condition } => self.emit_conditional(*lhs, *rhs, *result, *condition),
+			IrInstruction::Neg   	   { result, value } => self.emit_neg(*value, *result),
 			IrInstruction::Store       { src, location } => self.emit_store(*src, *location),
 			IrInstruction::Load        { location, result } => self.emit_load(*location, *result),
 			IrInstruction::Call        { func, args, result } => self.emit_call(func, args, *result),
@@ -289,6 +290,19 @@ impl<'cg> Aarch64CodeGenerator<'cg> {
 
 	fn emit_mov(&mut self, src: IrValue, result: IrValueId) {
 		self.load_operand(src, &SCRATCH_REGISTER_0.name);
+		self.store_result(result);
+	}
+
+	fn emit_neg(&mut self, value: IrValue, result: IrValueId) {
+		self.load_operand(value, &SCRATCH_REGISTER_0.name);
+
+		self.push_code(
+			format!(
+				"neg {sr1}, {sr1}",
+				sr1 = SCRATCH_REGISTER_0.name,
+			)
+		);
+
 		self.store_result(result);
 	}
 

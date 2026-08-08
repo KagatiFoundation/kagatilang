@@ -12,8 +12,11 @@ use crate::sym::StorageClass;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct FuncId(pub usize);
 
-/// Invalid function id
-pub const INVALID_FUNC_ID: usize = 0xFFFFFFFD;
+impl FuncId {
+	pub fn invalid() -> Self {
+		Self(0xFFFFFFFF)
+	}
+}
 
 /// Represents a function parameter in the symbol table.
 #[derive(Clone, Debug)]
@@ -43,7 +46,7 @@ impl<'tcx> Func<'tcx> {
     ) -> Self {
         Self {
             name, 
-            id: Cell::new(FuncId(INVALID_FUNC_ID)),
+            id: Cell::new(FuncId::invalid()),
             ty, 
             params,
             storage_class,

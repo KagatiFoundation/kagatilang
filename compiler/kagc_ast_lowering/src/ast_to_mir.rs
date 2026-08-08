@@ -224,6 +224,7 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             Expr::Ident(ident_expr) => self.lower_identifier_expr(ident_expr, fn_ctx),
             Expr::Binary(bin_expr) => self.lower_binary_expr(bin_expr, fn_ctx),
             Expr::FuncCall(func_call_expr) => self.lower_function_call_expr(func_call_expr, fn_ctx),
+            Expr::Unary(unary_expr) => self.lower_unary_expr(unary_expr, fn_ctx),
             // Expr::RecordFieldAccess(rec_field_access) => self.lower_record_field_access_expr(rec_field_access, fn_ctx),
             // Expr::RecordCreation(rec_create_expr) => self.lower_record_creation_expr(rec_create_expr, fn_ctx),
             _ => unimplemented!()
@@ -287,6 +288,14 @@ impl<'a, 'tcx> AstToMirLowerer<'a, 'tcx> {
             _ => unimplemented!("{lit_expr:#?}")
         }
     }
+
+	fn lower_unary_expr(&mut self, unary_expr: &mut UnaryExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
+		let unary_value_id = self.lower_expression(&mut unary_expr.expr, fn_ctx)?;
+
+		let result_id = self.ir_builder.create_negate(IrValue::Register(unary_value_id));
+
+		Ok(result_id)
+	}
 
     fn lower_identifier_expr(&mut self, ident_expr: &IdentExpr, fn_ctx: &mut IrFunctionContext) -> ExprLoweringResult {
         let sym = self

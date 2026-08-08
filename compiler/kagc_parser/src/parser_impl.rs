@@ -499,7 +499,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     NodeKind::StmtAST(
                         Stmt::Return(
                             ReturnStmt {
-                                func_id: FuncId(INVALID_ID),
+                                func_id: FuncId::invalid(),
                             }
                         )
                     ),
@@ -953,11 +953,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 						AstNode::leaf(
 							self.next_node_id(),
 							NodeKind::ExprAST(
-								Expr::Unary(UnaryExpr {
-									op: UnaryOp::Neg,
-									expr: Box::new(expr.kind.expr().unwrap()),
-									ty: TyKind::None,
-								})
+								Expr::Unary(
+									UnaryExpr {
+										op: UnaryOp::Neg,
+										expr: Box::new(expr.kind.expr().unwrap()),
+										ty: TyKind::None,
+									}
+								)
 							),
 							AstOp::Unary,
 							None,

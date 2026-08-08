@@ -10,7 +10,6 @@ use kagc_scope::ScopeCtx;
 use kagc_symbol::Sym;
 use kagc_symbol::SymTy;
 use kagc_symbol::function::FuncId;
-use kagc_symbol::function::INVALID_FUNC_ID;
 
 use kagc_types::TyKind;
 use kagc_utils::bug;
@@ -29,7 +28,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         Self { 
             diagnostics: diags,
             scope,
-            curr_func_id: FuncId(INVALID_FUNC_ID)
+            curr_func_id: FuncId::invalid()
         }
     }
 
@@ -78,7 +77,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         self.check_func_call_expr(call_expr, &meta)
     }
 
-    fn check_expr(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
+    fn check_expr_ast(&mut self, node: &mut AstNode<'tcx>) -> TyKind<'tcx> {
         let meta = node.meta.clone();
         let Some(expr) = node.as_expr_mut() else {
             bug!("expected expr")
@@ -98,6 +97,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             Expr::FuncCall(funccallexpr) => self.check_func_call_expr(funccallexpr, meta),
             Expr::RecordCreation(recexpr) => self.check_rec_creation_expr(recexpr, meta),
             Expr::RecordFieldAccess(recfieldexpr) => self.check_record_field_access_expr(recfieldexpr, meta),
+			Expr::Unary(unaryexpr) => self.check_unary_expr(unaryexpr, meta),
             Expr::Null => TyKind::Null,
             _ => todo!()
         }
@@ -165,6 +165,10 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
         bin_expr.ty = self.are_types_compatible(left_type, right_type, bin_expr.operation, meta);
         bin_expr.ty
     }
+
+	fn check_unary_expr(&mut self, unary_expr: &mut UnaryExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
+		self.check_and_mutate_expr(&mut unary_expr.expr, meta)
+	}
 
     fn check_record_field_access_expr(&mut self, field_access: &mut RecordFieldAccessExpr<'tcx>, meta: &NodeMeta) -> TyKind<'tcx> {
         if let Some(rec_sym) = self.scope.lookup_sym(None, field_access.rec_alias) {
@@ -358,7 +362,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             
         // if return statement returns some value
         let found_ret_ty = if let Some(return_expr) = &mut node.left {
-            self.check_expr(return_expr)
+            self.check_expr_ast(return_expr)
         }
         else {
             TyKind::Void
@@ -428,7 +432,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             self.scope.pop(); // exit function's scope
         }
 
-        self.curr_func_id = FuncId(INVALID_FUNC_ID);
+        self.curr_func_id = FuncId::invalid();
         func_ty
     }
 
@@ -449,7 +453,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
 			return TyKind::Error;
         };
 
-        let var_value_type = self.check_expr(node.left.as_mut().unwrap());
+        let var_value_type = self.check_expr_ast(node.left.as_mut().unwrap());
         let var_type = self.check_and_mutate_var_decl_stmt(var_sym, var_value_type, &node.meta);
             
         if let TyKind::Record{ name } = &var_value_type {
@@ -531,7 +535,7 @@ impl<'t, 'tcx> TypeChecker<'t, 'tcx> {
             bug!("an If node without an expression node in its left branch is invalid")
         };
 
-        let cond_res = self.check_expr(expr_node);
+        let cond_res = self.check_expr_ast(expr_node);
 
         if cond_res != TyKind::I64 {
             self.diagnostics.push(
