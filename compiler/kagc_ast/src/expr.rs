@@ -4,7 +4,7 @@
 use kagc_symbol::function::FuncId;
 use kagc_types::TyKind;
 
-use crate::Literal;
+use crate::{Literal, UnaryOp};
 
 use super::{AstOp, AstNode};
 
@@ -37,6 +37,13 @@ pub struct IdentExpr<'tcx> {
 #[derive(Clone, Debug)]
 pub struct LitValExpr<'tcx> {
     pub value: Literal<'tcx>,
+    pub ty: TyKind<'tcx>
+}
+
+#[derive(Clone, Debug)]
+pub struct UnaryExpr<'tcx> {
+    pub expr: Box<Expr<'tcx>>,
+	pub op: UnaryOp,
     pub ty: TyKind<'tcx>
 }
 
@@ -107,6 +114,8 @@ pub enum Expr<'tcx> {
     Ident(IdentExpr<'tcx>),
     
     LitVal(LitValExpr<'tcx>),
+
+	Unary(UnaryExpr<'tcx>),
     
     Subscript(SubscriptExpr<'tcx>),
     
@@ -137,6 +146,7 @@ impl<'tcx> Expr<'tcx> {
             Expr::Widen(widen_expr) => widen_expr.ty,
             Expr::Ident(ident_expr) => ident_expr.ty,
             Expr::LitVal(lit_val_expr) => lit_val_expr.ty,
+            Expr::Unary(unary_expr) => unary_expr.ty,
             Expr::Subscript(subscript_expr) => subscript_expr.ty,
             Expr::FuncCall(func_call_expr) => func_call_expr.ty,
             Expr::RecordFieldAccess(record_field_access_expr) => record_field_access_expr.ty,

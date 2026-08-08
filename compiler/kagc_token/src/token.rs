@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2023 Kagati Foundation
 
+use kagc_span::span::{SourcePos, Span};
+
 use super::TokenKind;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -13,20 +15,28 @@ pub struct TokenPos {
 pub struct Token<'tcx> {
     pub kind: TokenKind,
     pub lexeme: &'tcx str,
-    pub pos: TokenPos,
+	pub span: Span
 }
 
 impl<'tcx> Token<'tcx> {
-    pub fn new(kind: TokenKind, lexeme: &'tcx str, pos: TokenPos) -> Token<'tcx> {
-        Token { kind, lexeme, pos }
+    pub fn new(kind: TokenKind, lexeme: &'tcx str, span: Span) -> Token<'tcx> {
+        Token { kind, lexeme, span }
     }
 
     // to mark something as erronous token
-    pub fn none() -> Token<'static> {
+    pub fn uninit() -> Token<'static> {
         Token {
             kind: TokenKind::T_NONE,
             lexeme: "",
-            pos: TokenPos { line: 0, column: 0 }
+            span: Span::new(
+				0,
+				SourcePos {
+					line: 0, column: 0, offset: 0
+				},
+				SourcePos { 
+					line: 0, column: 0, offset: 0
+				}
+			)
         }
     }
 }

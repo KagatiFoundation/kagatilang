@@ -4,6 +4,7 @@
 use kagc_ast::record::*;
 use kagc_ast::*;
 use kagc_comp_unit::source_map::FileId;
+use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::Diagnostic;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_errors::diagnostic::Severity;
@@ -154,12 +155,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 			self.advance();
 		}
 		else {
-			let previous = self.previous();
+			let previous = self
+				.previous()
+				.unwrap_or_else(|| panic!("a semicolon is expected at the very beginning"));
 
 			let error = Diagnostic::missing_token(
 			    &previous,
-    			self.current_file,
-    			"expected ';' after statement",
+    			"expected ';' after this token",
     			Severity::Error
 			);
 
@@ -183,7 +185,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 				TokenKind::T_EOF => {
 					let missing_closing_brace_err = Diagnostic::from_single_token(
 						&open_brace, 
-						self.current_file, 
 						"unclosed block", 
 						Severity::Error
 					);
@@ -220,24 +221,17 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_import_stmt(&mut self) -> ParseOutput<'tcx> {
-        let start_tok = self.consume(TokenKind::KW_IMPORT, "'import' expected")?.pos;
+        let start_tok = self.consume(TokenKind::KW_IMPORT, "'import' expected")?;
+
         let module_path_tok: Token = self.consume(TokenKind::T_STRING, "expected a string")?;
-        let end_tok = self.consume(TokenKind::T_SEMICOLON, "';' expected")?.pos;
+
+        let end_tok = self.consume(TokenKind::T_SEMICOLON, "';' expected")?;
 
         let meta = NodeMeta::new(
-            Span::new(
-                self.current_file.0,
-                SourcePos { 
-                    line: start_tok.line, 
-                    column: start_tok.column 
-                },
-                SourcePos { 
-                    line: end_tok.line, 
-                    column: end_tok.column 
-                }
-            ),
+            start_tok.span.covering(&end_tok.span),
             vec![]
         );
+
         Some(
             AstNode::leaf(
                 self.next_node_id(),
@@ -254,7 +248,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_record_decl_stmt(&mut self) -> ParseOutput<'tcx> {
-        let start_tok = self.consume(TokenKind::KW_RECORD, "'record' expected")?.pos;
+        let start_tok = self.consume(TokenKind::KW_RECORD, "'record' expected")?;
 
         // expect name of the record
         let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
@@ -267,19 +261,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             rec_fields.push(self.parse_record_field_decl_stmt()?);
         }
         
-        let end_tok = self.consume(TokenKind::T_RBRACE, "'}' expected")?.pos;
+        let end_tok = self.consume(TokenKind::T_RBRACE, "'}' expected")?;
+
         let meta = NodeMeta::new(
-            Span::new(
-                self.current_file.0,
-                SourcePos { 
-                    line: start_tok.line, 
-                    column: start_tok.column 
-                },
-                SourcePos { 
-                    line: end_tok.line, 
-                    column: end_tok.column 
-                }
-            ),
+            start_tok.span.covering(&end_tok.span),
             vec![]
         );
 
@@ -319,7 +304,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             self.diagnostics.push(
                 Diagnostic::from_single_token(
                     &self.peek(), 
-                    self.current_file, 
                     "invalid type for record field", 
                     Severity::Error
                 )
@@ -358,15 +342,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         }
 
         let id_token: Token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
-        let func_name_start_pos = SourcePos {
-            column: id_token.pos.column,
-            line: id_token.pos.line
-        };
 
-        let func_name_end_pos = SourcePos {
-            column: id_token.pos.column + id_token.lexeme.len(),
-            line: id_token.pos.line
-        };
         _ = self.consume(TokenKind::T_LPAREN, "'(' expected")?;
 
         let mut func_param_types = vec![];
@@ -412,30 +388,32 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         }
 
         // Return AST for function declaration
-        Some(AstNode {
-            id: self.next_node_id(),
-            kind: NodeKind::StmtAST(Stmt::FuncDecl(FuncDeclStmt {
-                id: None, // id will be decided later in the binding stage
-                name: id_token.lexeme,
-                ty: func_return_type,
-                storage_class: func_storage_class,
-                params: func_params,
-                param_types: func_param_types
-            })),
-            op: AstOp::Func,
-            left: function_body,
-            mid: None,
-            right: None,
-            ty: Some(func_return_type),
-            meta: NodeMeta::new(
-                Span::new(
-                    self.current_file.0, 
-                    func_name_start_pos, 
-                    func_name_end_pos
-                ), 
-                Vec::with_capacity(0)
-            )
-        })
+        Some(
+			AstNode {
+				id: self.next_node_id(),
+				kind: NodeKind::StmtAST(
+					Stmt::FuncDecl(
+						FuncDeclStmt {
+							id: None,
+							name: id_token.lexeme,
+							ty: func_return_type,
+							storage_class: func_storage_class,
+							params: func_params,
+							param_types: func_param_types
+						}
+					)
+				),
+				op: AstOp::Func,
+				left: function_body,
+				mid: None,
+				right: None,
+				ty: Some(func_return_type),
+				meta: NodeMeta::new(
+					id_token.span, 
+					Vec::with_capacity(0)
+				)
+			}
+		)
     }
 
     // parse function's return type
@@ -447,7 +425,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             self.diagnostics.push(
                 Diagnostic::from_single_token(
                     &self.peek(), 
-                    self.current_file, 
                     "invalid return type", 
                     Severity::Error
                 )
@@ -477,19 +454,11 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_return_stmt(&mut self) -> ParseOutput<'tcx> {
         let ret_tok = self.consume(TokenKind::KW_RETURN, "'return' expected")?;
-        let pos = SourcePos {
-            line: ret_tok.pos.line,
-            column: ret_tok.pos.column
-        };
 
         if self.peek().kind == TokenKind::T_SEMICOLON {
             self.expect_semicolon();
             let meta = NodeMeta::new(
-                Span::new(
-                    self.current_file.0,
-                    pos,
-                    pos
-                ),
+                ret_tok.span,
                 vec![]
             );
             Some(
@@ -510,14 +479,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         }
         else {
             let return_expr = self.parse_record_or_expr(None)?;
+
             let meta = NodeMeta::new(
-                Span::new(
-                    self.current_file.0,
-                    pos,
-                    return_expr.meta.span.end
-                ),
+                ret_tok.span.covering(&return_expr.meta.span),
                 vec![]
             );
+
             let return_ast = AstNode {
                 kind: NodeKind::StmtAST(
                     Stmt::Return(
@@ -534,7 +501,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 meta,
                 id: self.next_node_id()
             };
+
             self.expect_semicolon();
+
             Some(return_ast)
         }
     }
@@ -717,20 +686,28 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             sym_type = SymTy::Record { name: record_create.name }
         }
 
-        self.expect_semicolon();
-        Some(AstNode::binary(
-            self.next_node_id(),
-            NodeKind::StmtAST(Stmt::VarDecl(VarDeclStmt {
-                symtbl_pos: INVALID_ID, // this value will be set by the resolver
-                symbol_type: sym_type,
-                sym_name: id_token.lexeme,
-                ty: var_type
-            })),
-            AstOp::VarDecl,
-            Some(assigned_value),
-            None,
-            Some(var_type),
-        ))
+        // self.consume(TokenKind::T_SEMICOLON, "';' expected after variable declaration");
+		self.expect_semicolon();
+
+        Some(
+			AstNode::binary(
+				self.next_node_id(),
+				NodeKind::StmtAST(
+					Stmt::VarDecl(
+						VarDeclStmt {
+							symtbl_pos: INVALID_ID,
+							symbol_type: sym_type,
+							sym_name: id_token.lexeme,
+							ty: var_type
+						}
+					)
+				),
+				AstOp::VarDecl,
+				Some(assigned_value),
+				None,
+				Some(var_type),
+			)
+		)
     }
 
 	fn parse_assignment_stmt(&mut self) -> ParseOutput<'tcx> {
@@ -800,11 +777,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_record_or_expr(&mut self, rec_alias: Option<&'tcx str>) -> ParseOutput<'tcx> {
-        // peek ahead to see if this is a Record initialization: Identifier { ...
+        // peek ahead to see if this is a Record initialization: i.e. Identifier followed by a { ...
         if self.check(TokenKind::T_IDENTIFIER) && self.look_ahead(1).kind == TokenKind::T_LBRACE {
             if let Some(ra) = rec_alias {
                 return self.parse_record_creation(ra);
-            } else {
+            }
+			else {
                 unreachable!();
             }
         }
@@ -812,7 +790,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_record_creation(&mut self, rec_alias: &'tcx str) -> ParseOutput<'tcx> {
-        let span_start = self.peek().pos;
+        let span_start = self.peek().span.start;
 
         let id_token = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
         _ = self.consume(TokenKind::T_LBRACE, "expected '{")?;
@@ -841,18 +819,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             field_off += 1;
         }
 
-        let span_end = self.tokens[self.current - 1].pos;
+        let span_end = self.tokens[self.current - 1].span.end;
         let meta = NodeMeta::new(
             Span::new(
                 self.current_file.0, 
-                SourcePos { line: 
-                    span_start.line, 
-                    column: span_start.column 
-                }, 
-                SourcePos { 
-                    line: span_end.line, 
-                    column: span_end.column 
-                }
+                span_start, 
+                span_end
             ),
             vec![]
         );
@@ -918,9 +890,56 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_factor(&mut self) -> ParseOutput<'tcx> {
-        let left = self.parse_primary()?;
+        let left = self.parse_unary()?;
         self.try_parsing_binary(left, vec![TokenKind::T_SLASH, TokenKind::T_STAR])
     }
+
+	fn parse_unary(&mut self) -> ParseOutput<'tcx> {
+		if let Some(unary_sign) = self.parse_unary_sign() {
+			match unary_sign {
+				UnaryOp::Neg => {
+					let span_start = self.peek().span;
+
+					self.advance();
+
+					let expr = self.parse_unary()?;
+
+					let span_end = expr.meta.span;
+
+					let combined_span = span_start.covering(&span_end);
+
+					return Some(
+						AstNode::leaf(
+							self.next_node_id(),
+							NodeKind::ExprAST(
+								Expr::Unary(UnaryExpr {
+									op: UnaryOp::Neg,
+									expr: Box::new(expr.kind.expr().unwrap()),
+									ty: TyKind::None,
+								})
+							),
+							AstOp::Unary,
+							None,
+							NodeMeta::new(combined_span, vec![])
+						)
+					);
+				},
+				UnaryOp::Not => todo!(),
+				UnaryOp::BitNot => todo!(),
+			}
+		}
+
+		self.parse_primary()
+	}
+
+	fn parse_unary_sign(&mut self) -> Option<UnaryOp> {
+		if self.check(TokenKind::T_MINUS) {
+			Some(UnaryOp::Neg)
+		}
+		else {
+			None
+		}
+	}
 
     fn try_parsing_binary(&mut self, left: AstNode<'tcx>, tokens: Vec<TokenKind>) -> ParseOutput<'tcx> {
         let current_token_kind = self.peek().kind;
@@ -972,17 +991,16 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         let file_id = self.current_file.0;
         let current_token = self.advance();
 
-        let start_pos = SourcePos {
-            line: current_token.pos.line,
-            column: current_token.pos.column
-        };
+        let start_pos = current_token.span.start;
+
         let single_token_meta = NodeMeta::new(
             Span::new(
                 file_id,
                 start_pos,
                 SourcePos { 
                     line: start_pos.line, 
-                    column: start_pos.column + current_token.lexeme.len()
+                    column: start_pos.column + current_token.lexeme.len(),
+					offset: current_token.span.file_id
                 }
             ),
             vec![]
@@ -1048,12 +1066,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::T_IDENTIFIER => {
                 // Identifiers in a global variable declaration expression are not allowed.
                 if current_token.kind == TokenKind::T_NONE {
-                    self.diagnostics.push(Diagnostic::from_single_token(
-                        &self.peek(), 
-                        self.current_file, 
-                        "initializer not a constant",
-                        Severity::Error
-                    ));
+                    self.diagnostics.push(
+						Diagnostic::from_single_token(
+							&self.peek(), 
+							"initializer not a constant",
+							Severity::Error
+                    	)
+					);
                     return None;
                 }
                 
@@ -1107,22 +1126,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_identifier(&mut self) -> ParseOutput<'tcx> {
-        let file_id = self.current_file.0;
         let id = self.consume(TokenKind::T_IDENTIFIER, "expected an identifier")?;
+
         let meta = NodeMeta::new(
-            Span::new(
-                file_id,
-                SourcePos { 
-                    line: id.pos.line, 
-                    column: id.pos.column
-                }, 
-                SourcePos {
-                    line: id.pos.line,
-                    column: id.pos.column
-                }
-            ), 
+            id.span, 
             Vec::with_capacity(0)
         );
+
         Some(AstNode::leaf(
             self.next_node_id(),
             NodeKind::ExprAST(
@@ -1160,21 +1170,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         _ = self.consume(TokenKind::T_DOT, "'.' expected");
         let access = self.consume(TokenKind::T_IDENTIFIER, "expected an identifer")?;
 
-        let end_pos = SourcePos {
-            line: access.pos.line,
-            column: access.pos.column
-        };
+		let span = start_token.span.covering(&access.span);
+
         let field_name = access.lexeme;
 
         let meta = NodeMeta::new(
-            Span::new(
-                self.current_file.0,
-                SourcePos { 
-                    line: start_token.pos.line, 
-                    column: start_token.pos.column 
-                },
-                end_pos
-            ),
+            span,
             vec![]
         );
 
@@ -1231,14 +1232,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         let end_token = self.consume(TokenKind::T_RPAREN, "')' expected")?;
 
-        let start_pos = SourcePos {
-            line: start_token.pos.line,
-            column: start_token.pos.column
-        };
-        let end_pos = SourcePos {
-            line: end_token.pos.line,
-            column: end_token.pos.column
-        };
+		let combined_span = start_token.span.covering(&end_token.span);
 
         Some(AstNode::leaf(
             self.next_node_id(),
@@ -1255,12 +1249,8 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             AstOp::FuncCall,
             None,
             NodeMeta::new(
-                Span::new(
-                    self.current_file.0,
-                    start_pos,
-                    end_pos
-               ),
-               vec![]
+            	combined_span,
+            	vec![]
             )
         ))
     }
@@ -1269,7 +1259,6 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         self.diagnostics.push(
             Diagnostic::from_single_token(
                 &self.peek(), 
-                self.current_file, 
                 "unexpected token",
                 Severity::Error
             )
@@ -1281,8 +1270,12 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         *self.tokens.get(self.current).unwrap_or(self.tokens.last().unwrap())
     }
 
-	fn previous(&self) -> Token<'tcx> {
-		*self.tokens.get(self.current - 1).unwrap_or(&self.peek())
+	fn previous(&self) -> Option<Token<'tcx>> {
+    	if self.current == 0 {
+        	None
+    	} else {
+        	self.tokens.get(self.current - 1).copied()
+    	}
 	}
 
     /// Look ahead N tokens
@@ -1297,19 +1290,33 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn consume(&mut self, kind: TokenKind, msg: &str) -> Option<Token<'tcx>> {
         let tok = self.peek();
+
         if tok.kind == kind {
-            if kind == TokenKind::T_EOF && self.current != self.tokens.len() - 1 {
-                unreachable!("EOF not at end of token stream");
-            }
             Some(self.advance())
         }
 		else {
-            self.diagnostics.push(Diagnostic::from_single_token(
-                &tok,
-                self.current_file,
-                msg,
-                Severity::Error,
-            ));
+			if tok.kind == TokenKind::T_EOF {
+				self.diagnostics.push(
+					Diagnostic {
+						code: Some(ErrCode::UnexpectedEOF),
+						severity: Severity::Error,
+						primary_span: tok.span,
+						secondary_spans: vec![],
+						message: "unexpected end-of-file encountered".to_string(),
+						notes: vec!["you might have forgotten to include a closing brace ('}')".to_string()]
+					}
+				);
+
+				return None;
+			}
+
+            self.diagnostics.push(
+				Diagnostic::from_single_token(
+					&tok,
+					msg,
+					Severity::Error,
+				)
+			);
             None
         }
     }
@@ -1357,7 +1364,7 @@ mod tests {
             &diag_bag,
             &str_intern
         );
-        let tokens = lexer.tokenize("let a = 12 + 12;");
+        let tokens = lexer.tokenize("let a = 12 + 12;", 0);
         let mut parser = mk_parser(tokens, &diag_bag);
         
         assert!(parser.advance().kind == TokenKind::KW_LET);
@@ -1379,7 +1386,7 @@ mod tests {
             &diag_bag,
             &str_intern
         );
-        let tokens = lexer.tokenize("let a = 12 + 12;");
+        let tokens = lexer.tokenize("let a = 12 + 12;", 0);
         let mut parser = mk_parser(tokens, &diag_bag);
 
         while parser.advance().kind != TokenKind::T_EOF {}

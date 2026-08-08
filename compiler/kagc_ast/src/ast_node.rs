@@ -335,12 +335,14 @@ impl NodeMeta {
             span: Span::new(
                 0, 
                 SourcePos{
-                    column: 1, 
-                    line: 1
+                    column: 0, 
+                    line: 0,
+					offset: 0
                 }, 
                 SourcePos { 
                     line: 0, 
-                    column: 0 
+                    column: 0,
+					offset: 0
                 }
             ),
             notes: vec![],

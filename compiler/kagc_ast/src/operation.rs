@@ -20,6 +20,7 @@ pub enum AstOp {
     Subtract, // an AST node with "-" as the root node
     Multiply, // an AST node with "*" as the root node
     Divide,   // an AST node with "/" as the root node
+	Unary,	  // an AST node with with '-', '!', or '+' as unary operators
     // end of relational operators
 
     Str, // string literal node

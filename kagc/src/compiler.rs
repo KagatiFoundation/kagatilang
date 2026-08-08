@@ -150,7 +150,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
             diagnostics, 
             str_interner
         );
-        let tokens = lexer.tokenize(source_file.content);
+        let tokens = lexer.tokenize(source_file.content, file_id.0);
 
         let mut parser = Parser::new(
             ParserOptions { }, 

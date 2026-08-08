@@ -10,6 +10,7 @@ pub mod import;
 pub mod record;
 mod pattern;
 mod operation;
+mod unary;
 
 pub use ast_node::*;
 pub use expr::*;
@@ -18,3 +19,4 @@ pub use node_kind::*;
 pub use operation::*;
 pub use pattern::*;
 pub use value::*;
+pub use unary::*;

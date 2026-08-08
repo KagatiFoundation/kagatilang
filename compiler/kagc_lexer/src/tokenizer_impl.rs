@@ -7,7 +7,7 @@ use std::str::FromStr;
 use kagc_errors::code::ErrCode;
 use kagc_errors::diagnostic::{Diagnostic, DiagnosticBag, Severity};
 use kagc_span::span::{SourcePos, Span};
-use kagc_token::{Token, TokenKind, TokenPos};
+use kagc_token::{Token, TokenKind};
 
 extern crate lazy_static;
 use kagc_ctx::StringInterner;
@@ -50,8 +50,9 @@ lazy_static! {
 pub struct Tokenizer<'t, 'tcx> {
     line: usize,
     curr_char: char, // current char
-    next_char_pos: usize, // position from the start
-    col_counter: usize, // column counter
+	current_file: usize,
+    source_offset: usize, // position from the start
+    column: usize, // column counter
     source: &'tcx str,
     diagnostics: &'t DiagnosticBag,
     str_interner: &'tcx StringInterner<'tcx>
@@ -60,33 +61,39 @@ pub struct Tokenizer<'t, 'tcx> {
 impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
     pub fn new(diags: &'t DiagnosticBag, str_interner: &'tcx StringInterner<'tcx>) -> Self {
         Self {
-            line: 1,
-            curr_char: ' ', // space 
-            next_char_pos: 0,
-            col_counter: 1,
-            source: "",
-            diagnostics: diags,
+            line: 			0,
+            column: 		0,
+			source_offset: 	0,
+			current_file:	0,
+            curr_char: 		' ', // space 
+            source: 		"",
+            diagnostics: 	diags,
             str_interner
         }
     }
 
-    pub fn tokenize(&mut self, input: &'tcx str) -> Vec<Token<'tcx>> {
-        self.source = input;
+    pub fn tokenize(&mut self, input: &'tcx str, file_id: usize) -> Vec<Token<'tcx>> {
+		if let Some(first_char) = input.chars().next() {
+			self.curr_char = first_char;
+		}
+		else {
+			return vec![];
+		}
 
-        let mut tokens: Vec<Token> = Vec::new();
-  
-	    self.advance_to_next_char_pos();
+		self.source = input;
+		self.current_file = file_id;
+
+        let mut tokens = vec![];
 
         loop {
             if let Some(token) = self.get_token() {
-                if token.kind == TokenKind::T_EOF {
-                    tokens.push(token);
-                    break;
-                }
+				if token.kind != TokenKind::T_NONE {
+					tokens.push(token);
+				}
 
-                if token.kind != TokenKind::T_NONE {
-                    tokens.push(token);
-                } 
+				if token.kind == TokenKind::T_EOF {
+					break;
+				}
             }
         }
 
@@ -94,16 +101,9 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
     }
 
     fn get_token(&mut self) -> Option<Token<'tcx>> {
-        let mut token: Token = Token::new(
-			TokenKind::T_NONE, 
-			"",
-			TokenPos { line: 0, column: 0 }
-		);
+		let mut token = Token::uninit();
   
-        let column: usize = self.col_counter - 1;
-        let line: usize = self.line;
-
-        let token_pos: TokenPos = TokenPos { line, column };
+		let start_source_pos = self.get_current_file_position();
 
         match self.curr_char {
             '+' => {
@@ -308,20 +308,18 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
                 }
             },
 
-            '0'..='9' => return self.parse_number_from(token_pos), 
+            '0'..='9' => return self.parse_number(), 
 
             '_' | 'a'..='z' | 'A'..='Z' => {
-                let start = self.next_char_pos - self.curr_char.len_utf8();
-
                 while self.curr_char.is_alphanumeric() || self.curr_char == '_' {
                     self.advance_to_next_char_pos();
                 }
 
-                let end = self.next_char_pos - 1;
+                let end = self.get_current_file_position();
     
 	            token.kind = TokenKind::T_IDENTIFIER;
  
-                let name = &self.source[start..end];
+                let name = &self.source[start_source_pos.offset..end.offset];
                 let keyword = KEYWORDS.get(name);
 
                 if let Some(key) = keyword {
@@ -333,11 +331,11 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
 
             '"' => {
 				let line = self.line;
-				let column = self.col_counter;
+				let column = self.column;
 
                 self.advance_to_next_char_pos(); // skip '"'
 
-                let start: usize = self.next_char_pos - self.curr_char.len_utf8();
+                let start: usize = self.source_offset;
                 
 				while self.curr_char != '"' && !self.is_at_end() {
                     self.advance_to_next_char_pos();
@@ -351,8 +349,8 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
                         severity: Severity::Error,
                         primary_span: Span::new(
                             0, 
-                            SourcePos { line, column }, 
-                            SourcePos { line, column }
+                            SourcePos { line, column, offset: self.source_offset }, 
+                            SourcePos { line, column, offset: self.source_offset }
                         ),
                         secondary_spans: vec![],
                         message: "unterminated string".to_string(),
@@ -363,7 +361,7 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
                     return None;
                 }
 
-				let end = self.next_char_pos - self.curr_char.len_utf8();
+				let end = self.source_offset;
 
                 self.advance_to_next_char_pos();
 				
@@ -376,135 +374,100 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
             '(' | ')' | '{' | '}' | '[' | ']' | '#' | '.' | '?' | ':' | ',' | ';' => {
                 token.kind = TokenKind::from_str(self.curr_char.to_string().as_str()).unwrap();
 
-				let start = self.next_char_pos - self.curr_char.len_utf8();
-				let end = self.next_char_pos;
+				let start = self.source_offset;
 
-				token.lexeme = &self.source[start..end];
+				token.lexeme = &self.source[start..start + 1];
 
                 self.advance_to_next_char_pos();
             },
 
-            ' ' | '\n' | '\t' => {
-				self.advance_to_next_char_pos()
-			}
+            ' ' | '\n' | '\t' => self.skip_whitespace(),
 
-            '\0' => token.kind = {
-				TokenKind::T_EOF
-			},
+            '\0' => token.kind = TokenKind::T_EOF,
 
             _ => {}
         }
 
-        token.pos = TokenPos{ line, column };
+        token.span = Span {
+			file_id: 0,
+			start: start_source_pos,
+			end: self.get_current_file_position()
+		};
+
         Some(token)
     }
 
-    fn parse_number_from(&mut self, pos: TokenPos) -> Option<Token<'tcx>> {
-        let mut token: Token = Token::new(TokenKind::T_NONE, "", pos);
-        token.kind = TokenKind::T_INT_NUM;
+	fn skip_whitespace(&mut self) {
+		while let ' ' | '\n' | '\t' = self.curr_char {
+			self.advance_to_next_char_pos();
+		}
+	}
 
-        let start: usize = self.next_char_pos - 1;
+    fn parse_number(&mut self) -> Option<Token<'tcx>> {
+        let start = self.get_current_file_position();
   
         while self.curr_char.is_ascii_digit() {
             self.advance_to_next_char_pos();
         }
 
-		let mut end = self.next_char_pos - self.curr_char.len_utf8();
+		let end_offset = self.source_offset;
 
-		let mut period_detected = false;
-  
-        if self.curr_char == '.' {
-            self.advance_to_next_char_pos(); // skip '.'
-  
-            if self.curr_char.is_ascii_digit() {
-                period_detected = true;
-                end += 1;
-  
-                while self.curr_char.is_ascii_digit() {
-                    self.advance_to_next_char_pos();
-                    end += 1;
-                }
-            }
-			else {
-                let diag = Diagnostic {
-                    code: Some(ErrCode::InvalidNumericLiteral),
-                    severity: Severity::Error,
-                    primary_span: Span::new(
-                        0, 
-                        SourcePos { line: pos.line, column: pos.column }, 
-                        SourcePos { line: pos.line, column: pos.column }
-                    ),
-                    secondary_spans: Vec::with_capacity(0),
-                    message: "invalid numeric type".to_string(),
-                    notes: Vec::with_capacity(0)
-                };
+        let number = &self.source[start.offset..end_offset];
 
-                self.diagnostics.push(diag);
-                return None;
-            }
-        }
-        // This check is incorrect. REWRITE THIS!!!
-        let invalid_num_end: bool = self.curr_char.is_alphabetic() || self.curr_char == '_';
-        if invalid_num_end {
-            while self.curr_char.is_alphanumeric() || self.curr_char == '_' {
-                self.advance_to_next_char_pos();
-            }
+        let value = number.parse::<i64>().unwrap();
 
-            let diag = Diagnostic {
-                code: Some(ErrCode::InvalidNumericLiteral),
-                severity: Severity::Error,
-                primary_span: Span::new(
-                    0, 
-                    SourcePos { line: pos.line, column: pos.column }, 
-                    SourcePos { line: pos.line, column: pos.column }
-                ),
-                secondary_spans: Vec::with_capacity(0),
-                message: "invalid numeric type".to_string(),
-                notes: Vec::with_capacity(0)
-            };
+        let kind = if (0..256).contains(&value) {
+			TokenKind::T_CHAR
+		}
+        else if ((i32::MAX as i64)..i64::MAX).contains(&value) {
+			TokenKind::T_LONG_NUM
+		}
+        else {
+			TokenKind::T_INT_NUM
+		};
 
-            self.diagnostics.push(diag);
-            return None;
-        }
+		let end = SourcePos {
+			line: start.line,
+			column: start.column + number.len(),
+			offset: end_offset,
+		};
 
-        let number: &str = &self.source[start..end];
-
-        if period_detected {
-            token.kind = TokenKind::T_DOUBLE_NUM;
-        }
-		else {
-            let value: i64 = number.parse::<i64>().unwrap();
-
-            token.kind = if (0..256).contains(&value) { TokenKind::T_CHAR } 
-            else if ((i32::MAX as i64)..i64::MAX).contains(&value) { TokenKind::T_LONG_NUM }
-            else { TokenKind::T_INT_NUM }
-        }
-
-        token.lexeme = self.str_interner.intern(number);
-        Some(token)
+		Some(
+			Token::new(
+				kind,
+				self.str_interner.intern(number),
+				Span::new(self.current_file, start, end),
+			)
+		)
     }
 
+	fn get_current_file_position(&self) -> SourcePos {
+		SourcePos {
+			line: self.line,
+			column: self.column,
+			offset: self.source_offset
+		}
+	}
+
     fn is_at_end(&self) -> bool {
-        self.next_char_pos >= self.source.len()
+        self.source_offset >= self.source.len()
     }
 
     fn advance_to_next_char_pos(&mut self) {
-    	if let Some(rest) = self.source.get(self.next_char_pos..) {
-        	if let Some(ch) = rest.chars().next() {
-            	self.curr_char = ch;
+        self.source_offset += 1;
 
-            	self.next_char_pos += ch.len_utf8();
+    	if let Some(ch) = self.source[self.source_offset..].chars().next() {
+            self.curr_char = ch;
 
-            	if ch == '\n' {
-                	self.line += 1;
-                	self.col_counter = 1;
-            	}
-				else {
-                	self.col_counter += 1;
-            	}
+            if ch == '\n' {
+                self.line += 1;
+                self.column = 0;
+            }
+			else {
+                self.column += 1;
+            }
 
-            	return;
-        	}
+            return;
     	}
 
     	self.curr_char = '\0';
@@ -531,7 +494,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let a: integer = 23;");
+        let tokens: Vec<Token> = tok.tokenize("let a: integer = 23;", 0);
         assert!(tokens.len() == 8);
         assert_eq!(tokens[0].kind, TokenKind::KW_LET);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
@@ -549,7 +512,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize(".9999");
+        let tokens: Vec<Token> = tok.tokenize(".9999", 0);
         assert_eq!(tokens[0].kind, TokenKind::T_DOT);
         assert_eq!(tokens[1].kind, TokenKind::T_INT_NUM);
     }
@@ -560,7 +523,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let a = 43343;");
+        let tokens: Vec<Token> = tok.tokenize("let a = 43343;", 0);
         assert!(tokens.len() == 6);
         assert_eq!(tokens[3].lexeme.len(), 5);
     }
@@ -571,7 +534,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let name = \"ram\";");
+        let tokens: Vec<Token> = tok.tokenize("let name = \"ram\";", 0);
         assert!(tokens.len() == 6);
         assert_eq!(tokens[0].kind, TokenKind::KW_LET);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
@@ -589,7 +552,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("def main() -> void { return 0; }");
+        let tokens: Vec<Token> = tok.tokenize("def main() -> void { return 0; }", 0);
         assert!(tokens.len() == 12);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
         assert_eq!(tokens[1].lexeme, "main");
@@ -602,7 +565,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("def main() -> void {  }");
+        let tokens: Vec<Token> = tok.tokenize("def main() -> void {  }", 0);
 		println!("{tokens:#?}");
         assert!(tokens.len() == 9);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
@@ -617,7 +580,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("");
+        let tokens: Vec<Token> = tok.tokenize("", 0);
         assert_eq!(tokens.len(), 1); // only T_EOF is present
         assert_eq!(tokens[0].kind, TokenKind::T_EOF); // only T_EOF is present
     }
@@ -628,7 +591,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("            ");
+        let tokens: Vec<Token> = tok.tokenize("            ", 0);
         assert_eq!(tokens.len(), 1); // only T_EOF is present
         assert_eq!(tokens[0].kind, TokenKind::T_EOF); // only EOF is present
     }
@@ -639,7 +602,7 @@ mod tests {
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
         let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("if (4 > 5) { } else { }");
+        let tokens: Vec<Token> = tok.tokenize("if (4 > 5) { } else { }", 0);
         assert_eq!(tokens.len(), 12); // including T_EOF
         assert_eq!(tokens[0].kind, TokenKind::KW_IF);
         assert_eq!(tokens[8].kind, TokenKind::KW_ELSE);

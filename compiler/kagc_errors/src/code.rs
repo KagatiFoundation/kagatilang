@@ -11,6 +11,9 @@ pub enum ErrCode {
 
 	/// Unterminated string
 	UnterminatedString			= 1003,
+	
+	/// Unexpected end-of-file
+	UnexpectedEOF				= 1004,
 
     /// Symbol not found
     UndefinedSymbol     		= 2000,
