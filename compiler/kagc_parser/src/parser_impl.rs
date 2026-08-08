@@ -1029,14 +1029,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     }
 
     fn parse_primary(&mut self) -> ParseOutput<'tcx> {
-        let file_id = self.current_file.0;
         let current_token = self.peek();
 
         let start_pos = current_token.span.start;
 
         let single_token_meta = NodeMeta::new(
             Span::new(
-                file_id,
+                self.current_file.0,
                 start_pos,
                 SourcePos { 
                     line: start_pos.line, 
@@ -1058,6 +1057,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     )
                 )
             },
+
             TokenKind::T_CHAR => {
                 Some(
                     Parser::create_expr_ast(
@@ -1068,6 +1068,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     )
                 )
             },
+
             TokenKind::T_LONG_NUM => {
                 Some(
                     Parser::create_expr_ast(
@@ -1078,6 +1079,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     )
                 )
             },
+
             TokenKind::T_FLOAT_NUM | TokenKind::T_DOUBLE_NUM => {
                Some(
                     Parser::create_expr_ast(
@@ -1088,22 +1090,26 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     )
                 ) 
             },
+
             TokenKind::T_STRING => { 
-                Some(AstNode::leaf(
-                    self.next_node_id(),
-                    NodeKind::ExprAST(
-                        Expr::LitVal(
-                            LitValExpr {
-                                value: Literal::RawStr(current_token.lexeme),
-                                ty: TyKind::Str,
-                            }
-                        )
-                    ),
-                    AstOp::Str,
-                    Some(TyKind::Str),
-                    single_token_meta
-                ))
+                Some(
+					AstNode::leaf(
+						self.next_node_id(),
+						NodeKind::ExprAST(
+							Expr::LitVal(
+								LitValExpr {
+									value: Literal::RawStr(current_token.lexeme),
+									ty: TyKind::Str,
+								}
+							)
+						),
+						AstOp::Str,
+						Some(TyKind::Str),
+						single_token_meta
+					)
+				)
             }
+
             TokenKind::T_IDENTIFIER => {
                 // Identifiers in a global variable declaration expression are not allowed.
                 if current_token.kind == TokenKind::T_NONE {
@@ -1127,37 +1133,49 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     self.parse_record_field_access_expr(symbol_name, &current_token)
                 }
                 else {
-                    Some(AstNode::leaf(
-                        self.next_node_id(),
-                        NodeKind::ExprAST(
-                            Expr::Ident(IdentExpr {
-                                ty: TyKind::None, // We don't care about the type of this symbol, yet!
-                                sym_name: current_token.lexeme
-                            }
-                        )),
-                        AstOp::Ident,
-                        None, // type will be identified at the semantic analysis phases if the symbol is defined
-                        single_token_meta
-                    ))
+                    Some(
+						AstNode::leaf(
+							self.next_node_id(),
+							NodeKind::ExprAST(
+								Expr::Ident(
+									IdentExpr {
+										ty: TyKind::None,
+										sym_name: current_token.lexeme
+									}
+								)
+							),
+							AstOp::Ident,
+							None,
+							single_token_meta
+						)
+					)
                 }
             }
+
             TokenKind::T_LPAREN => {
+				self.advance(); // ignore '('
+
                 // group expression: e.g: (a * (b + c)))
                 let group_expr = self.parse_record_or_expr(None)?;
-                // Group expression terminates with ')'. Match and ignore ')'.
-                let _ = self.consume(TokenKind::T_RPAREN, "expected a ')'")?;
-                Some(group_expr)
+
+                // group expression terminates with ')'
+                self.consume(TokenKind::T_RPAREN, "')' expected")?;
+				
+                return Some(group_expr); 
+				
             },
 
             // null type
             TokenKind::KW_NULL => {
-                Some(AstNode::leaf(
-                    self.next_node_id(),
-                    NodeKind::ExprAST(Expr::Null), 
-                    AstOp::Null, 
-                    Some(TyKind::Null), 
-                    single_token_meta
-                ))
+                Some(
+					AstNode::leaf(
+						self.next_node_id(),
+						NodeKind::ExprAST(Expr::Null), 
+						AstOp::Null, 
+						Some(TyKind::Null), 
+						single_token_meta
+                	)
+				)
             },
             _ => {
                 self.report_unexpected_token(current_token);
