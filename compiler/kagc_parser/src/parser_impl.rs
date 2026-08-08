@@ -54,7 +54,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         Self {
             tokens,
             current: 0,
-            current_file: FileId(0),
+            current_file: options.file_id,
             options,
             diagnostics: diags,
             next_node_id: 0 // start counting at zero
@@ -110,7 +110,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 			TokenKind::KW_RECORD => self.parse_record_decl_stmt(),
 
 			_ => {
-				self.report_unexpected_token();
+				self.report_unexpected_token(self.peek());
 				None
 			}
 		}
@@ -144,11 +144,41 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::T_LBRACE => self.parse_block_stmt(),
             TokenKind::KW_LOOP => self.parse_loop_stmt(),
             _ => {
-                self.report_unexpected_token();
+                self.report_unexpected_token(self.peek());
                 None
             }
         }
     }
+
+	fn synchronize_statement(&mut self) {
+		while self.peek().kind != TokenKind::T_EOF {
+			match self.peek().kind {
+				TokenKind::T_SEMICOLON => {
+					self.advance();
+					return;
+				}
+
+				TokenKind::T_RBRACE => {
+					return;
+				}
+
+				TokenKind::KW_LET
+				| TokenKind::KW_RETURN
+				| TokenKind::KW_BREAK
+				| TokenKind::KW_CONTINUE
+				| TokenKind::KW_FOR
+				| TokenKind::KW_WHILE
+				| TokenKind::KW_IF
+				| TokenKind::KW_LOOP => {
+					return;
+				}
+
+				_ => {
+					self.advance();
+				}
+			}
+		}
+	}
 
     fn expect_semicolon(&mut self) {
 		if self.peek().kind == TokenKind::T_SEMICOLON {
@@ -359,7 +389,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 let is_tok_rparen: bool = self.peek().kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
-                    self.report_unexpected_token();
+                    self.report_unexpected_token(self.peek());
                     return None;
                 } 
                 else if is_tok_rparen {
@@ -457,11 +487,13 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
         if self.peek().kind == TokenKind::T_SEMICOLON {
             self.expect_semicolon();
+
             let meta = NodeMeta::new(
                 ret_tok.span,
                 vec![]
             );
-            Some(
+
+            let ret_ast = Some(
                 AstNode::leaf(
                     self.next_node_id(),
                     NodeKind::StmtAST(
@@ -475,10 +507,19 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     None,
                     meta
                 )
-            )
+            );
+			ret_ast
         }
         else {
-            let return_expr = self.parse_record_or_expr(None)?;
+            let return_expr = self.parse_record_or_expr(None);
+
+			if return_expr.is_none() {
+				self.synchronize_statement();
+
+				return None;
+			}
+
+			let return_expr = return_expr.unwrap();
 
             let meta = NodeMeta::new(
                 ret_tok.span.covering(&return_expr.meta.span),
@@ -750,7 +791,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             TokenKind::KW_NULL => Some(TyKind::Null),
             TokenKind::T_IDENTIFIER => Some(TyKind::Record{ name: self.peek().lexeme }),
             _ => {
-                self.report_unexpected_token();
+                self.report_unexpected_token(self.peek());
                 None
             }
         }
@@ -759,7 +800,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
     // TODO: Write comments
     fn parse_assign_stmt_or_func_call(&mut self) -> ParseOutput<'tcx> {
 		if self.peek().kind != TokenKind::T_IDENTIFIER {
-			self.report_unexpected_token();
+			self.report_unexpected_token(self.peek());
 			return None;
 		}
 
@@ -810,7 +851,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                     break;
                 }
                 _ => {
-                    self.report_unexpected_token();
+                    self.report_unexpected_token(self.peek());
                     return None;
                 }
             }
@@ -989,7 +1030,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
     fn parse_primary(&mut self) -> ParseOutput<'tcx> {
         let file_id = self.current_file.0;
-        let current_token = self.advance();
+        let current_token = self.peek();
 
         let start_pos = current_token.span.start;
 
@@ -1006,7 +1047,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
             vec![]
         );
 
-        match current_token.kind {
+        let primary_expr_ast = match current_token.kind {
             TokenKind::T_INT_NUM => {
                 Some(
                     Parser::create_expr_ast(
@@ -1119,10 +1160,18 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 ))
             },
             _ => {
-                self.report_unexpected_token();
+                self.report_unexpected_token(current_token);
                 None
             }
-        }
+        };
+
+		if primary_expr_ast.is_some() {
+			self.advance();
+			primary_expr_ast
+		}
+		else {
+			None
+		}
     }
 
     fn parse_identifier(&mut self) -> ParseOutput<'tcx> {
@@ -1217,7 +1266,7 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
                 let is_tok_rparen: bool = self.peek().kind == TokenKind::T_RPAREN;
 
                 if !is_tok_comma && !is_tok_rparen {
-                    self.report_unexpected_token();
+                    self.report_unexpected_token(self.peek());
                     return None;
                 } 
                 else if is_tok_rparen {
@@ -1255,10 +1304,10 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
         ))
     }
 
-    fn report_unexpected_token(&mut self) {
+    fn report_unexpected_token(&mut self, tok: Token<'tcx>) {
         self.diagnostics.push(
             Diagnostic::from_single_token(
-                &self.peek(), 
+                &tok, 
                 "unexpected token",
                 Severity::Error
             )
@@ -1340,8 +1389,9 @@ impl<'p, 'tcx> Parser<'p, 'tcx> where 'tcx: 'p {
 
 #[cfg(test)]
 mod tests {
-    use kagc_errors::diagnostic::DiagnosticBag;
-    use kagc_lexer::Tokenizer;
+    use kagc_comp_unit::source_map::FileId;
+use kagc_errors::diagnostic::DiagnosticBag;
+    use kagc_lexer::{Tokenizer, TokenizerOptions};
     use kagc_token::{Token, TokenKind};
     use kagc_ctx::StringInterner;
 
@@ -1349,7 +1399,7 @@ mod tests {
 
     fn mk_parser<'p, 'tcx>(tokens: Vec<Token<'tcx>>, diags: &'p DiagnosticBag) -> Parser<'p, 'tcx> {
         Parser::new(
-            ParserOptions {  },
+            ParserOptions { file_id: FileId(0) },
             diags,
             tokens
         )
@@ -1361,10 +1411,11 @@ mod tests {
         let diag_bag = DiagnosticBag::default();
         let str_intern = StringInterner::new(&str_arena);
         let mut lexer = Tokenizer::new(
+			TokenizerOptions { file_id: 0 },
             &diag_bag,
             &str_intern
         );
-        let tokens = lexer.tokenize("let a = 12 + 12;", 0);
+        let tokens = lexer.tokenize("let a = 12 + 12;");
         let mut parser = mk_parser(tokens, &diag_bag);
         
         assert!(parser.advance().kind == TokenKind::KW_LET);
@@ -1383,10 +1434,11 @@ mod tests {
         let diag_bag = DiagnosticBag::default();
         let str_intern = StringInterner::new(&str_arena);
         let mut lexer = Tokenizer::new(
+			TokenizerOptions { file_id: 0 },
             &diag_bag,
             &str_intern
         );
-        let tokens = lexer.tokenize("let a = 12 + 12;", 0);
+        let tokens = lexer.tokenize("let a = 12 + 12;");
         let mut parser = mk_parser(tokens, &diag_bag);
 
         while parser.advance().kind != TokenKind::T_EOF {}

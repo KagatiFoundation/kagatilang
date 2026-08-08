@@ -47,10 +47,14 @@ lazy_static! {
     };
 }
 
+pub struct TokenizerOptions {
+	pub file_id: usize
+}
+
 pub struct Tokenizer<'t, 'tcx> {
     line: usize,
     curr_char: char, // current char
-	current_file: usize,
+	options: TokenizerOptions,
     source_offset: usize, // position from the start
     column: usize, // column counter
     source: &'tcx str,
@@ -59,20 +63,24 @@ pub struct Tokenizer<'t, 'tcx> {
 }
 
 impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
-    pub fn new(diags: &'t DiagnosticBag, str_interner: &'tcx StringInterner<'tcx>) -> Self {
+    pub fn new(
+		options: TokenizerOptions,
+		diags: &'t DiagnosticBag, 
+		str_interner: &'tcx StringInterner<'tcx>
+	) -> Self {
         Self {
             line: 			0,
             column: 		0,
 			source_offset: 	0,
-			current_file:	0,
             curr_char: 		' ', // space 
             source: 		"",
             diagnostics: 	diags,
-            str_interner
+            str_interner,
+			options
         }
     }
 
-    pub fn tokenize(&mut self, input: &'tcx str, file_id: usize) -> Vec<Token<'tcx>> {
+    pub fn tokenize(&mut self, input: &'tcx str) -> Vec<Token<'tcx>> {
 		if let Some(first_char) = input.chars().next() {
 			self.curr_char = first_char;
 		}
@@ -81,7 +89,6 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
 		}
 
 		self.source = input;
-		self.current_file = file_id;
 
         let mut tokens = vec![];
 
@@ -389,7 +396,7 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
         }
 
         token.span = Span {
-			file_id: 0,
+			file_id: self.options.file_id,
 			start: start_source_pos,
 			end: self.get_current_file_position()
 		};
@@ -436,7 +443,7 @@ impl<'t, 'tcx> Tokenizer<'t, 'tcx> {
 			Token::new(
 				kind,
 				self.str_interner.intern(number),
-				Span::new(self.current_file, start, end),
+				Span::new(self.options.file_id, start, end),
 			)
 		)
     }
@@ -493,8 +500,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let a: integer = 23;", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("let a: integer = 23;");
         assert!(tokens.len() == 8);
         assert_eq!(tokens[0].kind, TokenKind::KW_LET);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
@@ -511,8 +518,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize(".9999", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize(".9999");
         assert_eq!(tokens[0].kind, TokenKind::T_DOT);
         assert_eq!(tokens[1].kind, TokenKind::T_INT_NUM);
     }
@@ -522,8 +529,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let a = 43343;", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("let a = 43343;");
         assert!(tokens.len() == 6);
         assert_eq!(tokens[3].lexeme.len(), 5);
     }
@@ -533,8 +540,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("let name = \"ram\";", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("let name = \"ram\";");
         assert!(tokens.len() == 6);
         assert_eq!(tokens[0].kind, TokenKind::KW_LET);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
@@ -551,8 +558,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("def main() -> void { return 0; }", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("def main() -> void { return 0; }");
         assert!(tokens.len() == 12);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
         assert_eq!(tokens[1].lexeme, "main");
@@ -564,8 +571,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("def main() -> void {  }", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("def main() -> void {  }");
 		println!("{tokens:#?}");
         assert!(tokens.len() == 9);
         assert_eq!(tokens[1].kind, TokenKind::T_IDENTIFIER);
@@ -579,8 +586,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("");
         assert_eq!(tokens.len(), 1); // only T_EOF is present
         assert_eq!(tokens[0].kind, TokenKind::T_EOF); // only T_EOF is present
     }
@@ -590,8 +597,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("            ", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("            ");
         assert_eq!(tokens.len(), 1); // only T_EOF is present
         assert_eq!(tokens[0].kind, TokenKind::T_EOF); // only EOF is present
     }
@@ -601,8 +608,8 @@ mod tests {
         let a = typed_arena::Arena::<String>::new();
         let d = DiagnosticBag::default();
         let s = StringInterner::new(&a);
-        let mut tok: Tokenizer = Tokenizer::new(&d, &s);
-        let tokens: Vec<Token> = tok.tokenize("if (4 > 5) { } else { }", 0);
+        let mut tok: Tokenizer = Tokenizer::new(TokenizerOptions { file_id: 0 }, &d, &s);
+        let tokens: Vec<Token> = tok.tokenize("if (4 > 5) { } else { }");
         assert_eq!(tokens.len(), 12); // including T_EOF
         assert_eq!(tokens[0].kind, TokenKind::KW_IF);
         assert_eq!(tokens[8].kind, TokenKind::KW_ELSE);

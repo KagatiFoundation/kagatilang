@@ -25,7 +25,7 @@ pub struct Span {
 impl Span {
 	pub fn uninit() -> Self {
 		Self {
-			file_id: 0,
+			file_id: 0xFFFFFFFF,
 			start: SourcePos { line: 0, column: 0, offset: 0 },
 			end: SourcePos { line: 0, column: 0, offset: 0 }
 		}

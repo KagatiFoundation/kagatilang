@@ -8,7 +8,7 @@ use kagc_backend::codegen_asm::aarch64::Aarch64CodeGenerator;
 use kagc_const::pool::ConstPool;
 use kagc_errors::diagnostic::DiagnosticBag;
 use kagc_mir::module::MirModule;
-use kagc_lexer::Tokenizer;
+use kagc_lexer::{Tokenizer, TokenizerOptions};
 use kagc_parser::Parser;
 use kagc_parser::options::ParserOptions;
 use kagc_scope::ScopeCtx;
@@ -33,7 +33,7 @@ pub struct CompilerPipeline<'tcx> {
     diagnostics: &'tcx DiagnosticBag,
     const_pool: &'tcx mut ConstPool,
     scope_ctx: &'tcx ScopeCtx<'tcx>,
-    source_map: &'tcx SourceMap<'tcx>,
+    source_map: &'tcx mut SourceMap<'tcx>,
     
     str_interner: &'tcx StringInterner<'tcx>,
     str_arena: &'tcx typed_arena::Arena<String>,
@@ -44,7 +44,7 @@ impl<'tcx> CompilerPipeline<'tcx> {
         scope_ctx: &'tcx ScopeCtx<'tcx>,
         str_interner: &'tcx StringInterner<'tcx>,
         diagnostics: &'tcx DiagnosticBag,
-        source_map: &'tcx SourceMap<'tcx>,
+        source_map: &'tcx mut SourceMap<'tcx>,
         const_pool: &'tcx mut ConstPool,
     ) -> Self {
         Self {
@@ -127,7 +127,8 @@ impl<'tcx> CompilerPipeline<'tcx> {
             return None;
         };
 
-        let file_id = self.source_map.insert(file.expect("what"));
+        let file_id = self.source_map.insert(file.expect("file must be present"));
+
         Self::tokenize_and_parse(
             self.source_map, 
             self.diagnostics, 
@@ -147,13 +148,14 @@ impl<'tcx> CompilerPipeline<'tcx> {
         };
 
         let mut lexer = Tokenizer::new(
+			TokenizerOptions { file_id: file_id.0 },
             diagnostics, 
             str_interner
         );
-        let tokens = lexer.tokenize(source_file.content, file_id.0);
+        let tokens = lexer.tokenize(source_file.content);
 
         let mut parser = Parser::new(
-            ParserOptions { }, 
+            ParserOptions::new(file_id), 
             diagnostics, 
             tokens
         );

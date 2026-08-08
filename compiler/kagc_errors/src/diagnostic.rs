@@ -63,7 +63,17 @@ impl Diagnostic {
         let line_num = self.primary_span.start.line;   // 0-based
         let col_num = self.primary_span.start.column;  // 0-based
 
-        let span_len = self.primary_span.end.column - self.primary_span.start.column; // length of the token
+        // let span_len = self.primary_span.end.column - self.primary_span.start.column; // length of the token
+
+		let span_len = if self.primary_span.start.line == self.primary_span.end.line {
+        self.primary_span
+            .end
+            .column
+            .saturating_sub(self.primary_span.start.column)
+            .max(1)
+    } else {
+        1
+    };
 
         // print severity and message
         eprintln!("{ANSI_COLOR_RED}{:?}{ANSI_COLOR_RESET}: {}", self.severity, self.message);

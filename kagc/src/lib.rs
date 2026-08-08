@@ -29,14 +29,14 @@ pub fn compile_file(file_name: &str) -> CompilationStatus {
     let mut const_pool = ConstPool::default();
     let diags = DiagnosticBag::default();
     
-    let source_map = SourceMap::new(&file_arena);
+    let mut source_map = SourceMap::new(&file_arena);
     let str_interner = StringInterner::new(&str_arena);
 
     let mut compiler = CompilerPipeline::new(
         &scope_ctx,
         &str_interner,
         &diags,
-        &source_map,
+        &mut source_map,
         &mut const_pool,
     );
     compiler.compile(file_name)
